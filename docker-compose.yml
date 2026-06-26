@@ -1,0 +1,15 @@
+services:
+  web:
+    build: ./web
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD}@portsdb:5432/eye
+    volumes:
+      - ./web:/app
+    networks:
+      - eyelearning_default
+
+networks:
+  eyelearning_default:
+    external: true

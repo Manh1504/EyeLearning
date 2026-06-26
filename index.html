@@ -128,7 +128,7 @@
           <label class="label" for="studentName">Tên người học</label>
           <div class="input-wrap">
             <svg class="icon" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="7" r="4"></circle></svg>
-            <input id="studentName" placeholder="Nhập tên của bạn" autocomplete="off" />
+            <input id="studentName" placeholder="Nhập tên của bạn" autocomplete="off" required/>
           </div>
           <button class="primary-btn" data-go="calibration">Bắt đầu học <span>→</span></button>
         </div>
@@ -278,46 +278,140 @@
 </div>
 
 <script>
-  const screens = [...document.querySelectorAll('.screen')];
-  const navLinks = [...document.querySelectorAll('[data-go]')];
+  const API = 'http://localhost:8000';
+
+  // ---------- State ----------
+  let sessionId = null;
+
+  // ---------- UI helpers ----------
+  const screens  = [...document.querySelectorAll('.screen')];
   const studentInput = document.getElementById('studentName');
   const studentLabel = document.getElementById('studentLabel');
 
-  function go(id){
+  function go(id) {
     screens.forEach(s => s.classList.toggle('hidden', s.id !== id));
-    document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.dataset.go === id));
-    if(id === 'dashboard'){
-      const name = studentInput.value.trim();
-      studentLabel.textContent = name || 'Alex Mercer';
-    }
-    window.scrollTo({top:0, behavior:'instant'});
+    document.querySelectorAll('.nav a').forEach(a =>
+      a.classList.toggle('active', a.dataset.go === id)
+    );
+    window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
-  navLinks.forEach(el => el.addEventListener('click', e => {
-    e.preventDefault();
-    go(el.dataset.go);
-  }));
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.style.opacity = loading ? '0.6' : '1';
+    btn.style.cursor  = loading ? 'wait' : '';
+  }
 
+  function showError(msg) {
+    alert('❌ ' + msg);
+  }
+
+  // ---------- Bắt đầu học → POST /sessions ----------
+  document.querySelector('button[data-go="calibration"]')
+    .addEventListener('click', async e => {
+      e.preventDefault();
+      const name = studentInput.value.trim();
+      if (!name) {
+        alert('Vui lòng nhập tên của bạn trước khi bắt đầu học!');
+        studentInput.focus();
+        return;
+      }
+
+      const btn = e.currentTarget;
+      setLoading(btn, true);
+
+      try {
+        const res = await fetch(`${API}/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_code:  name,
+            screen_width:  screen.width,
+            screen_height: screen.height,
+          }),
+        });
+
+        if (!res.ok) throw new Error(`Server lỗi: ${res.status}`);
+
+        const data = await res.json();
+        sessionId = data.id;
+        console.log('[EyeLearn] Session created:', sessionId);
+
+        studentLabel.textContent = name;
+        go('calibration');
+      } catch (err) {
+        showError('Không thể kết nối server. Kiểm tra backend đang chạy chưa.\n' + err.message);
+      } finally {
+        setLoading(btn, false);
+      }
+    });
+
+  // ---------- Calibration dot ----------
   const points = [
-    {left:'50%', top:'53%'},
-    {left:'25%', top:'25%'},
-    {left:'75%', top:'25%'},
-    {left:'25%', top:'75%'},
-    {left:'75%', top:'75%'}
+    { left: '50%', top: '53%' },
+    { left: '25%', top: '25%' },
+    { left: '75%', top: '25%' },
+    { left: '25%', top: '75%' },
+    { left: '75%', top: '75%' },
   ];
   let pointIndex = 2;
-  const calDot = document.getElementById('calDot');
+  const calDot   = document.getElementById('calDot');
   const calCount = document.getElementById('calCount');
-  function moveCalDot(){
+
+  function moveCalDot() {
     pointIndex = (pointIndex + 1) % points.length;
     calDot.style.left = points[pointIndex].left;
-    calDot.style.top = points[pointIndex].top;
+    calDot.style.top  = points[pointIndex].top;
     calCount.textContent = `Điểm ${pointIndex + 1}/5`;
-    if(pointIndex === 4){
+    if (pointIndex === 4) {
       setTimeout(() => go('test'), 700);
     }
   }
   calDot.addEventListener('click', moveCalDot);
+
+  // ---------- Hủy calibration ----------
+  document.querySelector('[data-go="welcome"].cancel')?.addEventListener('click', e => {
+    e.preventDefault();
+    sessionId = null;
+    go('welcome');
+  });
+
+  // ---------- Finish → PATCH /sessions/{id}/finish ----------
+  document.querySelector('.finish-btn')
+    .addEventListener('click', async e => {
+      e.preventDefault();
+      if (!sessionId) { go('dashboard'); return; }
+
+      const btn = e.currentTarget;
+      setLoading(btn, true);
+
+      try {
+        const res = await fetch(`${API}/sessions/${sessionId}/finish`, {
+          method: 'PATCH',
+        });
+
+        if (!res.ok) throw new Error(`Server lỗi: ${res.status}`);
+
+        console.log('[EyeLearn] Session finished:', sessionId);
+        go('dashboard');
+      } catch (err) {
+        showError('Không thể lưu kết thúc phiên học.\n' + err.message);
+      } finally {
+        setLoading(btn, false);
+      }
+    });
+
+  // ---------- Nav links còn lại (không gọi API) ----------
+  document.querySelectorAll('[data-go]').forEach(el => {
+    if (el.classList.contains('cancel')) return;        // đã xử lý riêng
+    if (el.dataset.go === 'calibration') return;        // đã xử lý riêng
+    if (el.classList.contains('finish-btn')) return;    // đã xử lý riêng
+
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      go(el.dataset.go);
+    });
+  });
 </script>
 </body>
 </html>
