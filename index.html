@@ -204,7 +204,7 @@
         <div class="item"><span class="k">Gaze Quality</span><span class="v"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="m9 12 2 2 4-4"></path></svg>Tốt</span></div>
         <div class="item"><span class="k">Stability</span><span class="v"><svg class="icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"></rect><path d="m9 12 2 2 4-4"></path></svg>Ổn định</span></div>
       </div>
-      <button class="finish-btn" data-go="dashboard">Hoàn tất <span>→</span></button>
+      <button class="start-lecture-btn primary-btn" style="position:fixed;left:50%;bottom:60px;transform:translateX(-50%);width:220px;">Vào học <span>→</span></button>
     </main>
   </section>
 
@@ -273,6 +273,9 @@
           <div class="quiz-box"><span>Sự khác biệt giữa AI và ML<br>là gì?</span><span style="font-size:32px;color:#596171">›</span></div>
         </aside>
       </div>
+      <div style="position:fixed;bottom:40px;right:40px;z-index:100;">
+        <button class="finish-btn" style="width:160px;height:56px;font-size:15px;">Hoàn tất <span>→</span></button>
+      </div>
     </main>
   </section>
 </div>
@@ -290,9 +293,9 @@
 
   // Calibration
   const CAL_POINTS_DEF = [
-    { x: 0.10, y: 0.10 }, { x: 0.50, y: 0.10 }, { x: 0.90, y: 0.10 },
-    { x: 0.10, y: 0.50 }, { x: 0.50, y: 0.50 }, { x: 0.90, y: 0.50 },
-    { x: 0.10, y: 0.90 }, { x: 0.50, y: 0.90 }, { x: 0.90, y: 0.90 },
+    { x: 0.02, y: 0.04 }, { x: 0.50, y: 0.04 }, { x: 0.98, y: 0.04 },
+    { x: 0.02, y: 0.50 }, { x: 0.50, y: 0.50 }, { x: 0.98, y: 0.50 },
+    { x: 0.02, y: 0.96 }, { x: 0.50, y: 0.96 }, { x: 0.98, y: 0.96 },
   ];
   let calIndex      = -1;
   let calFrames     = [];   // { point, blob }
@@ -345,34 +348,47 @@
     mediaStream = null;
   }
 
-  // Video element persistent — tạo 1 lần, dùng mãi
+  // Video element gắn vào DOM, autoplay, không ẩn bằng display:none
+  // (display:none khiến browser suspend video)
   const _video  = document.createElement('video');
   const _canvas = document.createElement('canvas');
-  _video.autoplay = true;
+  _video.autoplay    = true;
   _video.playsInline = true;
-  _video.style.display = 'none';
+  _video.muted       = true;
+  // Ẩn bằng CSS position thay vì display:none
+  _video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;top:0;left:0;z-index:-1;pointer-events:none;';
   document.body.appendChild(_video);
 
   async function startWebcamVideo() {
     _video.srcObject = mediaStream;
-    await _video.play().catch(() => {});
-    // Chờ video có kích thước
-    await new Promise(r => {
-      if (_video.videoWidth) return r();
-      _video.onloadedmetadata = r;
+    await new Promise((resolve) => {
+      _video.onloadedmetadata = () => {
+        _video.play().then(resolve).catch(resolve);
+      };
+      // fallback nếu metadata đã load rồi
+      if (_video.readyState >= 1) {
+        _video.play().then(resolve).catch(resolve);
+      }
     });
-    _canvas.width  = _video.videoWidth;
-    _canvas.height = _video.videoHeight;
+    _canvas.width  = _video.videoWidth  || 640;
+    _canvas.height = _video.videoHeight || 480;
+    console.log('[Webcam] Video ready:', _canvas.width, 'x', _canvas.height);
   }
 
   // Chụp 1 frame từ webcam → trả về Blob JPEG
   function captureFrame() {
     return new Promise((resolve, reject) => {
-      if (!mediaStream || !_video.videoWidth) {
-        return reject(new Error('Webcam chưa sẵn sàng'));
-      }
+      if (!mediaStream?.active) return reject(new Error('Stream không active'));
+      // Đảm bảo video đang play
+      if (_video.paused) _video.play().catch(() => {});
+      if (!_video.videoWidth) return reject(new Error('Video chưa có kích thước'));
+      _canvas.width  = _video.videoWidth;
+      _canvas.height = _video.videoHeight;
       _canvas.getContext('2d').drawImage(_video, 0, 0);
-      _canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
+      _canvas.toBlob(blob => {
+        if (blob) resolve(blob);
+        else reject(new Error('toBlob failed'));
+      }, 'image/jpeg', 0.8);
     });
   }
 
@@ -438,10 +454,10 @@
     }
 
     const pt = CAL_POINTS_DEF[calIndex];
-    // Dùng position:fixed + vw/vh để dot đúng trên toàn màn hình kể cả fullscreen
+    // Dùng pixel tuyệt đối để dot đúng vị trí kể cả có topbar
     calDot.style.position = 'fixed';
-    calDot.style.left = (pt.x * 100) + 'vw';
-    calDot.style.top  = (pt.y * 100) + 'vh';
+    calDot.style.left = (pt.x * window.innerWidth)  + 'px';
+    calDot.style.top  = (pt.y * window.innerHeight) + 'px';
     calCount.textContent = `Điểm ${calIndex + 1}/${CAL_POINTS_DEF.length}`;
 
     // Chờ 800ms để mắt user nhìn vào điểm rồi chụp frame
@@ -465,13 +481,12 @@
     calDot.style.display = 'none';
     calCount.textContent = 'Đang xử lý...';
 
+    // Gọi AI Service train calibration trước
     try {
       const formData = new FormData();
       formData.append('session_id', sessionId);
-
       const points = calFrames.map(f => ({ x: f.point.x, y: f.point.y }));
       formData.append('points', JSON.stringify(points));
-
       calFrames.forEach((f, i) => {
         formData.append('frames', f.blob, `frame_${i}.jpg`);
       });
@@ -480,13 +495,11 @@
         method: 'POST',
         body: formData,
       });
-
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-
       console.log('[EyeLearn] Calibration done:', data);
 
-      // Lưu metadata calibration vào Web Service
+      // Lưu metadata vào Web Service
       await fetch(`${WEB_API}/calibration`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -496,15 +509,14 @@
           n_points:   data.n_points,
         }),
       });
-
-      calDot.style.display = '';
-      go('test');
-      startInference();
     } catch (err) {
-      showError('Calibration thất bại: ' + err.message);
-      calDot.style.display = '';
-      calCount.textContent = 'Thử lại';
+      console.warn('[Cal] AI Service không phản hồi:', err.message);
     }
+
+    // Chuyển màn hình SAU khi AI đã train xong
+    calDot.style.display = '';
+    go('test');
+    startInference();
   }
 
   // ─── Hủy calibration ──────────────────────────────────────
@@ -517,56 +529,67 @@
   });
 
   // ─── Inference WebSocket ───────────────────────────────────
+  let _demoInterval = null;
+  function startDemoGaze() {}
+  function stopDemoGaze() {
+    clearInterval(_demoInterval);
+    _demoInterval = null;
+  }
+
   function startInference() {
     if (!sessionId) return;
     sessionStartMs = Date.now();
+    // flush timer chưa bật — chờ user bấm Vào học (b4) mới ghi chunks
+
+    startDemoGaze();
 
     wsInference = new WebSocket(`${WS_AI}/inference?session_id=${sessionId}`);
 
     wsInference.onopen = () => {
-      console.log('[WS] Connected to AI Service');
-      // Gửi frame mỗi 100ms (10fps)
+      console.log('[WS] Connected to AI Service — switching to real gaze');
+      stopDemoGaze();
+
       wsInference._sendInterval = setInterval(async () => {
-        if (wsInference.readyState !== WebSocket.OPEN) return;
+        if (!wsInference || wsInference.readyState !== WebSocket.OPEN) return;
         try {
           const blob = await captureFrame();
           const buf  = await blob.arrayBuffer();
           wsInference.send(buf);
         } catch (err) {
-          console.warn('[WS] Send error:', err);
+          console.warn('[WS] Send error:', err.message);
         }
       }, 100);
-
-      // Flush gaze buffer lên Web Service mỗi 5 giây
-      gazeFlushTimer = setInterval(flushGazeBuffer, 5000);
     };
 
     wsInference.onmessage = e => {
-      const msg = JSON.parse(e.data);
-      if (msg.error) return;
-
-      const now = Date.now() - sessionStartMs;
-      gazeBuffer.push({ t: now, x: msg.x, y: msg.y });
-
-      // Vẽ gaze dot lên màn hình (optional visual feedback)
-      renderGazeDot(msg.x, msg.y);
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.error) return;
+        const now = Date.now() - sessionStartMs;
+        gazeBuffer.push({ t: now, x: msg.x, y: msg.y });
+        renderGazeDot(msg.x, msg.y);
+      } catch(_) {}
     };
 
     wsInference.onclose = () => {
       console.log('[WS] Disconnected');
-      if (wsInference) clearInterval(wsInference._sendInterval);
+      if (wsInference?._sendInterval) clearInterval(wsInference._sendInterval);
+      wsInference = null;
+      // AI ngắt → fallback demo dot nếu session vẫn còn
+      if (sessionId) startDemoGaze();
     };
 
-    wsInference.onerror = err => {
-      console.error('[WS] Error:', err);
+    wsInference.onerror = () => {
+      console.warn('[WS] AI Service không sẵn sàng, giữ demo dot');
     };
   }
 
   function stopInference() {
-    clearInterval(wsInference?._sendInterval ?? null);
+    if (wsInference?._sendInterval) clearInterval(wsInference._sendInterval);
     clearInterval(gazeFlushTimer);
     wsInference?.close();
     wsInference = null;
+    stopDemoGaze();
   }
 
   // ─── Gaze dot visual feedback ─────────────────────────────
@@ -574,15 +597,24 @@
   function renderGazeDot(x, y) {
     if (!gazeDotEl) {
       gazeDotEl = document.createElement('div');
-      gazeDotEl.style.cssText = `
-        position:fixed;width:18px;height:18px;border-radius:50%;
-        background:rgba(37,99,235,.6);pointer-events:none;
-        transform:translate(-50%,-50%);transition:left .1s,top .1s;z-index:9999;
-      `;
+      gazeDotEl.style.cssText = [
+        'position:fixed',
+        'width:18px',
+        'height:18px',
+        'border-radius:50%',
+        'background:rgba(37,99,235,.6)',
+        'pointer-events:none',
+        'transform:translate(-50%,-50%)',
+        'transition:left .08s linear,top .08s linear',
+        'z-index:9999',
+      ].join(';');
       document.body.appendChild(gazeDotEl);
     }
-    gazeDotEl.style.left = (x * 100) + 'vw';
-    gazeDotEl.style.top  = (y * 100) + 'vh';
+    // Dùng pixel tuyệt đối thay vì vw/vh để không bị lệch topbar
+    const px = x * window.innerWidth;
+    const py = y * window.innerHeight;
+    gazeDotEl.style.left = px + 'px';
+    gazeDotEl.style.top  = py + 'px';
   }
 
   function hideGazeDot() {
@@ -677,6 +709,29 @@
       }
     });
 
+  // ─── Vào học (b3 → b4) — bật ghi chunks, KHÔNG tắt webcam/WS ──
+  document.querySelector('.start-lecture-btn')
+    .addEventListener('click', e => {
+      e.preventDefault();
+      console.log('[EyeLearn] Vào học, bắt đầu ghi chunks');
+
+      // Bắt đầu ghi chunks từ đây
+      if (!gazeFlushTimer) {
+        gazeFlushTimer = setInterval(flushGazeBuffer, 5000);
+      }
+
+      go('dashboard');
+
+      // Patch session status ở background, không block chuyển màn hình
+      if (sessionId) {
+        fetch(`${WEB_API}/sessions/${sessionId}/load-lecture`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lecture_id: '00000000-0000-0000-0000-000000000000' }),
+        }).catch(err => console.warn('[Session] load-lecture failed:', err.message));
+      }
+    });
+
   // ─── Nav links còn lại ────────────────────────────────────
   document.querySelectorAll('[data-go]').forEach(el => {
     if (el.classList.contains('cancel')) return;
@@ -685,7 +740,9 @@
 
     el.addEventListener('click', e => {
       e.preventDefault();
-      go(el.dataset.go);
+      const target = el.dataset.go;
+      // Nếu đang học mà click nav về màn khác → không tắt webcam/inference
+      go(target);
     });
   });
 </script>
