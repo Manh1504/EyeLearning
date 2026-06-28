@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 from database import get_db
-from models import CalibrationProfile, Session
+from models import CalibrationProfile,Session
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
 

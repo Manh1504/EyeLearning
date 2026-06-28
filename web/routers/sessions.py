@@ -40,10 +40,6 @@ class SessionOut(BaseModel):
 
 @router.post("", response_model=SessionOut, summary="Tạo session mới khi user bắt đầu học")
 async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Được gọi khi user nhập mã SV và bấm Bắt đầu.
-    Tự động tạo user nếu student_code chưa tồn tại.
-    """
     # Lấy hoặc tạo user theo student_code
     result = await db.execute(select(User).where(User.student_code == body.student_code))
     user = result.scalar_one_or_none()
@@ -81,10 +77,6 @@ async def get_session(session_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/{session_id}/load-lecture", response_model=SessionOut, summary="User bấm load bài giảng")
 async def load_lecture(session_id: UUID, body: SessionLoadLecture, db: AsyncSession = Depends(get_db)):
-    """
-    Gọi khi user bấm Load bài giảng sau calibration xong.
-    Chuyển status → learning.
-    """
     result = await db.execute(select(Session).where(Session.id == session_id))
     session = result.scalar_one_or_none()
     if not session:
@@ -102,10 +94,6 @@ async def load_lecture(session_id: UUID, body: SessionLoadLecture, db: AsyncSess
 
 @router.patch("/{session_id}/finish", response_model=SessionOut, summary="User bấm Finish")
 async def finish_session(session_id: UUID, db: AsyncSession = Depends(get_db)):
-    """
-    Gọi khi user bấm Finish. Chuyển status → finished, ghi finished_at.
-    Sau đó frontend gọi endpoint generate heatmap.
-    """
     result = await db.execute(select(Session).where(Session.id == session_id))
     session = result.scalar_one_or_none()
     if not session:

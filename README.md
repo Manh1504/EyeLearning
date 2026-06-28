@@ -1,30 +1,13 @@
 # EyeLearn — Hướng dẫn cài đặt & chạy
 
+
+
 ## Yêu cầu
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) đã cài và đang chạy
-- Python 3.x (để chạy frontend local)
-
----
-
-## Cấu trúc thư mục
-
-```
-EyeLearning/
-├── web/
-│   ├── main.py
-│   ├── database.py
-│   ├── models.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── routers/
-│       ├── sessions.py
-│       └── calibration.py
-├── index.html
-├── init.sql
-├── docker-compose.yml
-└── .env
-```
+- Docker Desktop đang chạy
+- Python 3.x (để serve frontend)
+- GPU NVIDIA + CUDA (cho AI Service) — hoặc đổi `device=cpu`
+- Webcam
 
 ---
 
@@ -32,19 +15,17 @@ EyeLearning/
 
 ### Bước 1 — Tạo file `.env`
 
-Tạo file `.env` trong thư mục gốc với nội dung:
+Tạo file `.env` trong thư mục **gốc** (`EyeLearning/`):
 
 ```env
 POSTGRES_PASSWORD=your_password_here
 ```
 
-> Thay `your_password_here` bằng password thực của container `portsdb`.
-
 ---
 
-### Bước 2 — Khởi tạo database
+### Bước 2 — Khởi tạo Database
 
-Nếu chưa có container `portsdb`, chạy lệnh sau để tạo DB và các bảng:
+> Bỏ qua nếu đã có container `portsdb` với đầy đủ bảng.
 
 ```powershell
 docker run -d `
@@ -57,56 +38,72 @@ docker run -d `
   postgres:18
 ```
 
-Sau đó import schema:
+Import schema:
 
 ```powershell
-docker exec -i portsdb psql -U admin -d eye < init.sql
+docker exec -i portsdb psql -U admin -d eye < data.sql
 ```
 
-Kiểm tra bảng đã tạo chưa:
+Kiểm tra:
 
 ```powershell
 docker exec -i portsdb psql -U admin -d eye -c "\dt"
 ```
 
-Kết quả đúng:
-
-```
- Schema |         Name         | Type  | Owner
---------+----------------------+-------+-------
- public | calibration_profiles | table | admin
- public | gaze_chunks          | table | admin
- public | heatmaps             | table | admin
- public | lectures             | table | admin
- public | sessions             | table | admin
- public | users                | table | admin
-```
+Kết quả đúng có đủ 6 bảng: `calibration_profiles`, `gaze_chunks`, `heatmaps`, `lectures`, `sessions`, `users`.
 
 ---
 
-### Bước 3 — Đưa `portsdb` vào network của project
+### Bước 3 — Chạy Web Service
+
+```powershell
+# Trong thư mục EyeLearning/
+docker compose up -d
+```
+
+Đưa `portsdb` vào cùng network:
 
 ```powershell
 docker network connect eyelearning_default portsdb
 ```
 
-> Nếu báo network chưa tồn tại thì bỏ qua, chạy Bước 4 trước rồi quay lại chạy lệnh này.
-
----
-
-### Bước 4 — Chạy Web Service
-
-```powershell
-docker compose up -d
-```
-
-Kiểm tra đang chạy:
+Kiểm tra:
 
 ```powershell
 docker compose logs web --tail=20
 ```
 
-Kết quả đúng có dòng:
+Thấy dòng này là OK:
+
+```
+INFO:     Application startup complete.
+```
+
+---
+
+### Bước 4 — Chạy AI Service
+
+> Đảm bảo đã có file weights trong `Gaze-Estimation/weights/`.  
+> Tải tại: https://drive.google.com/drive/folders/1olXtxlqBb7gW_nnB4p_dSDXV2t2IMy5B
+
+```
+
+Chạy AI Service:
+
+```powershell
+# Trong thư mục EyeLearning/gaze/
+cd gaze
+docker compose up -d
+cd ..
+```
+
+Kiểm tra:
+
+```powershell
+docker logs eyetracking-container --tail=20
+```
+
+Thấy dòng này là OK:
 
 ```
 INFO:     Application startup complete.
@@ -117,10 +114,11 @@ INFO:     Application startup complete.
 ### Bước 5 — Chạy Frontend
 
 ```powershell
+# Trong thư mục EyeLearning/
 python -m http.server 3000
 ```
 
-Mở trình duyệt tại:
+Mở trình duyệt:
 
 ```
 http://localhost:3000
@@ -128,22 +126,30 @@ http://localhost:3000
 
 ---
 
+## Luồng sử dụng
+
+```
+1. Nhập tên → Bắt đầu học
+      ↓
+2. Calibration tự động (9 điểm, ~20 giây)
+   Browser chụp frame → POST http://localhost:9000/calibrate
+      ↓
+3. Vào màn hình học bài
+   WebSocket ws://localhost:9000/inference?session_id=xxx
+   Gaze data → buffer → POST http://localhost:8000/gaze/chunks (mỗi 5 giây)
+      ↓
+4. Bấm Finish → lưu session → chuyển Dashboard
+```
+
+---
+
 ## Kiểm tra API
 
-Swagger UI (test API trực tiếp):
-
-```
-http://localhost:8000/docs
-```
-
-Test tạo session bằng PowerShell:
-
-```powershell
-Invoke-WebRequest -Uri http://localhost:8000/sessions `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{"student_code":"test123"}'
-```
+| URL | Mô tả |
+|---|---|
+| `http://localhost:8000/docs` | Swagger — Web Service |
+| `http://localhost:9000/docs` | Swagger — AI Service |
+| `http://localhost:9000/health_check` | Kiểm tra AI Service sống không |
 
 ---
 
@@ -151,23 +157,11 @@ Invoke-WebRequest -Uri http://localhost:8000/sessions `
 
 | Lệnh | Mô tả |
 |---|---|
-| `docker compose up -d` | Khởi động web service |
-| `docker compose down` | Tắt web service |
-| `docker compose logs web -f` | Xem log realtime |
-| `docker compose down && docker compose up -d` | Restart |
+| `docker compose up -d` | Khởi động Web Service |
+| `docker compose down` | Tắt Web Service |
+| `docker compose logs web -f` | Log Web Service realtime |
+| `docker logs eyetracking-container -f` | Log AI Service realtime |
 | `docker exec -i portsdb psql -U admin -d eye -c "\dt"` | Kiểm tra bảng DB |
-
----
-
-## Reset database (xóa toàn bộ data)
-
-```powershell
-docker stop portsdb
-docker rm portsdb
-docker volume rm pg_data
-```
-
-Sau đó chạy lại từ **Bước 2**.
 
 ---
 
@@ -176,6 +170,22 @@ Sau đó chạy lại từ **Bước 2**.
 | Service | Cổng |
 |---|---|
 | Web Service (FastAPI) | `http://localhost:8000` |
-| API Docs (Swagger) | `http://localhost:8000/docs` |
+| AI Service (FastAPI) | `http://localhost:9000` |
 | Frontend | `http://localhost:3000` |
 | PostgreSQL | `localhost:5432` |
+
+---
+
+## Reset toàn bộ
+
+```powershell
+# Tắt services
+docker compose down
+docker -C gaze compose down
+
+# Xóa DB
+docker stop portsdb && docker rm portsdb
+docker volume rm pg_data
+
+# Chạy lại từ Bước 2
+```
