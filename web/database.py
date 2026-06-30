@@ -2,9 +2,11 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 import os
 
+from web import config  # noqa: F401
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://admin:admin@localhost:5432/eye"
+    "postgresql+asyncpg://eyelearn_user:eyelearn_password@localhost:5433/eyelearn"
 )
 
 engine = create_async_engine(DATABASE_URL, echo=False)

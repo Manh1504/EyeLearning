@@ -24,7 +24,22 @@ class Config:
 config = Config()
 
 # ─── Khởi tạo pipeline (load 1 lần duy nhất khi server start) ─
-pipeline = Pipline(args=config)
+pipeline = None
+pipeline_error = None
+
+
+def get_pipeline():
+    global pipeline, pipeline_error
+    if pipeline is not None:
+        return pipeline
+    try:
+        pipeline = Pipline(args=config)
+        pipeline_error = None
+        return pipeline
+    except Exception as exc:
+        pipeline_error = str(exc)
+        print(f"[Pipeline load error] {pipeline_error}", flush=True)
+        return None
 
 # ─── Buffer calibration theo session_id ───────────────────────
 # { session_id: Calibration }
@@ -45,7 +60,12 @@ app.add_middleware(
 # ─── Health check ─────────────────────────────────────────────
 @app.get("/health_check")
 def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "device": config.device,
+        "pipeline_loaded": pipeline is not None,
+        "pipeline_error": pipeline_error,
+    }
 
 
 # ─── Calibration ──────────────────────────────────────────────
@@ -68,6 +88,10 @@ async def calibrate(
     frames:     List[UploadFile] = File(...),
 ):
     try:
+        active_pipeline = get_pipeline()
+        if active_pipeline is None:
+            return {"error": f"AI pipeline failed to load: {pipeline_error}"}
+
         points_list = json.loads(points)
 
         if len(points_list) != len(frames):
@@ -90,7 +114,7 @@ async def calibrate(
 
         # Chạy pipeline lấy pitch/yaw cho từng frame
         rgb_images = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in images]
-        raw_results = [pipeline(img) for img in rgb_images]
+        raw_results = [active_pipeline(img) for img in rgb_images]
 
         # Lọc bỏ frame không detect được khuôn mặt
         valid = [(r, p) for r, p in zip(raw_results, points_arr) if r is not None]
@@ -130,6 +154,12 @@ async def inference(
 ):
     await websocket.accept()
 
+    active_pipeline = get_pipeline()
+    if active_pipeline is None:
+        await websocket.send_text(json.dumps({"error": f"AI pipeline failed to load: {pipeline_error}"}))
+        await websocket.close()
+        return
+
     if session_id not in calibrators:
         await websocket.send_text(json.dumps({"error": "session_id chưa được calibrate"}))
         await websocket.close()
@@ -152,7 +182,7 @@ async def inference(
                     continue
 
                 rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                result  = pipeline(rgb_img)
+                result  = active_pipeline(rgb_img)
 
                 if result is not None:
                     pred_x, pred_y = cal.predict_gaze(result[0], result[1])

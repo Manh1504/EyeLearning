@@ -1,11 +1,13 @@
-.env
-.venv/
-data.sql
+weights/
 __pycache__/
 *.pyc
 .DS_Store
-data/outputs/
-Gaze-Estimation/weights/
+.env
+.venv/
+venv/
+
+test_img/
+
 *.pt
 *.pth
 *.pkl
@@ -13,4 +15,5 @@ Gaze-Estimation/weights/
 *.onnx
 *.tflite
 *.task
+
 *.log
