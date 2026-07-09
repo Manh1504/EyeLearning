@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EyeLearn · Calibration</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <main class="calibration-page">
+    <section class="panel calibration-card" id="calibrationSetup">
+      <div>
+        <h1>Gaze Calibration</h1>
+        <p class="muted">Keep this browser window size stable, and look at each dot before capturing.</p>
+        <p class="muted calibration-warning">Local demo: calibration is stored in AI service memory per session. Production needs persistent session-scoped model storage.</p>
+      </div>
+      <div class="qa-strip">
+        <span>Session <strong id="calibrationSessionLabel">none</strong></span>
+        <span>AI <strong id="calibrationAiStatus">checking</strong></span>
+        <span>Points <strong>25</strong></span>
+      </div>
+      <div class="calibration-actions">
+        <button class="btn primary" type="button" id="startCalibrationBtn">Start calibration</button>
+        <a class="btn" href="/lesson" id="backToLessonLink">Back to lesson</a>
+      </div>
+      <div class="status-line" id="calibrationStatus"></div>
+    </section>
+
+    <section class="calibration-overlay" id="calibrationOverlay" hidden>
+      <video id="calibrationVideo" autoplay playsinline muted hidden></video>
+      <canvas id="calibrationFrameCanvas" hidden></canvas>
+      <div class="calibration-topbar">
+        <span id="calibrationProgress">Point 1 / 25</span>
+        <span id="cameraStatus">Camera pending</span>
+        <button class="btn danger" type="button" id="cancelCalibrationBtn">Cancel</button>
+      </div>
+      <div class="calibration-instruction">Look at the dot, then press Space</div>
+      <button class="calibration-capture-btn" type="button" id="captureCalibrationBtn">Capture</button>
+      <div class="calibration-dot" id="calibrationDot"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/js/calibration_client.js?v=20260630-no-fullscreen"></script>
+</body>
+</html>

@@ -5,8 +5,24 @@ Dự đoán điểm nhìn của người dùng trên màn hình chỉ bằng web
 ## Yêu cầu
 
 - Python 3.10+
-- CUDA 11.8 (khuyến nghị, có thể chạy CPU với `--device cpu`)
+- Docker Desktop
 - Webcam
+
+## Chạy bằng Docker
+
+Mặc định dùng CPU, chạy được trên Mac, Windows, Linux:
+
+```bash
+docker compose up -d --build
+curl http://127.0.0.1:9000/health_check
+```
+
+Máy Windows/Linux có NVIDIA GPU dùng override GPU:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+curl http://127.0.0.1:9000/health_check
+```
 
 ## Cài đặt
 

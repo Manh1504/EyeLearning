@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EyeLearn · Start Session</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header class="topbar" data-zone="top_nav">
+    <div class="brand">EyeLearn</div>
+    <div class="topbar-title">
+      <strong>Data Visualization Basics</strong>
+      <span>L001 · Đọc biểu đồ dữ liệu</span>
+    </div>
+  </header>
+
+  <main class="page start-shell">
+    <section class="course-panel">
+      <div class="course-kicker">LMS Session Entry</div>
+      <h1>Data Visualization Basics</h1>
+      <p class="muted">Bắt đầu phiên học để ghi tracking points theo AOI và xem analytics sau bài học.</p>
+      <div class="course-meta">
+        <span class="pill">L001</span>
+        <span class="pill">Đọc biểu đồ dữ liệu</span>
+        <span class="pill">Role-based LMS demo</span>
+      </div>
+    </section>
+
+    <section class="form-panel">
+      <h2>Start EyeLearn</h2>
+      <form id="startForm">
+        <div class="field">
+          <label for="roleSelect">View as</label>
+          <select id="roleSelect" name="role">
+            <option value="student" selected>Student</option>
+            <option value="teacher">Teacher</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="fullName">Full name</label>
+          <input id="fullName" name="fullName" autocomplete="name" required>
+        </div>
+        <div class="field">
+          <label for="studentCode">Student code</label>
+          <input id="studentCode" name="studentCode" autocomplete="username" required>
+        </div>
+        <button class="btn primary" type="submit">Start Session</button>
+        <div id="startStatus" class="status-line"></div>
+      </form>
+    </section>
+  </main>
+
+  <script type="module" src="/static/js/session.js"></script>
+</body>
+</html>

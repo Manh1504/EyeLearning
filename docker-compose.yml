@@ -4,9 +4,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://admin:${POSTGRES_PASSWORD}@portsdb:5432/eye
+      DATABASE_URL: postgresql+asyncpg://eyelearn_user:eyelearn_password@eyelearn_postgres:5432/eyelearn
     volumes:
-      - ./web:/app
+      - ./web:/app/web
     networks:
       - eyelearning_default
 

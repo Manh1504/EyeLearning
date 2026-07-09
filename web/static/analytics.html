@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EyeLearn · Analytics</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <header class="topbar" data-zone="top_nav">
+    <div class="brand">EyeLearn</div>
+    <div class="topbar-title">
+      <strong>Session Analytics</strong>
+      <span id="analyticsSessionLabel">No session</span>
+    </div>
+    <nav class="role-nav" aria-label="Analytics navigation" id="analyticsNav">
+      <a href="/lesson" data-role-link="student">Lesson</a>
+      <a href="/teacher" data-role-link="teacher">Dashboard</a>
+      <a href="/admin" data-role-link="admin">System</a>
+    </nav>
+  </header>
+
+  <main class="page analytics-shell">
+    <section class="analytics-header panel">
+      <div>
+        <h1>Session Analytics</h1>
+        <p class="muted">AOI metrics and heatmaps are derived from normalized tracking_points.</p>
+      </div>
+      <dl class="session-facts">
+        <div>
+          <dt>Session</dt>
+          <dd id="sessionIdValue">-</dd>
+        </div>
+        <div>
+          <dt>Learner</dt>
+          <dd id="learnerInfoValue">-</dd>
+        </div>
+        <div>
+          <dt>Lesson</dt>
+          <dd id="lessonIdValue">-</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="metrics-grid">
+      <div class="metric-card"><span>Total tracking points</span><strong id="totalPoints">0</strong></div>
+      <div class="metric-card"><span>AOI-mapped points</span><strong id="mappedPoints">0</strong></div>
+      <div class="metric-card"><span>Outside AOI points</span><strong id="outsidePoints">0</strong></div>
+      <div class="metric-card"><span>AOIs viewed</span><strong id="aoisViewed">0</strong></div>
+    </section>
+
+    <section class="panel metrics-section" data-admin-only hidden>
+      <div class="section-header">
+        <div>
+          <h2>Session Health</h2>
+          <p class="muted" id="sessionHealthAction">Loading session health...</p>
+        </div>
+      </div>
+      <div class="qa-strip analytics-health">
+        <span>Chunks <strong id="healthChunks">0</strong></span>
+        <span>Tracking points <strong id="healthTrackingPoints">0</strong></span>
+        <span>AOI mapping <strong id="healthAoiMapping">missing</strong></span>
+        <span>Metrics <strong id="healthMetrics">0</strong></span>
+        <span>Heatmaps <strong id="healthHeatmaps">0</strong></span>
+        <span>Snapshot <strong id="healthSnapshot">missing</strong></span>
+      </div>
+    </section>
+
+    <section class="panel metrics-section">
+      <div class="section-header">
+        <div>
+          <h2>AOI Metrics</h2>
+          <p class="muted">Split by learning and interface areas from the metrics API.</p>
+        </div>
+        <button class="btn primary" type="button" id="recalculateMetricsBtn">Recalculate metrics</button>
+      </div>
+    </section>
+
+    <section class="panel metrics-section heatmap-section">
+      <div class="section-header">
+        <div>
+          <h2>Heatmap</h2>
+          <p class="muted">Generate full-session or AOI-specific heatmap images.</p>
+          <p class="muted">Heatmap may include all tracking points; AOI metrics include only mapped AOI points.</p>
+        </div>
+        <div class="heatmap-controls">
+          <button class="btn" type="button" id="generateFullHeatmapBtn">Generate full heatmap</button>
+          <button class="btn" type="button" id="generateOverlayHeatmapBtn">Generate overlay heatmap</button>
+          <button class="btn" type="button" id="generateDebugOverlayBtn" data-admin-only hidden>Generate debug overlay</button>
+          <select id="heatmapAoiSelect" aria-label="Heatmap scope">
+            <option value="">Whole session</option>
+            <option value="video_area">video_area</option>
+            <option value="transcript_panel">transcript_panel</option>
+            <option value="quiz_area">quiz_area</option>
+            <option value="notes_panel">notes_panel</option>
+            <option value="lesson_sidebar">lesson_sidebar</option>
+            <option value="lesson_header">lesson_header</option>
+            <option value="tracking_panel">tracking_panel</option>
+            <option value="completion_panel">completion_panel</option>
+          </select>
+          <button class="btn primary" type="button" id="generateSelectedHeatmapBtn">Generate selected heatmap</button>
+        </div>
+      </div>
+      <div class="heatmap-layout">
+        <div id="heatmapPreview" class="heatmap-preview">
+          <span>No heatmap generated yet.</span>
+        </div>
+        <div id="heatmapMeta" class="heatmap-meta"></div>
+        <section class="heatmap-history">
+          <h3>Generated heatmaps</h3>
+          <div id="heatmapList" class="heatmap-list"></div>
+        </section>
+      </div>
+      <details class="debug-panel" data-admin-only hidden>
+        <summary>Raw heatmap response</summary>
+        <pre id="heatmapDebug">No heatmap generated in this browser session.</pre>
+      </details>
+    </section>
+
+    <section class="panel metrics-section">
+      <h2>Learning Areas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>AOI name</th>
+            <th>AOI key</th>
+            <th>Dwell sec</th>
+            <th>Dwell %</th>
+            <th>Points</th>
+            <th>First hit</th>
+            <th>Revisits</th>
+          </tr>
+        </thead>
+        <tbody id="learningMetricsBody"></tbody>
+      </table>
+    </section>
+
+    <section class="panel metrics-section">
+      <h2>Interface Areas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>AOI name</th>
+            <th>AOI key</th>
+            <th>Dwell sec</th>
+            <th>Dwell %</th>
+            <th>Points</th>
+            <th>First hit</th>
+            <th>Revisits</th>
+          </tr>
+        </thead>
+        <tbody id="interfaceMetricsBody"></tbody>
+      </table>
+    </section>
+
+    <div id="analyticsStatus" class="status-line"></div>
+  </main>
+
+  <script type="module" src="/static/js/analytics.js"></script>
+</body>
+</html>
