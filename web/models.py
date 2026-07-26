@@ -6,7 +6,6 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
-    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -54,17 +53,31 @@ class Lesson(Base):
 class CalibrationProfile(Base):
     __tablename__ = "calibration_profiles"
 
-    calibration_id = Column(Text, primary_key=True)
-    user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    checkpoint_x = Column(LargeBinary, nullable=False)
-    checkpoint_y = Column(LargeBinary, nullable=False)
+    calibration_id       = Column(Text, primary_key=True)
+    calibration_group_id = Column(Text, nullable=False)
+    user_id              = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+
     checkpoint_name = Column(Text, nullable=False)
+    checkpoint_x    = Column(Float, nullable=False)
+    checkpoint_y    = Column(Float, nullable=False)
+    pitch           = Column(Float, nullable=False)
+    yaw             = Column(Float, nullable=False)
+
     is_fullscreen = Column(Boolean, nullable=False)
-    viewport_h = Column(Integer, nullable=False)
-    viewport_w = Column(Integer, nullable=False)
+    viewport_h    = Column(Integer, nullable=False)
+    viewport_w    = Column(Integer, nullable=False)
+
+    avg_error_px       = Column(Float)
+    n_points           = Column(Integer, nullable=False, server_default="9")
+    status              = Column(Text, nullable=False, server_default="active")
+    trained_at          = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at          = Column(DateTime(timezone=True))
+    is_micro            = Column(Boolean, nullable=False, server_default="false")
+    device_fingerprint  = Column(Text)
+    model_storage_url   = Column(Text)
+    model_format        = Column(Text, server_default="joblib")
 
     user = relationship("User", back_populates="calibration_profiles")
-    sessions = relationship("Session", back_populates="calibration_profile")
 
 
 class Session(Base):
@@ -73,16 +86,19 @@ class Session(Base):
     session_id = Column(Text, primary_key=True)
     user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"), nullable=False)
-    calibration_id = Column(Text, ForeignKey("calibration_profiles.calibration_id", ondelete="SET NULL"))
+    # KHÔNG FK cứng — calibration_group_id không phải PK của calibration_profiles
+    # (1 group gồm 9 row checkpoint). Validate tồn tại ở tầng application
+    # (routers/calibration.py), không phải ở constraint DB.
+    calibration_group_id = Column(Text)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True))
     is_fullscreen = Column(Boolean)
     viewport_w = Column(Integer)
     viewport_h = Column(Integer)
+    status = Column(Text, nullable=False, server_default="calibrating")
 
     user = relationship("User", back_populates="sessions")
     lesson = relationship("Lesson", back_populates="sessions")
-    calibration_profile = relationship("CalibrationProfile", back_populates="sessions")
     tracking_points = relationship("TrackingPoint", back_populates="session")
     aoi_metrics = relationship("AOIMetric", back_populates="session")
     heatmaps = relationship("Heatmap", back_populates="session")
@@ -179,16 +195,40 @@ class LearningEvent(Base):
 class AOISnapshot(Base):
     __tablename__ = "aoi_snapshots"
 
-    snapshot_id = Column(Text, primary_key=True)
-    session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
-    aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="CASCADE"), nullable=False)
-    viewport_x = Column(Float, nullable=False)
-    viewport_y = Column(Float, nullable=False)
-    viewport_w = Column(Float, nullable=False)
-    viewport_h = Column(Float, nullable=False)
-    scroll_x = Column(Float, nullable=False, default=0)
-    scroll_y = Column(Float, nullable=False, default=0)
-    captured_at_ms = Column(BigInteger, nullable=False)
+    snapshot_id     = Column(Text, primary_key=True)
+    session_id      = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
+    aoi_id          = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="CASCADE"), nullable=False)
+    viewport_x      = Column(Float, nullable=False)
+    viewport_y      = Column(Float, nullable=False)
+    viewport_w      = Column(Float, nullable=False)
+    viewport_h      = Column(Float, nullable=False)
+    scroll_x        = Column(Float, nullable=False, default=0)
+    scroll_y        = Column(Float, nullable=False, default=0)
+    captured_at_ms  = Column(BigInteger, nullable=False)
+
+
+class PageSnapshot(Base):
+    __tablename__ = "page_snapshots"
+
+    snapshot_id          = Column(Text, primary_key=True)
+    session_id           = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False, unique=True)
+    captured_at_ms       = Column(BigInteger, nullable=False)
+
+    viewport_w           = Column(Integer, nullable=False)
+    viewport_h           = Column(Integer, nullable=False)
+    document_w           = Column(Integer, nullable=False)
+    document_h           = Column(Integer, nullable=False)
+
+    requested_scale      = Column(Float, nullable=False)
+    actual_scale         = Column(Float, nullable=False)
+    canvas_w             = Column(Integer, nullable=False)
+    canvas_h             = Column(Integer, nullable=False)
+
+    cloudinary_public_id = Column(Text)
+    image_url            = Column(Text)
+    image_url_thumbnail  = Column(Text)
+    status               = Column(Text, nullable=False, server_default="pending")
+    error_message         = Column(Text)
 
 
 class GazeChunk(Base):

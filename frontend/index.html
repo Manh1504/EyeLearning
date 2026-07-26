@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EyeLearn</title>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- config.js được sinh runtime bởi docker-entrypoint.sh khi host trong container -->
+  <script src="/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

@@ -73,12 +73,19 @@ def health_check():
 Nhận N ảnh + N tọa độ (x, y normalized 0–1) → train SVR → lưu vào calibrators[session_id]
 
 Form fields:
-  - session_id : str
-  - points     : JSON string, VD: [{"x": 0.5, "y": 0.5}, ...]
-  - frames     : List[UploadFile] — ảnh JPEG tương ứng với từng điểm
+  - session_id  : str
+  - points      : JSON string, VD: [{"x": 0.5, "y": 0.5, "name": "top-left"}, ...]
+  - frames      : List[UploadFile] — ảnh JPEG tương ứng với từng điểm
+  - viewport_w  : int — window.innerWidth lúc calib (dùng để quy avg_error ra pixel thật)
+  - viewport_h  : int — window.innerHeight lúc calib
 
 Response:
-  - {"message": str, "session_id": str, "n_points": int}
+  - {
+      "message": str, "session_id": str, "n_points": int,
+      "avg_error_px": float,
+      "per_point": [{"name": str, "x": float, "y": float, "pitch": float, "yaw": float}, ...],
+      "model_x_b64": str, "model_y_b64": str, "model_format": "joblib"
+    }
   - {"error": str}
 """
 @app.post("/calibrate")
@@ -86,6 +93,8 @@ async def calibrate(
     session_id: str              = Form(...),
     points:     str              = Form(...),
     frames:     List[UploadFile] = File(...),
+    viewport_w: int               = Form(1920),
+    viewport_h: int               = Form(1080),
 ):
     try:
         active_pipeline = get_pipeline()
@@ -101,6 +110,7 @@ async def calibrate(
             return {"error": "Cần ít nhất 5 điểm calibration."}
 
         points_arr = np.array([[p["x"], p["y"]] for p in points_list])  # (N, 2)
+        names_list = [p.get("name") for p in points_list]
 
         # Decode ảnh
         images = []
@@ -117,22 +127,44 @@ async def calibrate(
         raw_results = [active_pipeline(img) for img in rgb_images]
 
         # Lọc bỏ frame không detect được khuôn mặt
-        valid = [(r, p) for r, p in zip(raw_results, points_arr) if r is not None]
+        valid = [
+            (r, p, n) for r, p, n in zip(raw_results, points_arr, names_list) if r is not None
+        ]
         if len(valid) < 5:
             return {"error": f"Chỉ detect được {len(valid)} khuôn mặt, cần ít nhất 5."}
 
         results_arr = np.array([v[0] for v in valid])   # (M, 2) — pitch/yaw
         points_arr  = np.array([v[1] for v in valid])   # (M, 2) — x/y
+        names_arr   = [v[2] for v in valid]
 
         # Train SVR
         cal = Calibration(model_name=config.calibrator)
         cal.creat_calibration_model(results_arr, points_arr)
         calibrators[session_id] = cal
 
+        avg_error_px = cal.compute_avg_error_px(results_arr, points_arr, viewport_w, viewport_h)
+        model_x_b64, model_y_b64 = cal.export_models_b64()
+
+        per_point = [
+            {
+                "name": name,
+                "x": float(point[0]),
+                "y": float(point[1]),
+                "pitch": float(result[0]),
+                "yaw": float(result[1]),
+            }
+            for result, point, name in zip(results_arr, points_arr, names_arr)
+        ]
+
         return {
-            "message":    "Calibration thành công",
-            "session_id": session_id,
-            "n_points":   len(valid),
+            "message":      "Calibration thành công",
+            "session_id":   session_id,
+            "n_points":     len(valid),
+            "avg_error_px": avg_error_px,
+            "per_point":    per_point,
+            "model_x_b64":  model_x_b64,
+            "model_y_b64":  model_y_b64,
+            "model_format": "joblib",
         }
 
     except Exception as e:

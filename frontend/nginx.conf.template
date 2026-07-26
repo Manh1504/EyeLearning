@@ -1,0 +1,38 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Nén để tải nhanh hơn (bundle JS/CSS)
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    # Runtime config được sinh bởi docker-entrypoint.d/20-write-runtime-config.sh — không cache.
+    location = /config.js {
+        add_header Cache-Control "no-store";
+        try_files /config.js =204;
+    }
+
+    # Proxy các path API sang backend FastAPI ("web" service) — giữ same-origin,
+    # tránh phải cấu hình CORS phức tạp giữa 2 container.
+    location ~ ^/(sessions|tracking|gaze|metrics|heatmaps|calibration|lessons|lectures|debug|admin|page-snapshot|client-config|health)(/|$) {
+        proxy_pass http://${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Static assets build ra (hash trong tên file) — cache dài hạn.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA fallback cho react-router (client-side routing).
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

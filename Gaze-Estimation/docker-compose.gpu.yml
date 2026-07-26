@@ -1,7 +1,7 @@
 services:
   gaze-server:
     build:
-      context: .
+      context: Gaze-Estimation
       dockerfile: Dockerfile
     image: eyetracking-image:gpu
     environment:

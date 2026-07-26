@@ -97,10 +97,40 @@ class Calibration:
             self.model_x.fit(results, points[:, 0])
             self.model_y.fit(results, points[:, 1])
 
-    def predict_gaze(self, new_pitch, new_yaw):   
+    def predict_gaze(self, new_pitch, new_yaw):
         if self.model_name == "svr":
             inp = np.array([[new_pitch, new_yaw]])
-            x = self.model_x.predict(inp) 
+            x = self.model_x.predict(inp)
             y = self.model_y.predict(inp)
 
             return float(x[0]), float(y[0])
+
+    def export_models_b64(self):
+        """Serialize model_x/model_y bằng joblib, trả về base64 để Web Service
+        upload lên object storage — persist model, không để mất khi container
+        AI Service restart (model vẫn sống trong RAM để inference nhanh, đây
+        chỉ là bản backup)."""
+        import base64
+        import io
+
+        import joblib
+
+        def dump_b64(model):
+            buf = io.BytesIO()
+            joblib.dump(model, buf)
+            return base64.b64encode(buf.getvalue()).decode("ascii")
+
+        return dump_b64(self.model_x), dump_b64(self.model_y)
+
+    def compute_avg_error_px(self, results, points, viewport_w, viewport_h):
+        """Đo lại chính các điểm đã train (không phải held-out set) — chỉ để
+        có con số tham khảo mức độ fit, KHÔNG phải đánh giá generalization
+        thật (dữ liệu N=9 điểm quá ít để tách train/test có ý nghĩa)."""
+        if self.model_name != "svr":
+            return None
+        pred_x = self.model_x.predict(results)
+        pred_y = self.model_y.predict(results)
+        err_x_px = (pred_x - points[:, 0]) * viewport_w
+        err_y_px = (pred_y - points[:, 1]) * viewport_h
+        err_px = np.sqrt(err_x_px ** 2 + err_y_px ** 2)
+        return float(np.mean(err_px))

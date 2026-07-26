@@ -1,8 +1,10 @@
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from web.database import get_db
 from web.services.page_snapshot_service import PAGE_SNAPSHOT_DIR, save_page_snapshot
 
 router = APIRouter(tags=["page-snapshots"])
@@ -13,8 +15,9 @@ async def create_page_snapshot(
     session_id: str,
     snapshot: UploadFile = File(...),
     metadata: str = Form(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    return await save_page_snapshot(session_id=session_id, snapshot=snapshot, metadata=metadata)
+    return await save_page_snapshot(session_id=session_id, snapshot=snapshot, metadata=metadata, db=db)
 
 
 @router.get("/page-snapshots/file/{filename}", include_in_schema=False)

@@ -6,6 +6,7 @@ python-dotenv
 ultralytics
 opencv-python
 scikit-learn
+joblib
 unigaze
 # mediapipe
 # git+https://github.com/edavalosanaya/L2CS-Net.git@main

@@ -1,15 +1,19 @@
+import logging
 from datetime import datetime, timezone
 from time import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from web.database import get_db
+from web.database import AsyncSessionLocal, get_db
 from web.models import Lesson, Session, User
 from web.schemas import SessionOut
+from web.services.heatmap_service import generate_heatmap_for_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -21,7 +25,7 @@ class SessionCreate(BaseModel):
     role: Optional[str] = "student"
     lesson_id: Optional[str] = None
     lecture_id: Optional[str] = Field(default=None, description="Backward-compatible alias for lesson_id")
-    calibration_id: Optional[str] = None
+    calibration_group_id: Optional[str] = None
     is_fullscreen: Optional[bool] = None
     viewport_w: Optional[int] = None
     viewport_h: Optional[int] = None
@@ -70,7 +74,7 @@ async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)
         session_id=body.session_id or f"S_{body.student_code}_{int(time() * 1000)}",
         user_id=user.user_id,
         lesson_id=lesson_id,
-        calibration_id=body.calibration_id,
+        calibration_group_id=body.calibration_group_id,
         is_fullscreen=body.is_fullscreen,
         viewport_w=body.viewport_w or body.screen_width,
         viewport_h=body.viewport_h or body.screen_height,
@@ -114,14 +118,36 @@ async def load_lesson(session_id: str, body: SessionLoadLesson, db: AsyncSession
     return session
 
 
+async def _render_heatmap_in_background(session_id: str) -> None:
+    """Chạy sau khi response /finish đã trả về, dùng DB session riêng vì
+    session của request gốc đã đóng lúc response return."""
+    async with AsyncSessionLocal() as db:
+        try:
+            await generate_heatmap_for_session(db, session_id=session_id, aoi_key=None)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception("Auto-generate heatmap failed for session_id=%s", session_id)
+
+
 @router.patch("/{session_id}/finish", response_model=SessionOut, summary="User bấm Finish")
-async def finish_session(session_id: str, db: AsyncSession = Depends(get_db)):
+async def finish_session(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Session).where(Session.session_id == session_id))
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session không tồn tại")
-    if session.ended_at:
+    if session.status == "finished":
         raise HTTPException(status_code=400, detail="Session đã kết thúc")
 
     session.ended_at = datetime.now(timezone.utc)
+    session.status = "finished"
+
+    # Heatmap sinh ở background, KHÔNG chặn response /finish — user bấm Finish
+    # thấy phản hồi ngay, không phải đợi render ảnh xong.
+    background_tasks.add_task(_render_heatmap_in_background, session_id)
+
     return session

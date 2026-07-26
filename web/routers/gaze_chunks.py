@@ -64,6 +64,9 @@ async def save_gaze_chunk(body: GazeChunkCreate, db: AsyncSession = Depends(get_
     if not session:
         raise HTTPException(status_code=404, detail="Session không tồn tại")
 
+    if session.status == "calibrating":
+        session.status = "learning"
+
     chunk_id = f"chunk_{body.session_id}_{body.seq}_{int(time() * 1000)}"
     raw_chunk_enabled = await _table_exists(db, "gaze_chunks")
     if raw_chunk_enabled:

@@ -1,15 +1,65 @@
 services:
+  eyelearn_postgres:
+    image: postgres:16-alpine
+    container_name: eyelearn_postgres
+    environment:
+      POSTGRES_USER: eyelearn_user
+      POSTGRES_PASSWORD: eyelearn_password
+      POSTGRES_DB: eyelearn
+    ports:
+      - "5433:5432"
+    volumes:
+      - eyelearn_pgdata:/var/lib/postgresql/data
+      # Migrations chạy tự động (theo thứ tự tên file 001_, 002_...) khi volume data rỗng lần đầu.
+      - ./web/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eyelearn_user -d eyelearn"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - eyelearning_default
+
   web:
     build: ./web
+    container_name: eyelearn_web
     ports:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://eyelearn_user:eyelearn_password@eyelearn_postgres:5432/eyelearn
-    volumes:
-      - ./web:/app/web
+      # AI_HTTP_URL/AI_WS_URL được trả về cho BROWSER qua /client-config, nên phải là
+      # địa chỉ mà trình duyệt (không phải container) truy cập được — mặc định AI service
+      # chạy bằng docker compose riêng trong Gaze-Estimation/, publish ra host port 9000.
+      AI_HTTP_URL: ${AI_HTTP_URL:-http://127.0.0.1:9000}
+      AI_WS_URL: ${AI_WS_URL:-ws://127.0.0.1:9000/inference}
+      ENABLE_DEV_TOOLS: ${ENABLE_DEV_TOOLS:-false}
+      ENABLE_MOUSE_SIMULATION: ${ENABLE_MOUSE_SIMULATION:-false}
+      # Origin của frontend container (service "frontend" bên dưới, publish ra host port 8080).
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    depends_on:
+      eyelearn_postgres:
+        condition: service_healthy
+    networks:
+      - eyelearning_default
+
+  frontend:
+    build: ./frontend
+    container_name: eyelearn_frontend
+    ports:
+      - "9080:80"
+    environment:
+      # Tên service backend trong network nội bộ — nginx reverse-proxy các path API sang đây.
+      API_UPSTREAM: web:8000
+      # Để trống: browser gọi API cùng-origin qua nginx proxy ở trên (khuyến nghị).
+      RUNTIME_API_BASE: ""
+    depends_on:
+      - web
     networks:
       - eyelearning_default
 
 networks:
   eyelearning_default:
-    external: true
+    name: eyelearning_default
+
+volumes:
+  eyelearn_pgdata:

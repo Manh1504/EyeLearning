@@ -22,12 +22,13 @@ class SessionOut(BaseModel):
     session_id: str
     user_id: str
     lesson_id: str
-    calibration_id: Optional[str]
+    calibration_group_id: Optional[str]
     started_at: Optional[datetime]
     ended_at: Optional[datetime]
     is_fullscreen: Optional[bool]
     viewport_w: Optional[int]
     viewport_h: Optional[int]
+    status: str
 
     class Config:
         from_attributes = True

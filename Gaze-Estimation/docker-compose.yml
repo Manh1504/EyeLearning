@@ -1,7 +1,7 @@
 services:
   gaze-server:
     build:
-      context: .
+      context: Gaze-Estimation
       dockerfile: Dockerfile.cpu
     image: eyetracking-image:cpu
     container_name: eyetracking-container

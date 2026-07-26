@@ -7,7 +7,7 @@ Demo phân tích hành vi học tập sử dụng FastAPI, PostgreSQL, dữ li�
 - `web/main.py`: entrypoint của FastAPI web service.
 - `web/routers/`: các API cho session, tracking, gaze chunks, metrics, heatmaps, snapshots, debug, teacher/admin.
 - `web/services/`: logic tạo heatmap và lưu page snapshot.
-- `web/static/`: các trang HTML, JavaScript và CSS được phục vụ trực tiếp.
+- `frontend/`: app React (Vite) — frontend đã tách hoàn toàn khỏi backend, xem `frontend/README.md`.
 - `web/migrations/`: SQL migration cho bảng analytics và heatmaps.
 - `Gaze-Estimation/`: AI service riêng cho calibration và gaze inference.
 - `data/outputs/`: ảnh snapshot/heatmap sinh ra ở local, được ignore khỏi git.
@@ -69,7 +69,11 @@ AI service cần model weights trong thư mục `Gaze-Estimation/weights/`.
 
 ## Chạy migrations
 
-Điều chỉnh tên container, user và database theo môi trường local của bạn:
+Nếu dùng `docker compose up` với `docker-compose.yml` ở gốc dự án, migrations
+chạy **tự động** lần đầu tiên (volume postgres rỗng) qua
+`docker-entrypoint-initdb.d`. Chỉ cần chạy tay khi bạn tự quản lý container
+postgres riêng — điều chỉnh tên container, user và database theo môi trường
+local của bạn:
 
 ```bash
 docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/001_analytics_tables.sql
@@ -82,10 +86,34 @@ Kiểm tra schema:
 curl http://127.0.0.1:8000/debug/schema-status
 ```
 
+## Chạy frontend (React)
+
+Frontend đã tách hoàn toàn khỏi backend, xem chi tiết trong `frontend/README.md`.
+Nhanh gọn cho dev:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Chạy full stack bằng Docker Compose (khuyến nghị để host/deploy)
+
+```bash
+docker network create eyelearning_default   # nếu chưa có
+docker compose up -d --build                # postgres + web backend + frontend
+cd Gaze-Estimation && docker compose up -d --build   # AI service (network riêng, publish host port 9000)
+```
+
+`docker-compose.yml` gốc build 3 service: `eyelearn_postgres` (tự chạy
+migrations lần đầu), `web` (FastAPI, port 8000) và `frontend` (React build
+bằng nginx, reverse-proxy API sang `web`, port 8080).
+
 ## Mở ứng dụng
 
 ```text
-http://127.0.0.1:8000/
+http://localhost:8080/     # đã dùng docker compose (frontend qua nginx)
+http://localhost:5173/     # đang chạy `npm run dev`
 ```
 
 Các trang chính:

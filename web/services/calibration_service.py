@@ -1,0 +1,46 @@
+import json
+from pathlib import Path
+
+from web.config import configure_cloudinary, is_cloudinary_configured
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+CALIBRATION_MODEL_DIR = BASE_DIR / "data" / "outputs" / "calibration_models"
+
+
+def _safe_filename(calibration_group_id: str) -> str:
+    safe = "".join(char if char.isalnum() or char in "._-" else "_" for char in calibration_group_id)
+    return f"calibration_model_{safe}.json"
+
+
+def calibration_model_url(calibration_group_id: str) -> str:
+    return f"/calibration/model-file/{_safe_filename(calibration_group_id)}"
+
+
+def save_calibration_model(calibration_group_id: str, model_x_b64: str, model_y_b64: str) -> str:
+    """Gộp model_x/model_y (đã serialize base64 bởi AI Service) thành 1 file JSON,
+    lưu local + upload Cloudinary (nếu có cấu hình) — trả về URL để lưu vào
+    calibration_profiles.model_storage_url."""
+    CALIBRATION_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    filename = _safe_filename(calibration_group_id)
+    path = CALIBRATION_MODEL_DIR / filename
+    path.write_text(json.dumps({"model_x_b64": model_x_b64, "model_y_b64": model_y_b64}), encoding="utf-8")
+
+    if is_cloudinary_configured():
+        try:
+            import cloudinary.uploader
+
+            configure_cloudinary()
+            result = cloudinary.uploader.upload(
+                str(path),
+                folder="eyelearn/calibration_models",
+                public_id=path.stem,
+                overwrite=True,
+                resource_type="raw",
+            )
+            return result.get("secure_url") or calibration_model_url(calibration_group_id)
+        except Exception:
+            # Upload Cloudinary lỗi không nên chặn việc lưu calibration — model
+            # vẫn có bản local, chỉ là chưa lên cloud. Serve tạm qua route local.
+            return calibration_model_url(calibration_group_id)
+
+    return calibration_model_url(calibration_group_id)

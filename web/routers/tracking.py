@@ -40,6 +40,9 @@ async def _load_sessions(points: list[TrackingPointCreate], db: AsyncSession) ->
     missing = session_ids - set(sessions)
     if missing:
         raise HTTPException(status_code=404, detail=f"Session không tồn tại: {', '.join(sorted(missing))}")
+    for session in sessions.values():
+        if session.status == "calibrating":
+            session.status = "learning"
     return sessions
 
 
