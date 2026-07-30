@@ -1,0 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.7.0
+torchvision==0.22.0
+
+python-dotenv
+ultralytics
+opencv-python
+scikit-learn
+unigaze
+mediapipe
+git+https://github.com/edavalosanaya/L2CS-Net.git@main
+xgboost
+fastapi
+uvicorn
+python-multipart
+
+py-ubjson
