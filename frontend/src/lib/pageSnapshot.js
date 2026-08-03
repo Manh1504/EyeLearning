@@ -81,6 +81,7 @@ export async function capturePageSnapshot(sessionId) {
 
   const response = await fetch(apiUrl(`/page-snapshot/${encodeURIComponent(sessionId)}`), {
     method: "POST",
+    credentials: "include",
     body: formData,
   });
   if (!response.ok) {

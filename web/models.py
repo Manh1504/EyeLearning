@@ -27,27 +27,182 @@ class User(Base):
     email = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     password_hash = Column(Text)
+    is_active = Column(Boolean, nullable=False, server_default="true")
 
     sessions = relationship("Session", back_populates="user")
     calibration_profiles = relationship("CalibrationProfile", back_populates="user")
     lessons = relationship("Lesson", back_populates="teacher")
 
 
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+
+    session_id = Column(Text, primary_key=True)
+    user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(Text, nullable=False, unique=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True))
+    user_agent = Column(Text)
+
+    user = relationship("User")
+
+
+class Course(Base):
+    __tablename__ = "courses"
+
+    course_id = Column(Text, primary_key=True)
+    course_title = Column(Text, nullable=False)
+    course_description = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CourseModule(Base):
+    __tablename__ = "course_modules"
+
+    module_id = Column(Text, primary_key=True)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
+    module_title = Column(Text, nullable=False)
+    module_description = Column(Text)
+    order_index = Column(Integer, nullable=False, default=1)
+    estimated_duration_min = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Lesson(Base):
     __tablename__ = "lessons"
 
     lesson_id = Column(Text, primary_key=True)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
     lesson_title = Column(Text, nullable=False)
     teacher_id = Column(Text, ForeignKey("users.user_id", ondelete="SET NULL"))
     lesson_description = Column(Text)
     video_url = Column(Text)
     content_url = Column(Text)
     layout_version = Column(Text, nullable=False)
+    order_index = Column(Integer, nullable=False, default=1)
+    estimated_duration_min = Column(Integer)
+    learning_objectives = Column(JSONB)
+    published_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     teacher = relationship("User", back_populates="lessons")
     sessions = relationship("Session", back_populates="lesson")
     aoi_definitions = relationship("AOIDefinition", back_populates="lesson")
+
+
+class ContentVersion(Base):
+    __tablename__ = "content_versions"
+
+    content_version_id = Column(Text, primary_key=True)
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"), nullable=False)
+    version_label = Column(Text, nullable=False, default="v1")
+    version_number = Column(Integer, nullable=False, default=1)
+    status = Column(Text, nullable=False, default="published")
+    source_type = Column(Text, nullable=False, default="legacy")
+    source_url = Column(Text)
+    source_filename = Column(Text)
+    semantic_extraction_status = Column(Text, nullable=False, default="not_started")
+    metadata_json = Column(JSONB)
+    published_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LessonActivity(Base):
+    __tablename__ = "lesson_activities"
+
+    activity_id = Column(Text, primary_key=True)
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"), nullable=False)
+    activity_type = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    description = Column(Text)
+    order_index = Column(Integer, nullable=False, default=1)
+    estimated_duration_min = Column(Integer)
+    tracking_enabled = Column(Boolean, nullable=False, default=True)
+    tracking_mode = Column(Text, nullable=False, default="gaze")
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    published_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    metadata_json = Column(JSONB)
+
+
+class ContentStimulus(Base):
+    __tablename__ = "content_stimuli"
+
+    stimulus_id = Column(Text, primary_key=True)
+    activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="CASCADE"), nullable=False)
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    stimulus_type = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    order_index = Column(Integer, nullable=False, default=1)
+    visual_url = Column(Text)
+    width = Column(Integer)
+    height = Column(Integer)
+    notes = Column(Text)
+    tracking_enabled = Column(Boolean, nullable=False, default=True)
+    metadata_json = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StimulusElement(Base):
+    __tablename__ = "stimulus_elements"
+
+    element_id = Column(Text, primary_key=True)
+    stimulus_id = Column(Text, ForeignKey("content_stimuli.stimulus_id", ondelete="CASCADE"), nullable=False)
+    element_type = Column(Text, nullable=False)
+    text_content = Column(Text)
+    x_normalized = Column(Float)
+    y_normalized = Column(Float)
+    width_normalized = Column(Float)
+    height_normalized = Column(Float)
+    reading_order = Column(Integer)
+    semantic_label = Column(Text)
+    source_element_id = Column(Text)
+    metadata_json = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContentImport(Base):
+    __tablename__ = "content_imports"
+
+    import_id = Column(Text, primary_key=True)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="SET NULL"))
+    uploaded_by = Column(Text, ForeignKey("users.user_id", ondelete="SET NULL"))
+    source_filename = Column(Text, nullable=False)
+    source_mime_type = Column(Text)
+    source_size_bytes = Column(BigInteger)
+    status = Column(Text, nullable=False, default="uploaded")
+    adapter_key = Column(Text)
+    error_message = Column(Text)
+    metadata_json = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class TeacherCourseAssignment(Base):
+    __tablename__ = "teacher_course_assignments"
+
+    teacher_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="CASCADE"), primary_key=True)
+    assigned_by = Column(Text, ForeignKey("users.user_id", ondelete="SET NULL"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CourseEnrollment(Base):
+    __tablename__ = "course_enrollments"
+
+    student_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="CASCADE"), primary_key=True)
+    enrolled_by = Column(Text, ForeignKey("users.user_id", ondelete="SET NULL"))
+    status = Column(Text, nullable=False, server_default="active")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class CalibrationProfile(Base):
@@ -76,8 +231,33 @@ class CalibrationProfile(Base):
     device_fingerprint  = Column(Text)
     model_storage_url   = Column(Text)
     model_format        = Column(Text, server_default="joblib")
+    profile_name        = Column(Text)
+    model_version       = Column(Text, nullable=False, server_default="svr:v1")
+    environment_json    = Column(JSONB)
+    artifact_status     = Column(Text, nullable=False, server_default="available")
+    last_validation_at  = Column(DateTime(timezone=True))
+    last_validation_status = Column(Text)
+    updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", back_populates="calibration_profiles")
+
+
+class CalibrationValidationRun(Base):
+    __tablename__ = "calibration_validation_runs"
+
+    validation_id = Column(Text, primary_key=True)
+    calibration_group_id = Column(Text, nullable=False)
+    user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="SET NULL"))
+    status = Column(Text, nullable=False)
+    sample_count = Column(Integer, nullable=False, server_default="0")
+    valid_sample_count = Column(Integer, nullable=False, server_default="0")
+    valid_sample_ratio = Column(Float)
+    median_error_norm = Column(Float)
+    max_error_norm = Column(Float)
+    environment_json = Column(JSONB)
+    result_json = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Session(Base):
@@ -86,6 +266,10 @@ class Session(Base):
     session_id = Column(Text, primary_key=True)
     user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"), nullable=False)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
+    activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
     # KHÔNG FK cứng — calibration_group_id không phải PK của calibration_profiles
     # (1 group gồm 9 row checkpoint). Validate tồn tại ở tầng application
     # (routers/calibration.py), không phải ở constraint DB.
@@ -96,6 +280,8 @@ class Session(Base):
     viewport_w = Column(Integer)
     viewport_h = Column(Integer)
     status = Column(Text, nullable=False, server_default="calibrating")
+    session_type = Column(Text, nullable=False, server_default="student_learning")
+    created_by_role = Column(Text)
 
     user = relationship("User", back_populates="sessions")
     lesson = relationship("Lesson", back_populates="sessions")
@@ -109,6 +295,8 @@ class AOIDefinition(Base):
 
     aoi_id = Column(Text, primary_key=True)
     lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"), nullable=False)
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    stimulus_id = Column(Text, ForeignKey("content_stimuli.stimulus_id", ondelete="SET NULL"))
     layout_version = Column(Text, nullable=False)
     aoi_key = Column(Text, nullable=False)
     aoi_name = Column(Text, nullable=False)
@@ -116,6 +304,13 @@ class AOIDefinition(Base):
     aoi_type = Column(Text, nullable=False)
     is_learning_area = Column(Boolean, nullable=False, default=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    semantic_type = Column(Text)
+    source = Column(Text)
+    x_normalized = Column(Float)
+    y_normalized = Column(Float)
+    width_normalized = Column(Float)
+    height_normalized = Column(Float)
+    order_index = Column(Integer)
 
     __table_args__ = (
         UniqueConstraint("lesson_id", "layout_version", "aoi_key", name="aoi_definitions_lesson_id_layout_version_aoi_key_key"),
@@ -132,13 +327,33 @@ class TrackingPoint(Base):
     point_id = Column(Text, primary_key=True)
     session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
     aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="SET NULL"))
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
+    activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    stimulus_id = Column(Text, ForeignKey("content_stimuli.stimulus_id", ondelete="SET NULL"))
     timestamp_ms = Column(BigInteger, nullable=False)
     viewport_x = Column(Float, nullable=False)
     viewport_y = Column(Float, nullable=False)
     scroll_x = Column(Float, nullable=False, default=0)
     scroll_y = Column(Float, nullable=False, default=0)
+    stimulus_x_norm = Column(Float)
+    stimulus_y_norm = Column(Float)
+    stimulus_left = Column(Float)
+    stimulus_top = Column(Float)
+    stimulus_width = Column(Float)
+    stimulus_height = Column(Float)
+    tracking_quality = Column(Text)
+    screen_x = Column(Float)
+    screen_y = Column(Float)
+    viewport_width = Column(Integer)
+    viewport_height = Column(Integer)
+    device_pixel_ratio = Column(Float)
+    zoom = Column(Float)
+    fullscreen = Column(Boolean)
     confidence = Column(Float)
     gaze_status = Column(Text)
+    metadata_json = Column(JSONB)
 
     session = relationship("Session", back_populates="tracking_points")
     aoi = relationship("AOIDefinition", back_populates="tracking_points")
@@ -190,6 +405,56 @@ class LearningEvent(Base):
     target_aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="SET NULL"))
     timestamp_ms = Column(BigInteger, nullable=False)
     event_value = Column(JSONB)
+    user_id = Column(Text, ForeignKey("users.user_id", ondelete="SET NULL"))
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="SET NULL"))
+    activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    stimulus_id = Column(Text, ForeignKey("content_stimuli.stimulus_id", ondelete="SET NULL"))
+    client_timestamp_ms = Column(BigInteger)
+    server_timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    sequence_number = Column(Integer)
+    metadata_json = Column(JSONB)
+
+
+class AOIVisit(Base):
+    __tablename__ = "aoi_visits"
+
+    visit_id = Column(Text, primary_key=True)
+    session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
+    aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="SET NULL"))
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="SET NULL"))
+    activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    stimulus_id = Column(Text, ForeignKey("content_stimuli.stimulus_id", ondelete="SET NULL"))
+    started_at_ms = Column(BigInteger, nullable=False)
+    ended_at_ms = Column(BigInteger, nullable=False)
+    dwell_time_ms = Column(BigInteger, nullable=False)
+    fixation_count = Column(Integer, nullable=False, default=0)
+    metadata_json = Column(JSONB)
+    calculated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AOITransition(Base):
+    __tablename__ = "aoi_transitions"
+
+    transition_id = Column(Text, primary_key=True)
+    session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
+    from_aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="SET NULL"))
+    to_aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="SET NULL"))
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="SET NULL"))
+    activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
+    content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
+    stimulus_id = Column(Text, ForeignKey("content_stimuli.stimulus_id", ondelete="SET NULL"))
+    occurred_at_ms = Column(BigInteger, nullable=False)
+    transition_order = Column(Integer)
+    metadata_json = Column(JSONB)
+    calculated_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class AOISnapshot(Base):
@@ -237,7 +502,7 @@ class GazeChunk(Base):
     chunk_id = Column(Text, primary_key=True)
     session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
     seq = Column(Integer, nullable=False)
-    start_ms = Column(Integer, nullable=False)
+    start_ms = Column(BigInteger, nullable=False)
     data = Column(JSONB, nullable=False)
 
     __table_args__ = (UniqueConstraint("session_id", "seq", name="uq_gaze_chunks_session_seq"),)

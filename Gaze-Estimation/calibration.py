@@ -122,6 +122,17 @@ class Calibration:
 
         return dump_b64(self.model_x), dump_b64(self.model_y)
 
+    def import_models_b64(self, model_x_b64, model_y_b64):
+        """Load lại model đã serialize bằng joblib vào đúng pipeline inference.
+        Hàm này không train lại và không thay đổi thuật toán mapping."""
+        import base64
+        import io
+
+        import joblib
+
+        self.model_x = joblib.load(io.BytesIO(base64.b64decode(model_x_b64)))
+        self.model_y = joblib.load(io.BytesIO(base64.b64decode(model_y_b64)))
+
     def compute_avg_error_px(self, results, points, viewport_w, viewport_h):
         """Đo lại chính các điểm đã train (không phải held-out set) — chỉ để
         có con số tham khảo mức độ fit, KHÔNG phải đánh giá generalization

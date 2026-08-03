@@ -8,6 +8,7 @@ from models import Pipline
 from calibration import Calibration
 import os
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -44,6 +45,34 @@ def get_pipeline():
 # ─── Buffer calibration theo session_id ───────────────────────
 # { session_id: Calibration }
 calibrators: dict[str, Calibration] = {}
+
+
+class LoadCalibrationRequest(BaseModel):
+    session_id: str
+    model_x_b64: str
+    model_y_b64: str
+    model_format: str = "joblib"
+
+
+def validation_metrics(predictions: list[dict], viewport_w: int, viewport_h: int) -> dict:
+    valid = [item for item in predictions if item.get("ok")]
+    if not predictions:
+        return {
+            "sample_count": 0,
+            "valid_sample_count": 0,
+            "valid_sample_ratio": 0,
+            "median_error_norm": None,
+            "max_error_norm": None,
+        }
+    diagonal = float(np.sqrt(viewport_w ** 2 + viewport_h ** 2)) or 1.0
+    errors = [item["error_px"] / diagonal for item in valid]
+    return {
+        "sample_count": len(predictions),
+        "valid_sample_count": len(valid),
+        "valid_sample_ratio": len(valid) / len(predictions),
+        "median_error_norm": float(np.median(errors)) if errors else None,
+        "max_error_norm": float(np.max(errors)) if errors else None,
+    }
 
 # ─── App ──────────────────────────────────────────────────────
 app = FastAPI(title="EyeLearn — AI Service", version="0.1.0")
@@ -169,6 +198,76 @@ async def calibrate(
 
     except Exception as e:
         return {"error": f"Lỗi server: {str(e)}"}
+
+
+@app.post("/calibration/load")
+async def load_calibration(body: LoadCalibrationRequest):
+    if body.model_format != "joblib":
+        return {"error": "Unsupported calibration model format"}
+    try:
+        cal = Calibration(model_name=config.calibrator)
+        cal.import_models_b64(body.model_x_b64, body.model_y_b64)
+        calibrators[body.session_id] = cal
+        return {"ok": True, "session_id": body.session_id, "model_format": body.model_format}
+    except Exception as exc:
+        return {"error": f"Không thể tải hồ sơ căn chỉnh: {str(exc)}"}
+
+
+@app.post("/calibration/validate")
+async def validate_calibration(
+    session_id: str = Form(...),
+    points: str = Form(...),
+    frames: List[UploadFile] = File(...),
+    viewport_w: int = Form(1920),
+    viewport_h: int = Form(1080),
+):
+    try:
+        active_pipeline = get_pipeline()
+        if active_pipeline is None:
+            return {"error": f"AI pipeline failed to load: {pipeline_error}"}
+        if session_id not in calibrators:
+            return {"error": "session_id chưa được load hồ sơ căn chỉnh"}
+
+        points_list = json.loads(points)
+        if len(points_list) != len(frames):
+            return {"error": f"Số điểm ({len(points_list)}) và số ảnh ({len(frames)}) không khớp."}
+
+        predictions = []
+        cal = calibrators[session_id]
+        diagonal = float(np.sqrt(viewport_w ** 2 + viewport_h ** 2)) or 1.0
+        for point, file in zip(points_list, frames):
+            image_bytes = await file.read()
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                predictions.append({"name": point.get("name"), "ok": False, "error": "Invalid image"})
+                continue
+            result = active_pipeline(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            if result is None:
+                predictions.append({"name": point.get("name"), "ok": False, "error": "No face detected"})
+                continue
+            pred_x, pred_y = cal.predict_gaze(result[0], result[1])
+            err_x_px = (pred_x - float(point["x"])) * viewport_w
+            err_y_px = (pred_y - float(point["y"])) * viewport_h
+            error_px = float(np.sqrt(err_x_px ** 2 + err_y_px ** 2))
+            predictions.append({
+                "name": point.get("name"),
+                "ok": True,
+                "target_x": float(point["x"]),
+                "target_y": float(point["y"]),
+                "pred_x": float(pred_x),
+                "pred_y": float(pred_y),
+                "error_px": error_px,
+                "error_norm": error_px / diagonal,
+            })
+
+        return {
+            "session_id": session_id,
+            "predictions": predictions,
+            "metrics": validation_metrics(predictions, viewport_w, viewport_h),
+        }
+    except Exception as exc:
+        return {"error": f"Lỗi validation: {str(exc)}"}
 
 
 # ─── Inference (WebSocket) ────────────────────────────────────

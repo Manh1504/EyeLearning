@@ -22,6 +22,10 @@ class SessionOut(BaseModel):
     session_id: str
     user_id: str
     lesson_id: str
+    course_id: Optional[str] = None
+    module_id: Optional[str] = None
+    activity_id: Optional[str] = None
+    content_version_id: Optional[str] = None
     calibration_group_id: Optional[str]
     started_at: Optional[datetime]
     ended_at: Optional[datetime]
@@ -29,6 +33,8 @@ class SessionOut(BaseModel):
     viewport_w: Optional[int]
     viewport_h: Optional[int]
     status: str
+    session_type: Optional[str] = "student_learning"
+    created_by_role: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -52,6 +58,11 @@ class AOIDefinitionOut(BaseModel):
 class TrackingPointCreate(BaseModel):
     session_id: str
     lesson_id: Optional[str] = None
+    course_id: Optional[str] = None
+    module_id: Optional[str] = None
+    activity_id: Optional[str] = None
+    content_version_id: Optional[str] = None
+    stimulus_id: Optional[str] = None
     timestamp_ms: int
     viewport_x: Optional[float] = None
     viewport_y: Optional[float] = None
@@ -59,9 +70,24 @@ class TrackingPointCreate(BaseModel):
     y: Optional[float] = None
     scroll_x: float = 0
     scroll_y: float = 0
+    stimulus_x_norm: Optional[float] = None
+    stimulus_y_norm: Optional[float] = None
+    stimulus_left: Optional[float] = None
+    stimulus_top: Optional[float] = None
+    stimulus_width: Optional[float] = None
+    stimulus_height: Optional[float] = None
+    tracking_quality: Optional[str] = None
+    screen_x: Optional[float] = None
+    screen_y: Optional[float] = None
+    viewport_width: Optional[int] = None
+    viewport_height: Optional[int] = None
+    device_pixel_ratio: Optional[float] = None
+    zoom: Optional[float] = None
+    fullscreen: Optional[bool] = None
     target_zone: Optional[str] = None
     confidence: Optional[float] = None
     gaze_status: Optional[str] = None
+    metadata_json: Optional[dict[str, Any]] = None
 
     @model_validator(mode="after")
     def validate_coordinates(self):
@@ -80,6 +106,11 @@ class TrackingPointOut(BaseModel):
     point_id: str
     session_id: str
     aoi_id: Optional[str]
+    course_id: Optional[str] = None
+    module_id: Optional[str] = None
+    activity_id: Optional[str] = None
+    content_version_id: Optional[str] = None
+    stimulus_id: Optional[str] = None
     timestamp_ms: int
     viewport_x: float
     viewport_y: float
@@ -87,6 +118,7 @@ class TrackingPointOut(BaseModel):
     scroll_y: float
     confidence: Optional[float]
     gaze_status: Optional[str]
+    metadata_json: Optional[dict[str, Any]]
 
     class Config:
         from_attributes = True

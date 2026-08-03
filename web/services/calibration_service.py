@@ -44,3 +44,14 @@ def save_calibration_model(calibration_group_id: str, model_x_b64: str, model_y_
             return calibration_model_url(calibration_group_id)
 
     return calibration_model_url(calibration_group_id)
+
+
+def calibration_model_path(calibration_group_id: str) -> Path:
+    return CALIBRATION_MODEL_DIR / _safe_filename(calibration_group_id)
+
+
+def read_calibration_model(calibration_group_id: str) -> dict | None:
+    path = calibration_model_path(calibration_group_id)
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))

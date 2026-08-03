@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.config import client_config, cloudinary_status
+from web.authz import current_user_from_cookie, require_admin_user
 from web.database import get_db
 from web.services.page_snapshot_service import PAGE_SNAPSHOT_DIR, snapshot_paths
 
@@ -21,6 +22,27 @@ async def _count_table(db: AsyncSession, table_name: str) -> int | None:
     if not await _table_exists(db, table_name):
         return None
     result = await db.execute(text(f"select count(*) from {table_name}"))
+    return int(result.scalar_one())
+
+
+async def _count_official_sessions(db: AsyncSession) -> int | None:
+    if not await _table_exists(db, "sessions"):
+        return None
+    result = await db.execute(text("select count(*) from sessions where session_type = 'student_learning'"))
+    return int(result.scalar_one())
+
+
+async def _count_admin_test_sessions(db: AsyncSession) -> int | None:
+    if not await _table_exists(db, "sessions"):
+        return None
+    result = await db.execute(text("select count(*) from sessions where session_type = 'admin_test'"))
+    return int(result.scalar_one())
+
+
+async def _count_users_by_role(db: AsyncSession, role: str) -> int | None:
+    if not await _table_exists(db, "users"):
+        return None
+    result = await db.execute(text("select count(*) from users where role = :role"), {"role": role})
     return int(result.scalar_one())
 
 
@@ -40,7 +62,11 @@ def _ai_service_status() -> dict:
 
 
 @router.get("/overview")
-async def admin_overview(db: AsyncSession = Depends(get_db)):
+async def admin_overview(
+    user = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_user(user)
     recent_sessions = []
     if await _table_exists(db, "sessions"):
         tracking_points_count = (
@@ -71,6 +97,8 @@ async def admin_overview(db: AsyncSession = Depends(get_db)):
                     s.ended_at,
                     s.viewport_w,
                     s.viewport_h,
+                    coalesce(s.session_type, 'legacy_unknown') as session_type,
+                    s.created_by_role,
                     {tracking_points_count} as tracking_points_count,
                     {metrics_count} as metrics_count,
                     {heatmaps_count} as heatmaps_count
@@ -97,8 +125,11 @@ async def admin_overview(db: AsyncSession = Depends(get_db)):
         },
         "counts": {
             "users": await _count_table(db, "users"),
+            "teachers": await _count_users_by_role(db, "teacher"),
+            "students": await _count_users_by_role(db, "student"),
             "lessons": await _count_table(db, "lessons"),
-            "sessions": await _count_table(db, "sessions"),
+            "sessions": await _count_official_sessions(db),
+            "admin_test_sessions": await _count_admin_test_sessions(db),
             "gaze_chunks": await _count_table(db, "gaze_chunks"),
             "tracking_points": await _count_table(db, "tracking_points"),
             "aoi_metrics": await _count_table(db, "aoi_metrics"),

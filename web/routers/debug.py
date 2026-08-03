@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.config import cloudinary_status
 from web.database import get_db
-from web.models import AOIMetric, GazeChunk, Heatmap, TrackingPoint
+from web.authz import current_user_from_cookie, ensure_can_read_session_analytics, require_admin_user
+from web.models import AOIMetric, GazeChunk, Heatmap, TrackingPoint, User
 from web.services.page_snapshot_service import snapshot_paths
 
 router = APIRouter(prefix="/debug", tags=["debug"])
@@ -23,7 +24,8 @@ async def _count_table(db: AsyncSession, table_name: str) -> int | None:
 
 
 @router.get("/schema-status")
-async def schema_status(db: AsyncSession = Depends(get_db)):
+async def schema_status(user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
+    require_admin_user(user)
     lessons_exists = await _table_exists(db, "lessons")
     lectures_exists = await _table_exists(db, "lectures")
 
@@ -49,12 +51,18 @@ async def schema_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/cloudinary-status")
-async def get_cloudinary_status():
+async def get_cloudinary_status(user: User = Depends(current_user_from_cookie)):
+    require_admin_user(user)
     return cloudinary_status()
 
 
 @router.get("/session-health/{session_id}")
-async def session_health(session_id: str, db: AsyncSession = Depends(get_db)):
+async def session_health(
+    session_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_can_read_session_analytics(db, user, session_id)
     session_exists = bool(
         (
             await db.execute(text("select exists(select 1 from sessions where session_id = :session_id)"), {"session_id": session_id})

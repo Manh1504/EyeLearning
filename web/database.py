@@ -9,7 +9,12 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://eyelearn_user:eyelearn_password@localhost:5433/eyelearn"
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 
 AsyncSessionLocal = async_sessionmaker(
     engine,

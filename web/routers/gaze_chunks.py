@@ -1,5 +1,6 @@
 from time import time
 from typing import List, Optional
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -8,9 +9,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
-from web.models import AOIDefinition, GazeChunk, Session, TrackingPoint
+from web.authz import current_user_from_cookie, ensure_can_read_session_analytics, ensure_student_owns_session
+from web.models import AOIDefinition, GazeChunk, Session, TrackingPoint, User
 
 router = APIRouter(prefix="/gaze", tags=["gaze"])
+logger = logging.getLogger(__name__)
 
 
 class GazePoint(BaseModel):
@@ -26,6 +29,7 @@ class GazePoint(BaseModel):
     gaze_status: Optional[str] = None
     conf: Optional[float] = None
     confidence: Optional[float] = None
+    metadata_json: Optional[dict] = None
 
 
 class GazeChunkCreate(BaseModel):
@@ -58,14 +62,19 @@ async def _table_exists(db: AsyncSession, table_name: str) -> bool:
 
 
 @router.post("/chunks", response_model=GazeChunkOut, summary="Lưu 1 batch gaze data raw backup")
-async def save_gaze_chunk(body: GazeChunkCreate, db: AsyncSession = Depends(get_db)):
+async def save_gaze_chunk(
+    body: GazeChunkCreate,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Session).where(Session.session_id == body.session_id))
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session không tồn tại")
+    await ensure_student_owns_session(db, user, body.session_id)
 
-    if session.status == "calibrating":
-        session.status = "learning"
+    if session.session_type == "student_learning" and session.status != "learning":
+        raise HTTPException(status_code=409, detail="Phiên học chưa sẵn sàng ghi dữ liệu gaze. Hãy tải hồ sơ căn chỉnh và kiểm tra nhanh trước.")
 
     chunk_id = f"chunk_{body.session_id}_{body.seq}_{int(time() * 1000)}"
     raw_chunk_enabled = await _table_exists(db, "gaze_chunks")
@@ -82,6 +91,7 @@ async def save_gaze_chunk(body: GazeChunkCreate, db: AsyncSession = Depends(get_
         try:
             await db.flush()
         except SQLAlchemyError as exc:
+            logger.exception("Could not save gaze chunk session_id=%s seq=%s", body.session_id, body.seq)
             raise HTTPException(
                 status_code=409,
                 detail=f"Could not save gaze chunk seq={body.seq}: {exc.__class__.__name__}",
@@ -123,6 +133,7 @@ async def save_gaze_chunk(body: GazeChunkCreate, db: AsyncSession = Depends(get_
                 scroll_y=point.scroll_y,
                 confidence=point.confidence if point.confidence is not None else point.conf,
                 gaze_status=point.gaze_status or "gaze_chunk",
+                metadata_json=point.metadata_json,
             )
         )
         inserted_points += 1
@@ -146,7 +157,12 @@ async def save_gaze_chunk(body: GazeChunkCreate, db: AsyncSession = Depends(get_
 
 
 @router.get("/chunks/{session_id}", summary="Lấy toàn bộ gaze chunks của 1 session")
-async def get_gaze_chunks(session_id: str, db: AsyncSession = Depends(get_db)):
+async def get_gaze_chunks(
+    session_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_can_read_session_analytics(db, user, session_id)
     result = await db.execute(
         select(GazeChunk)
         .where(GazeChunk.session_id == session_id)
@@ -171,7 +187,12 @@ async def get_gaze_chunks(session_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/chunks/{session_id}/missing", summary="Kiểm tra chunk nào bị mất")
-async def check_missing_chunks(session_id: str, db: AsyncSession = Depends(get_db)):
+async def check_missing_chunks(
+    session_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_can_read_session_analytics(db, user, session_id)
     result = await db.execute(
         select(GazeChunk.seq)
         .where(GazeChunk.session_id == session_id)

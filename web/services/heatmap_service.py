@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.config import configure_cloudinary, is_cloudinary_configured
@@ -21,6 +21,7 @@ MAX_IMAGE_H = 1800
 MIN_IMAGE_W = 800
 MIN_IMAGE_H = 600
 PADDING = 120
+MAX_SLIDE_PREVIEW_POINTS = 500
 
 
 def _safe_slug(value: str | None) -> str:
@@ -29,20 +30,52 @@ def _safe_slug(value: str | None) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "all"
 
 
-def _heatmap_id(session_id: str, aoi_key: str | None) -> str:
-    suffix = _safe_slug(aoi_key)
-    return f"HEATMAP_{_safe_slug(session_id)}_{suffix}_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+def _heatmap_id(session_id: str, aoi_key: str | None, slide_id: str | None = None) -> str:
+    parts = [_safe_slug(session_id)]
+    if slide_id:
+        parts.append(f"slide_{_safe_slug(slide_id)}")
+    parts.append(_safe_slug(aoi_key))
+    return f"HEATMAP_{'_'.join(parts)}_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
 
 
-async def _load_points(db: AsyncSession, session_id: str, aoi_key: str | None) -> list[TrackingPoint]:
+async def _load_points(
+    db: AsyncSession,
+    session_id: str,
+    aoi_key: str | None,
+    slide_id: str | None = None,
+) -> list[TrackingPoint]:
     query = select(TrackingPoint).where(TrackingPoint.session_id == session_id)
     if aoi_key:
         query = query.join(AOIDefinition, TrackingPoint.aoi_id == AOIDefinition.aoi_id).where(
             AOIDefinition.aoi_key == aoi_key
         )
+    if slide_id:
+        query = query.where(TrackingPoint.metadata_json["slide_id"].astext == slide_id)
 
     result = await db.execute(query.order_by(TrackingPoint.timestamp_ms))
-    return list(result.scalars().all())
+    points = list(result.scalars().all())
+    return [point for point in points if _is_heatmap_point(point, slide_mode=bool(slide_id))]
+
+
+def _metadata_bool(metadata: dict, key: str) -> bool | None:
+    value = metadata.get(key)
+    return value if isinstance(value, bool) else None
+
+
+def _is_heatmap_point(point: TrackingPoint, slide_mode: bool = False) -> bool:
+    metadata = point.metadata_json or {}
+    if _metadata_bool(metadata, "is_transitioning") is True:
+        return False
+    if _metadata_bool(metadata, "in_reliable_region") is False:
+        return False
+    if slide_mode:
+        if _metadata_bool(metadata, "in_slide_canvas") is not True:
+            return False
+        if _metadata_bool(metadata, "ui_interaction") is True:
+            return False
+        if metadata.get("slide_x_norm") is None or metadata.get("slide_y_norm") is None:
+            return False
+    return True
 
 
 def _image_url(filename: str) -> str:
@@ -160,6 +193,77 @@ def _render_heatmap(points: list[TrackingPoint], output_path: Path) -> dict:
     }
 
 
+def _render_slide_heatmap(points: list[TrackingPoint], output_path: Path, slide_id: str) -> dict:
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Pillow is required to generate heatmap images. Run: uv pip install -r web/requirements.txt",
+        ) from exc
+
+    width = 1200
+    height = 675
+    background = Image.new("RGB", (width, height), "#ffffff")
+    draw = ImageDraw.Draw(background)
+    font = ImageFont.load_default()
+
+    draw.rectangle((0, 0, width - 1, height - 1), outline="#d7e2ea", width=2)
+    safe_x = int(width * 0.1)
+    safe_y = int(height * 0.08)
+    draw.rectangle((safe_x, safe_y, width - safe_x, height - safe_y), outline="#e7eef3", width=1)
+    draw.text((safe_x, safe_y - 18), f"Slide: {slide_id}", fill="#64748b", font=font)
+
+    image_points = []
+    slide_preview_points = []
+    skipped = 0
+    for point in points:
+        metadata = point.metadata_json or {}
+        x_norm = metadata.get("slide_x_norm")
+        y_norm = metadata.get("slide_y_norm")
+        if x_norm is None or y_norm is None:
+            skipped += 1
+            continue
+        x = max(0.0, min(1.0, float(x_norm)))
+        y = max(0.0, min(1.0, float(y_norm)))
+        image_points.append((int(x * width), int(y * height), point.confidence))
+        slide_preview_points.append(
+            {
+                "x": round(x, 4),
+                "y": round(y, 4),
+                "confidence": point.confidence,
+                "timestamp_ms": point.timestamp_ms,
+            }
+        )
+
+    if not image_points:
+        raise HTTPException(status_code=422, detail="No slide-normalized tracking points found for this slide.")
+
+    overlay = _density_overlay(width, height, image_points, radius=38)
+    image = background.convert("RGBA")
+    image.alpha_composite(overlay)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.convert("RGB").save(output_path, "PNG", optimize=True)
+
+    if len(slide_preview_points) > MAX_SLIDE_PREVIEW_POINTS:
+        step = max(1, len(slide_preview_points) // MAX_SLIDE_PREVIEW_POINTS)
+        slide_preview_points = slide_preview_points[::step][:MAX_SLIDE_PREVIEW_POINTS]
+
+    return {
+        "overlay_mode": False,
+        "slide_mode": True,
+        "slide_id": slide_id,
+        "width": width,
+        "height": height,
+        "coordinate_space": "slide_canvas_normalized",
+        "source": "tracking_points.metadata_json",
+        "renderer": "pillow_slide_density_v1",
+        "point_count": len(image_points),
+        "slide_preview_points": slide_preview_points,
+        "skipped_points_without_slide_coordinates": skipped,
+    }
+
+
 def _snapshot_exists(session_id: str) -> bool:
     image_path, metadata_path = snapshot_paths(session_id)
     return image_path.is_file() and metadata_path.is_file()
@@ -256,6 +360,7 @@ async def generate_heatmap_for_session(
     db: AsyncSession,
     session_id: str,
     aoi_key: str | None = None,
+    slide_id: str | None = None,
     debug: bool = False,
 ) -> Heatmap:
     result = await db.execute(select(Session.session_id).where(Session.session_id == session_id))
@@ -264,33 +369,38 @@ async def generate_heatmap_for_session(
 
     now = datetime.now(timezone.utc)
     heatmap = Heatmap(
-        heatmap_id=_heatmap_id(session_id, aoi_key),
+        heatmap_id=_heatmap_id(session_id, aoi_key, slide_id=slide_id),
         session_id=session_id,
         aoi_key=aoi_key,
         status="pending",
         point_count=0,
         generated_at=now,
-        metadata_json={"source": "tracking_points"},
+        metadata_json={"source": "tracking_points", "slide_id": slide_id},
     )
     db.add(heatmap)
     await db.flush()
 
-    points = await _load_points(db, session_id, aoi_key)
+    points = await _load_points(db, session_id, aoi_key, slide_id=slide_id)
     if not points:
         heatmap.status = "failed"
-        heatmap.error_message = "No tracking_points found for this session/AOI."
+        heatmap.error_message = "No tracking_points found for this session/slide/AOI."
         heatmap.generated_at = datetime.now(timezone.utc)
         await db.flush()
         return heatmap
 
-    overlay_available = _snapshot_exists(session_id)
+    overlay_available = _snapshot_exists(session_id) and not slide_id
     prefix = "heatmap_overlay_debug" if debug else "heatmap_overlay"
-    if overlay_available:
+    if slide_id:
+        filename = f"heatmap_slide_{_safe_slug(session_id)}_{_safe_slug(slide_id)}_{_safe_slug(aoi_key)}.png"
+    elif overlay_available:
         filename = f"{prefix}_{_safe_slug(session_id)}_{_safe_slug(aoi_key)}.png"
     else:
         filename = f"heatmap_{_safe_slug(session_id)}_{_safe_slug(aoi_key)}.png"
     output_path = HEATMAP_DIR / filename
-    metadata = _render_overlay_heatmap(session_id, points, output_path, debug=debug) if overlay_available else None
+    if slide_id:
+        metadata = _render_slide_heatmap(points, output_path, slide_id=slide_id)
+    else:
+        metadata = _render_overlay_heatmap(session_id, points, output_path, debug=debug) if overlay_available else None
     if metadata is None:
         metadata = _render_heatmap(points, output_path)
         metadata["overlay_mode"] = False
@@ -329,6 +439,26 @@ async def list_heatmaps_for_session(db: AsyncSession, session_id: str) -> list[H
         .order_by(Heatmap.generated_at.desc(), Heatmap.heatmap_id.desc())
     )
     return list(result.scalars().all())
+
+
+async def generate_slide_heatmaps_for_session(db: AsyncSession, session_id: str) -> list[Heatmap]:
+    result = await db.execute(select(Session.session_id).where(Session.session_id == session_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Session không tồn tại")
+
+    result = await db.execute(
+        select(distinct(TrackingPoint.metadata_json["slide_id"].astext))
+        .where(TrackingPoint.session_id == session_id)
+        .where(TrackingPoint.metadata_json["slide_id"].astext.is_not(None))
+    )
+    slide_ids = sorted(slide_id for slide_id in result.scalars().all() if slide_id)
+
+    heatmaps = []
+    for slide_id in slide_ids:
+        heatmap = await generate_heatmap_for_session(db, session_id=session_id, slide_id=slide_id)
+        if heatmap.status == "done":
+            heatmaps.append(heatmap)
+    return heatmaps
 
 
 async def get_heatmap_by_id(db: AsyncSession, heatmap_id: str) -> Heatmap:

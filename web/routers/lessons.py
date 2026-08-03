@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
-from web.models import AOIDefinition, Lesson
+from web.authz import current_user_from_cookie, ensure_student_can_access_lesson, normalize_role, require_admin_user, require_role, teacher_can_access_lesson
+from web.models import AOIDefinition, Lesson, User
 from web.schemas import AOIDefinitionOut
 from web.services.page_snapshot_service import snapshot_paths
 
@@ -53,6 +54,19 @@ async def _list_aois(lesson_id: str, db: AsyncSession) -> list[AOIDefinition]:
     return list(result.scalars().all())
 
 
+async def _ensure_can_read_lesson(db: AsyncSession, user: User, lesson_id: str) -> None:
+    role = normalize_role(user.role)
+    if role == "admin":
+        await _get_lesson_or_404(lesson_id, db)
+        return
+    if role == "teacher" and await teacher_can_access_lesson(db, user, lesson_id):
+        return
+    if role == "student":
+        await ensure_student_can_access_lesson(db, user, lesson_id)
+        return
+    raise HTTPException(status_code=403, detail="Bạn không có quyền xem bài học này")
+
+
 async def _seed_demo_aois(lesson_id: str, db: AsyncSession) -> list[AOIDefinition]:
     lesson = await _get_lesson_or_404(lesson_id, db)
     layout_version = lesson.layout_version or "v1"
@@ -94,28 +108,60 @@ async def _seed_demo_aois(lesson_id: str, db: AsyncSession) -> list[AOIDefinitio
 
 
 @router.get("/lessons/{lesson_id}/aois", response_model=list[AOIDefinitionOut])
-async def get_lesson_aois(lesson_id: str, db: AsyncSession = Depends(get_db)):
+async def get_lesson_aois(
+    lesson_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_can_read_lesson(db, user, lesson_id)
     return await _list_aois(lesson_id, db)
 
 
 @router.post("/lessons/{lesson_id}/aois/seed-demo", response_model=list[AOIDefinitionOut])
-async def seed_lesson_demo_aois(lesson_id: str, db: AsyncSession = Depends(get_db)):
+async def seed_lesson_demo_aois(
+    lesson_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_user(user)
     return await _seed_demo_aois(lesson_id, db)
 
 
 @router.get("/lectures/{lecture_id}/aois", response_model=list[AOIDefinitionOut])
-async def get_lecture_aois_alias(lecture_id: str, db: AsyncSession = Depends(get_db)):
+async def get_lecture_aois_alias(
+    lecture_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    await _ensure_can_read_lesson(db, user, lecture_id)
     return await _list_aois(lecture_id, db)
 
 
 @router.post("/lectures/{lecture_id}/aois/seed-demo", response_model=list[AOIDefinitionOut])
-async def seed_lecture_demo_aois_alias(lecture_id: str, db: AsyncSession = Depends(get_db)):
+async def seed_lecture_demo_aois_alias(
+    lecture_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    require_admin_user(user)
     return await _seed_demo_aois(lecture_id, db)
 
 
 @router.get("/lessons/{lesson_id}/sessions")
-async def list_lesson_sessions(lesson_id: str, db: AsyncSession = Depends(get_db)):
+async def list_lesson_sessions(
+    lesson_id: str,
+    include_test: bool = Query(default=False),
+    q: str | None = Query(default=None, max_length=120),
+    status: str | None = Query(default=None, pattern="^(open|finished)?$"),
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
     await _get_lesson_or_404(lesson_id, db)
+    role = require_role(user, {"teacher", "admin"})
+    if role == "teacher" and not await teacher_can_access_lesson(db, user, lesson_id):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xem danh sách phiên học")
+    if role != "admin":
+        include_test = False
     tracking_points_count = (
         "(select count(*) from tracking_points tp where tp.session_id = s.session_id)"
         if await _table_exists(db, "tracking_points")
@@ -143,17 +189,37 @@ async def list_lesson_sessions(lesson_id: str, db: AsyncSession = Depends(get_db
                 s.ended_at,
                 s.viewport_w,
                 s.viewport_h,
+                coalesce(s.session_type, 'legacy_unknown') as session_type,
+                s.created_by_role,
                 {tracking_points_count} as tracking_points_count,
                 {metrics_count} as metrics_count,
                 {heatmaps_count} as heatmaps_count
             from sessions s
             left join users u on u.user_id = s.user_id
             where s.lesson_id = :lesson_id
+              and (:include_test or s.session_type = 'student_learning')
+              and (
+                :q = ''
+                or lower(s.session_id) like :q_like
+                or lower(coalesce(u.full_name, '')) like :q_like
+                or lower(coalesce(u.student_code, '')) like :q_like
+              )
+              and (
+                :status = ''
+                or (:status = 'open' and s.ended_at is null)
+                or (:status = 'finished' and s.ended_at is not null)
+              )
             order by s.started_at desc nulls last
             limit 100
             """
         ),
-        {"lesson_id": lesson_id},
+        {
+            "lesson_id": lesson_id,
+            "include_test": include_test,
+            "q": (q or "").strip().lower(),
+            "q_like": f"%{(q or '').strip().lower()}%",
+            "status": status or "",
+        },
     )
 
     sessions = []

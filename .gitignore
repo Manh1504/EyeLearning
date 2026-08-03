@@ -1,10 +1,13 @@
 .env
 .venv/
+node_modules/
+dist/
 data.sql
 __pycache__/
 *.pyc
 .DS_Store
 data/outputs/
+backups/
 Gaze-Estimation/weights/
 *.pt
 *.pth
