@@ -1,6 +1,7 @@
 // Port từ static/js/gaze_client.js. Nhận refs {video, canvas, dot} + callbacks
 // setStatus/setAiStatus/getSessionContext để tách khỏi DOM toàn cục.
 import { apiUrl, loadClientConfig } from "./api.js";
+import { mapViewportPointToPdfPage } from "./pdfTrackingMapping.js";
 
 const GAZE_INTERVAL_MS = 100;   // 10Hz — tăng từ 200ms (5Hz) cho mượt hơn.
                                  // An toàn vì waitingForInference tự throttle theo
@@ -10,6 +11,9 @@ const CHUNK_INTERVAL_MS = 2000;
 const MAX_CHUNK_POINTS = 30;    // ở 10Hz, 2s window ~20 điểm — vẫn dưới ngưỡng này,
                                  // không cần đổi (chunk vẫn flush theo timer, không bị
                                  // flush sớm do đầy buffer).
+const RELIABLE_REGION_INSET_X = 0.12;
+const RELIABLE_REGION_INSET_TOP = 0.12;
+const RELIABLE_REGION_INSET_BOTTOM = 0.12;
 
 function cameraErrorMessage(error) {
   const name = error?.name || "";
@@ -25,7 +29,7 @@ function cameraErrorMessage(error) {
   return error?.message || "Không thể mở camera.";
 }
 
-export function createGazeClient({ refs, getContext, setStatus, setAiStatus, calibrationReady, calibrationMessage }) {
+export function createGazeClient({ refs, getContext, setStatus, setAiStatus, calibrationReady, calibrationMessage, setTrackingState }) {
   let stream = null;
   let ws = null;
   let running = false;
@@ -84,7 +88,19 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
   }
 
   function lessonPointMetadata(viewportX, viewportY, zoneEl) {
+    const pdfContext = window.__ELA_PDF_CONTEXT__ || null;
     const lessonContext = window.__ELA_LESSON_CONTEXT__ || {};
+    const pageRects = [...document.querySelectorAll("[data-page-number][data-zone='pdf_page']")].map((page) => {
+      const rect = page.getBoundingClientRect();
+      return { pageNumber: page.dataset.pageNumber, left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    });
+    const pageMatch = mapViewportPointToPdfPage(viewportX, viewportY, pageRects, {
+      isTransitioning: Boolean(pdfContext?.isTransitioning || lessonContext.isTransitioning),
+      isResizing: Boolean(pdfContext?.isResizing),
+      isRendering: Boolean(pdfContext?.isRendering),
+    });
+    const inPdfPage = !pageMatch.ignored;
+
     const slideCanvas = document.querySelector(".slide-canvas");
     const rect = slideCanvas?.getBoundingClientRect();
     const hasSlideRect = rect && rect.width > 0 && rect.height > 0;
@@ -98,14 +114,21 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       slideYNorm <= 1
     );
     const inReliableRegion =
-      viewportX >= window.innerWidth * 0.1 &&
-      viewportX <= window.innerWidth * 0.9 &&
-      viewportY >= window.innerHeight * 0.12 &&
-      viewportY <= window.innerHeight * 0.88;
+      viewportX >= window.innerWidth * RELIABLE_REGION_INSET_X &&
+      viewportX <= window.innerWidth * (1 - RELIABLE_REGION_INSET_X) &&
+      viewportY >= window.innerHeight * RELIABLE_REGION_INSET_TOP &&
+      viewportY <= window.innerHeight * (1 - RELIABLE_REGION_INSET_BOTTOM);
 
     return {
       slide_id: lessonContext.slideId || null,
-      course_id: lessonContext.courseId || null,
+      course_id: pdfContext?.courseId || lessonContext.courseId || null,
+      course_item_id: pdfContext?.courseItemId || null,
+      pdf_lesson_id: pdfContext?.pdfLessonId || null,
+      page_number: inPdfPage ? pageMatch.pageNumber : null,
+      page_x_normalized: inPdfPage ? pageMatch.pageXNormalized : null,
+      page_y_normalized: inPdfPage ? pageMatch.pageYNormalized : null,
+      page_display_width: inPdfPage ? pageMatch.pageDisplayWidth : null,
+      page_display_height: inPdfPage ? pageMatch.pageDisplayHeight : null,
       module_id: lessonContext.moduleId || null,
       activity_id: lessonContext.activityId || null,
       content_version_id: lessonContext.contentVersionId || null,
@@ -124,10 +147,11 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
           }
         : null,
       in_slide_canvas: inSlideCanvas,
+      in_pdf_page: inPdfPage,
       in_reliable_region: inReliableRegion,
-      is_transitioning: Boolean(lessonContext.isTransitioning),
-      ui_interaction: Boolean(zoneEl && !["transcript_panel", "video_area", "quiz_area"].includes(zoneEl.dataset.zone)),
-      target_zone: zoneEl?.dataset.zone || null,
+      is_transitioning: Boolean(pdfContext?.isTransitioning || lessonContext.isTransitioning || pageMatch.ignored),
+      ui_interaction: Boolean(zoneEl && zoneEl.dataset.zone !== "pdf_page"),
+      target_zone: inPdfPage ? "pdf_page" : zoneEl?.dataset.zone || null,
     };
   }
 
@@ -147,6 +171,9 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       session_id: ctx.session_id,
       lesson_id: ctx.lesson_id,
       course_id: ctx.course_id || metadata.course_id || null,
+      course_item_id: ctx.course_item_id || metadata.course_item_id || null,
+      pdf_lesson_id: ctx.pdf_lesson_id || metadata.pdf_lesson_id || null,
+      test_id: ctx.test_id || null,
       module_id: ctx.module_id || metadata.module_id || null,
       activity_id: ctx.activity_id || metadata.activity_id || null,
       content_version_id: ctx.content_version_id || metadata.content_version_id || null,
@@ -167,6 +194,11 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       stimulus_top: metadata.stimulus_bounds?.top ?? null,
       stimulus_width: metadata.stimulus_bounds?.width ?? null,
       stimulus_height: metadata.stimulus_bounds?.height ?? null,
+      page_number: metadata.page_number,
+      page_x_normalized: metadata.page_x_normalized,
+      page_y_normalized: metadata.page_y_normalized,
+      page_display_width: metadata.page_display_width,
+      page_display_height: metadata.page_display_height,
       tracking_quality: metadata.in_reliable_region ? "reliable" : "outside_reliable_region",
       screen_x: typeof window.screenX === "number" ? window.screenX + viewportX : null,
       screen_y: typeof window.screenY === "number" ? window.screenY + viewportY : null,
@@ -243,7 +275,8 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
     }
 
     if (!response.ok) {
-      setStatus(`Gaze save failed ${saveTarget} ${response.status}: ${responseText || response.statusText}`, "error");
+      setTrackingState?.("SAVE_FAILED");
+      setStatus("Không thể gửi một phần dữ liệu eye-tracking. Hệ thống sẽ dừng ghi cho đến khi bạn thử lại.", "error");
       return;
     }
 
@@ -274,35 +307,54 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
     if (running) return;
     const ctx = getContext();
     if (!ctx.session_id) {
-      setStatus("Chưa có phiên học để ghi nhận camera.", "error");
-      return;
+      const error = new Error("Chưa có phiên học để ghi nhận camera.");
+      setStatus(error.message, "error");
+      throw error;
     }
     if (!calibrationReady()) {
-      setStatus(calibrationMessage(), "error");
-      return;
+      const error = new Error(calibrationMessage());
+      setStatus(error.message, "error");
+      throw error;
     }
 
     const aiOk = await checkAi();
     if (!aiOk) {
-      setStatus("Chưa kết nối được dịch vụ eye-tracking.", "error");
-      return;
+      const error = new Error("Chưa kết nối được dịch vụ eye-tracking.");
+      setStatus(error.message, "error");
+      throw error;
     }
 
     try {
       const cfg = await loadClientConfig();
+      setTrackingState?.("PREPARING");
       setStatus("Đang mở camera...");
       await startCamera();
+      setTrackingState?.("CONNECTING");
       setStatus("Đang kết nối eye-tracking...");
       const separator = cfg.ai_ws_url.includes("?") ? "&" : "?";
       ws = new WebSocket(`${cfg.ai_ws_url}${separator}session_id=${encodeURIComponent(ctx.session_id)}`);
 
-	    ws.addEventListener("open", () => {
+      await new Promise((resolve, reject) => {
+        ws.addEventListener("open", () => {
 	        running = true;
 	        resetSequenceForRun();
+          setTrackingState?.("ACTIVE");
 	        setStatus("Đang ghi nhận ánh nhìn.", "ok");
 	        frameTimer = window.setInterval(sendFrame, GAZE_INTERVAL_MS);
 	        chunkTimer = window.setInterval(sendChunk, CHUNK_INTERVAL_MS);
-	      });
+          resolve();
+	      }, { once: true });
+
+	      ws.addEventListener("error", () => {
+	        setTrackingState?.("FAILED");
+	        setStatus("Không thể kết nối eye-tracking.", "error");
+          reject(new Error("Không thể kết nối eye-tracking."));
+	      }, { once: true });
+
+        ws.addEventListener("close", () => {
+          if (!running) reject(new Error("Không thể kết nối eye-tracking."));
+        }, { once: true });
+      });
 
       ws.addEventListener("message", (event) => {
         waitingForInference = false;
@@ -317,32 +369,34 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       });
 
 	    ws.addEventListener("close", () => {
-	        if (running) setStatus("Kết nối eye-tracking đã dừng.", "error");
-	        stopGaze();
-	      });
-
-	      ws.addEventListener("error", () => {
-	        setStatus("Không thể kết nối eye-tracking.", "error");
-	        stopGaze();
+	        if (running) {
+            setTrackingState?.("FAILED");
+            setStatus("Kết nối eye-tracking đã dừng.", "error");
+          }
+	        stopGaze("FAILED");
 	      });
 	    } catch (error) {
-	      setStatus(cameraErrorMessage(error), "error");
-	      stopGaze();
+      setTrackingState?.("FAILED");
+      const message = error?.message === "Không thể kết nối eye-tracking." ? error.message : cameraErrorMessage(error);
+	      setStatus(message, "error");
+	      await stopGaze("FAILED");
+      throw error;
 	    }
   }
 
-  async function stopGaze() {
+  async function stopGaze(nextState = "PAUSED") {
     running = false;
     waitingForInference = false;
     if (frameTimer) window.clearInterval(frameTimer);
     if (chunkTimer) window.clearInterval(chunkTimer);
     frameTimer = null;
     chunkTimer = null;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close();
     ws = null;
     stopCamera();
     updateDebugDot(null);
     await sendChunk().catch(() => {});
+    setTrackingState?.(nextState);
   }
 
   function setDebugDotVisible(visible) {
@@ -354,5 +408,9 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
     stopGaze().catch(() => {});
   }
 
-  return { checkAi, startGaze, stopGaze, setDebugDotVisible, destroy };
+  function isRunning() {
+    return running;
+  }
+
+  return { checkAi, startGaze, stopGaze, setDebugDotVisible, destroy, isRunning };
 }

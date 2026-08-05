@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from web.config import client_config, cloudinary_status
+from web.config import backend_ai_http_url, cloudinary_status
 from web.authz import current_user_from_cookie, require_admin_user
 from web.database import get_db
 from web.services.page_snapshot_service import PAGE_SNAPSHOT_DIR, snapshot_paths
@@ -46,6 +46,30 @@ async def _count_users_by_role(db: AsyncSession, role: str) -> int | None:
     return int(result.scalar_one())
 
 
+async def _count_unclassified_users(db: AsyncSession) -> int | None:
+    if not await _table_exists(db, "users"):
+        return None
+    result = await db.execute(text("select count(*) from users where role is null or role not in ('student', 'teacher', 'admin')"))
+    return int(result.scalar_one())
+
+
+async def _count_tracking_points_today(db: AsyncSession) -> int | None:
+    if not await _table_exists(db, "tracking_points") or not await _table_exists(db, "sessions"):
+        return None
+    result = await db.execute(
+        text(
+            """
+            select count(*)
+            from tracking_points tp
+            join sessions s on s.session_id = tp.session_id
+            where coalesce(s.session_type, 'student_learning') = 'student_learning'
+              and s.started_at >= date_trunc('day', now())
+            """
+        )
+    )
+    return int(result.scalar_one())
+
+
 def _page_snapshot_count() -> int:
     if not PAGE_SNAPSHOT_DIR.is_dir():
         return 0
@@ -53,7 +77,7 @@ def _page_snapshot_count() -> int:
 
 
 def _ai_service_status() -> dict:
-    url = f"{client_config()['ai_http_url']}/health_check"
+    url = f"{backend_ai_http_url()}/health_check"
     try:
         with urlopen(url, timeout=1.5) as response:
             return {"ok": 200 <= response.status < 300, "url": url}
@@ -84,15 +108,23 @@ async def admin_overview(
             if await _table_exists(db, "heatmaps")
             else "0"
         )
+        course_item_join = "left join course_items ci on ci.course_item_id = s.course_item_id" if await _table_exists(db, "course_items") else ""
+        course_item_title = "ci.title" if course_item_join else "null"
         result = await db.execute(
             text(
                 f"""
                 select
                     s.session_id,
                     s.lesson_id,
+                    s.status,
+                    s.course_id,
+                    s.course_item_id,
+                    s.pdf_lesson_id,
+                    s.pdf_document_version,
                     s.user_id,
                     u.full_name,
                     u.student_code,
+                    {course_item_title} as item_title,
                     s.started_at,
                     s.ended_at,
                     s.viewport_w,
@@ -104,6 +136,7 @@ async def admin_overview(
                     {heatmaps_count} as heatmaps_count
                 from sessions s
                 left join users u on u.user_id = s.user_id
+                {course_item_join}
                 order by s.started_at desc nulls last
                 limit 50
                 """
@@ -127,11 +160,14 @@ async def admin_overview(
             "users": await _count_table(db, "users"),
             "teachers": await _count_users_by_role(db, "teacher"),
             "students": await _count_users_by_role(db, "student"),
+            "admins": await _count_users_by_role(db, "admin"),
+            "unclassified_users": await _count_unclassified_users(db),
             "lessons": await _count_table(db, "lessons"),
             "sessions": await _count_official_sessions(db),
             "admin_test_sessions": await _count_admin_test_sessions(db),
             "gaze_chunks": await _count_table(db, "gaze_chunks"),
             "tracking_points": await _count_table(db, "tracking_points"),
+            "tracking_points_today": await _count_tracking_points_today(db),
             "aoi_metrics": await _count_table(db, "aoi_metrics"),
             "heatmaps": await _count_table(db, "heatmaps"),
             "page_snapshots": _page_snapshot_count(),

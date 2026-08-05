@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth.jsx";
-import { LESSON_ID, setSessionContext } from "../lib/session.js";
+import { setSessionContext } from "../lib/session.js";
 
 function normalizeCode(value) {
   return value.trim().replace(/\s+/g, "_");
@@ -35,14 +35,13 @@ function CheckIcon(props) {
 }
 
 const benefits = [
-  "Học qua slide có theo dõi ánh nhìn.",
-  "Lưu và tái sử dụng hồ sơ hiệu chỉnh.",
-  "Phân tích mức độ chú ý theo nội dung.",
+  "Theo dõi điểm nhìn trong quá trình học.",
+  "Tái sử dụng hồ sơ hiệu chỉnh.",
+  "Phân tích mức độ chú ý theo từng trang.",
 ];
 
 const heroStatuses = [
-  { label: "Slide 03", value: "Đang xem" },
-  { label: "Theo dõi ánh nhìn", value: "Ổn định" },
+  { label: "Theo dõi", value: "Ổn định" },
   { label: "Hiệu chỉnh", value: "Sẵn sàng" },
 ];
 
@@ -69,7 +68,7 @@ export default function LoginPage() {
       return;
     }
 
-    ["session_id", "course_id", "module_id", "activity_id", "content_version_id", "calibration_ready"].forEach((key) => {
+    ["session_id", "course_id", "course_item_id", "pdf_lesson_id", "test_id", "module_id", "activity_id", "content_version_id", "calibration_ready"].forEach((key) => {
       localStorage.removeItem(key);
     });
     setSubmitting(true);
@@ -84,7 +83,6 @@ export default function LoginPage() {
         role: user.role,
         full_name: user.full_name || "",
         student_code: user.student_code || "",
-        lesson_id: LESSON_ID,
       });
 
       if (user.role === "teacher") {
@@ -120,7 +118,7 @@ export default function LoginPage() {
             <p className="auth-kicker">Nền tảng học tập có eye-tracking</p>
             <h1>Hiểu cách người học<br />tương tác với bài giảng</h1>
             <p>
-              Học qua slide tương tác, lưu hồ sơ hiệu chỉnh và phân tích cách người học tập trung vào từng nội dung.
+              Học qua tài liệu, theo dõi mức độ tập trung và phân tích cách người học tương tác với từng nội dung.
             </p>
 
             <div className="auth-hero-card" aria-hidden="true">
@@ -128,10 +126,10 @@ export default function LoginPage() {
                 <article className="auth-slide-mockup">
                   <div className="auth-slide-header">
                     <div>
-                      <span className="auth-slide-eyebrow">Bài giảng tương tác</span>
-                      <strong>Giới thiệu chương học</strong>
+                      <span className="auth-slide-eyebrow">Tài liệu học tập</span>
+                      <strong>Nội dung bài học PDF</strong>
                     </div>
-                    <span className="auth-slide-badge">Slide 03</span>
+                    <span className="auth-slide-badge">Trang 03</span>
                   </div>
                   <div className="auth-slide-content">
                     <div className="auth-slide-text-block auth-slide-text-block--lg" />
@@ -177,7 +175,7 @@ export default function LoginPage() {
           <div className="auth-layout__form-inner">
             <div className="auth-form-header">
               <h2>Chào mừng quay lại</h2>
-              <p>Đăng nhập để tiếp tục sử dụng ELA.</p>
+              <p>Đăng nhập để tiếp tục học tập trên ELA.</p>
             </div>
 
             <form className="form-stack" onSubmit={handleSubmit}>
@@ -241,7 +239,7 @@ export default function LoginPage() {
               </div>
 
               <p className="auth-support">
-                Không thể đăng nhập? <a href="mailto:support@ela.edu.vn?subject=ELA%20-%20Ho%20tro%20tai%20khoan">Liên hệ quản trị viên</a> hoặc giảng viên phụ trách lớp.
+                Cần hỗ trợ đăng nhập? <a href="mailto:support@ela.edu.vn?subject=ELA%20-%20Ho%20tro%20tai%20khoan">Liên hệ quản trị viên.</a>
               </p>
             </form>
           </div>

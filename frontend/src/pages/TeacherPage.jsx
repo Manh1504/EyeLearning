@@ -1,63 +1,57 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
 import { AppHeader } from "../components/AppShell.jsx";
 import { TeacherLayout } from "../components/Layouts.jsx";
 import { apiUrl, requestJson } from "../lib/api.js";
+import { itemTypeLabel } from "../lib/coursePresentation.js";
 
-function formatDate(value) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+function toLocalInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+  const adjusted = new Date(date.getTime() - offset * 60000);
+  return adjusted.toISOString().slice(0, 16);
 }
 
-function learnerLabel(session) {
-  const name = session.full_name || "Người học";
-  return session.student_code ? `${name} (${session.student_code})` : name;
+function fromLocalInput(value) {
+  return value ? new Date(value).toISOString() : null;
 }
 
 export default function TeacherPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [lesson, setLesson] = useState(searchParams.get("lesson") || localStorage.getItem("lesson_id") || "L001");
-  const [query, setQuery] = useState(searchParams.get("q") || "");
-  const [sessionStatus, setSessionStatus] = useState(searchParams.get("status") || "");
   const [courses, setCourses] = useState([]);
-  const [sessions, setSessions] = useState([]);
-  const [summary, setSummary] = useState("Đang tải phiên học...");
-  const [status, setStatusState] = useState({ message: "", kind: "" });
+  const [selectedCourseId, setSelectedCourseId] = useState("");
+  const [course, setCourse] = useState(null);
+  const [status, setStatus] = useState({ message: "", kind: "" });
   const [loading, setLoading] = useState(false);
-
-  const setStatus = (message, kind = "") => setStatusState({ message, kind });
+  const [uploading, setUploading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [uploadForm, setUploadForm] = useState({
+    title: "",
+    description: "",
+    is_enabled: true,
+    available_from: "",
+    available_until: "",
+    file: null,
+  });
 
   async function loadCourses() {
     try {
       const data = await requestJson(apiUrl("/courses/my"));
-      const lessons = data.filter((course) => course.lesson_id);
-      setCourses(lessons);
-      if (lessons.length && !lessons.some((course) => course.lesson_id === lesson)) {
-        setLesson(lessons[0].lesson_id);
-      }
+      setCourses(data);
+      if (!selectedCourseId && data[0]?.course_id) setSelectedCourseId(data[0].course_id);
     } catch (error) {
-      setCourses([]);
-      setStatus(`Không thể tải khóa học được phân công: ${error.message}`, "error");
+      setStatus({ message: `Không thể tải khóa học: ${error.message}`, kind: "error" });
     }
   }
 
-  async function loadSessions() {
-    localStorage.setItem("lesson_id", lesson);
+  async function loadCourse(courseId) {
+    if (!courseId) return;
     setLoading(true);
-    setStatus("Đang tải phiên học...");
     try {
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (sessionStatus) params.set("status", sessionStatus);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      const data = await requestJson(apiUrl(`/lessons/${encodeURIComponent(lesson)}/sessions${suffix}`));
-      setSessions(data);
-      setSummary(`${data.length} phiên học phù hợp`);
-      setStatus("Đã tải phiên học.", "ok");
+      const data = await requestJson(apiUrl(`/courses/${encodeURIComponent(courseId)}`));
+      setCourse(data);
+      setSelectedIds([]);
     } catch (error) {
-      setSessions([]);
-      setSummary("Chưa tải được danh sách phiên học.");
-      setStatus(`Không thể tải phiên học: ${error.message}`, "error");
+      setStatus({ message: `Không thể tải chi tiết khóa học: ${error.message}`, kind: "error" });
     } finally {
       setLoading(false);
     }
@@ -65,209 +59,223 @@ export default function TeacherPage() {
 
   useEffect(() => {
     loadCourses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    loadSessions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson, sessionStatus]);
+    loadCourse(selectedCourseId);
+  }, [selectedCourseId]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const next = new URLSearchParams();
-      if (lesson) next.set("lesson", lesson);
-      if (query.trim()) next.set("q", query.trim());
-      if (sessionStatus) next.set("status", sessionStatus);
-      setSearchParams(next, { replace: true });
-      loadSessions();
-    }, 350);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
-
-  useEffect(() => {
-    const next = new URLSearchParams();
-    if (lesson) next.set("lesson", lesson);
-    if (query.trim()) next.set("q", query.trim());
-    if (sessionStatus) next.set("status", sessionStatus);
-    setSearchParams(next, { replace: true });
-  }, [lesson, query, sessionStatus, setSearchParams]);
-
-  function clearFilters() {
-    setQuery("");
-    setSessionStatus("");
+  async function uploadPdfLesson(event) {
+    event.preventDefault();
+    if (!selectedCourseId || !uploadForm.file) return;
+    setUploading(true);
+    setStatus({ message: "Đang upload PDF lesson...", kind: "" });
+    try {
+      const form = new FormData();
+      form.append("title", uploadForm.title.trim());
+      form.append("description", uploadForm.description.trim());
+      form.append("is_enabled", String(uploadForm.is_enabled));
+      if (uploadForm.available_from) form.append("available_from", fromLocalInput(uploadForm.available_from));
+      if (uploadForm.available_until) form.append("available_until", fromLocalInput(uploadForm.available_until));
+      form.append("file", uploadForm.file);
+      await requestJson(apiUrl(`/courses/${encodeURIComponent(selectedCourseId)}/lessons/pdf`), {
+        method: "POST",
+        body: form,
+      });
+      setUploadForm({ title: "", description: "", is_enabled: true, available_from: "", available_until: "", file: null });
+      setStatus({ message: "Đã tạo PDF lesson.", kind: "ok" });
+      await loadCourse(selectedCourseId);
+    } catch (error) {
+      setStatus({ message: `Không thể upload PDF lesson: ${error.message}`, kind: "error" });
+    } finally {
+      setUploading(false);
+    }
   }
 
-  const totals = sessions.reduce(
-    (acc, session) => ({
-      points: acc.points + (session.tracking_points_count ?? 0),
-      metrics: acc.metrics + (session.metrics_count ?? 0),
-      heatmaps: acc.heatmaps + (session.heatmaps_count ?? 0),
-      snapshots: acc.snapshots + (session.snapshot_captured ? 1 : 0),
-    }),
-    { points: 0, metrics: 0, heatmaps: 0, snapshots: 0 }
-  );
+  async function updateItem(item, patch) {
+    try {
+      await requestJson(apiUrl(`/courses/${encodeURIComponent(selectedCourseId)}/items/${encodeURIComponent(item.course_item_id)}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      await loadCourse(selectedCourseId);
+    } catch (error) {
+      setStatus({ message: `Không thể cập nhật item: ${error.message}`, kind: "error" });
+    }
+  }
 
-  const activeSessions = sessions.filter((session) => !session.ended_at).length;
-  const latestSessions = sessions.slice(0, 6);
-  const fromTeacher = `/teacher?${searchParams.toString()}#sessions`;
+  async function deleteItem(item) {
+    try {
+      await requestJson(apiUrl(`/courses/${encodeURIComponent(selectedCourseId)}/items/${encodeURIComponent(item.course_item_id)}`), {
+        method: "DELETE",
+      });
+      setStatus({ message: "Đã xóa item.", kind: "ok" });
+      await loadCourse(selectedCourseId);
+    } catch (error) {
+      setStatus({ message: `Không thể xóa item: ${error.message}`, kind: "error" });
+    }
+  }
+
+  async function moveItem(itemId, direction) {
+    if (!course) return;
+    const items = [...course.items];
+    const index = items.findIndex((item) => item.course_item_id === itemId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return;
+    const [current] = items.splice(index, 1);
+    items.splice(nextIndex, 0, current);
+    try {
+      await requestJson(apiUrl(`/courses/${encodeURIComponent(selectedCourseId)}/items/reorder`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_ids: items.map((item) => item.course_item_id) }),
+      });
+      await loadCourse(selectedCourseId);
+    } catch (error) {
+      setStatus({ message: `Không thể sắp xếp item: ${error.message}`, kind: "error" });
+    }
+  }
+
+  async function bulkAction(action) {
+    if (!selectedIds.length) return;
+    try {
+      const body = { item_ids: selectedIds, action };
+      if (action === "set_availability") {
+        const first = course.items.find((item) => item.course_item_id === selectedIds[0]);
+        body.available_from = first?.available_from || null;
+        body.available_until = first?.available_until || null;
+      }
+      await requestJson(apiUrl(`/courses/${encodeURIComponent(selectedCourseId)}/items/bulk`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await loadCourse(selectedCourseId);
+    } catch (error) {
+      setStatus({ message: `Không thể chạy bulk action: ${error.message}`, kind: "error" });
+    }
+  }
+
+  function toggleSelection(courseItemId) {
+    setSelectedIds((current) => current.includes(courseItemId) ? current.filter((id) => id !== courseItemId) : [...current, courseItemId]);
+  }
+
+  const items = course?.items || [];
 
   return (
     <>
-    <AppHeader active="home" />
-    <TeacherLayout className="teacher-dashboard">
-      <div className="dashboard-workspace">
-        <header className="dashboard-hero">
-          <div>
-            <div className="course-kicker">Trực tiếp · lớp học · phân tích học tập</div>
-            <h1>Tổng quan lớp học</h1>
-            <p className="muted">
-              Theo dõi phiên học, tín hiệu tracking và dữ liệu heatmap mà không suy diễn năng lực cá nhân.
-            </p>
-          </div>
-          <div className="dashboard-filters">
-            <div className="field compact-field">
-              <label htmlFor="lessonSelect">Bài học</label>
-              <select id="lessonSelect" value={lesson} onChange={(e) => setLesson(e.target.value)}>
-                {courses.length === 0 && <option value={lesson}>{lesson}</option>}
-                {courses.map((course) => (
-                  <option key={course.lesson_id} value={course.lesson_id}>
-                    {course.lesson_id} · {course.lesson_title || course.course_title}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button className="btn" type="button" disabled={loading} onClick={loadSessions}>Làm mới</button>
-          </div>
-        </header>
-
-        <section className="dashboard-bento">
-          <article className="bento-tile bento-tile-hero">
-            <span>Phiên học</span>
-            <strong>{sessions.length}</strong>
-            <p>{summary}</p>
-          </article>
-          <article className="bento-tile">
-            <span>Đang mở</span>
-            <strong>{activeSessions}</strong>
-            <p>Phiên chưa kết thúc.</p>
-          </article>
-          <article className="bento-tile">
-            <span>Mẫu ánh nhìn</span>
-            <strong>{totals.points}</strong>
-            <p>Tổng điểm gaze đã ghi nhận.</p>
-          </article>
-          <article className="bento-tile">
-            <span>Bản đồ nhiệt</span>
-            <strong>{totals.heatmaps}</strong>
-            <p>{totals.snapshots} snapshot đã sẵn sàng.</p>
-          </article>
-        </section>
-
-        <section className="dashboard-grid">
-          <article className="panel signal-panel">
-            <div className="section-header">
-              <div>
-                <h2>Tín hiệu lớp học</h2>
-                <p className="muted">Tổng hợp từ dữ liệu thật của các phiên trong bài học.</p>
-              </div>
-            </div>
-            <div className="signal-bars">
-              <div style={{ "--value": `${Math.min(100, sessions.length * 12)}%` }}>
-                <span>Số phiên</span><strong>{sessions.length}</strong>
-              </div>
-              <div style={{ "--value": `${Math.min(100, totals.metrics * 8)}%` }}>
-                <span>Chỉ số vùng</span><strong>{totals.metrics}</strong>
-              </div>
-              <div style={{ "--value": `${sessions.length ? Math.round((totals.snapshots / sessions.length) * 100) : 0}%` }}>
-                <span>Tỷ lệ ảnh chụp</span><strong>{sessions.length ? Math.round((totals.snapshots / sessions.length) * 100) : 0}%</strong>
-              </div>
-            </div>
-          </article>
-
-          <article className="panel recent-panel">
-            <div className="section-header">
-              <div>
-                <h2>Phiên gần đây</h2>
-                <p className="muted">Mở analytics từ từng phiên học.</p>
-              </div>
-            </div>
-            <div className="compact-session-list">
-              {!latestSessions.length && <div className="empty-state">Chưa có phiên học cho bài này.</div>}
-              {latestSessions.map((session) => (
-                <Link className="compact-session-row" to={`/analytics?session_id=${encodeURIComponent(session.session_id)}&from=${encodeURIComponent(fromTeacher)}`} key={session.session_id}>
-                  <div>
-                    <strong>{learnerLabel(session)}</strong>
-                    <span>{formatDate(session.started_at)}</span>
-                  </div>
-                  <em>{session.tracking_points_count ?? 0} mẫu</em>
-                </Link>
-              ))}
-            </div>
-          </article>
-        </section>
-
-        <section className="panel" id="sessions">
-          <div className="section-header">
+      <AppHeader active="home" />
+      <TeacherLayout className="teacher-dashboard">
+        <div className="dashboard-workspace teacher-manager-page">
+          <header className="dashboard-hero">
             <div>
-              <h2>Tất cả phiên học</h2>
-              <p className="muted">{summary}</p>
+              <div className="course-kicker">Teacher course management</div>
+              <h1>Quản lý PDF lesson</h1>
+              <p className="muted">Tạo, thay PDF, bật tắt và sắp xếp course item theo mô hình MVP.</p>
             </div>
-            <button className="btn" type="button" disabled={loading} onClick={loadSessions}>Làm mới</button>
-          </div>
-          <div className="teacher-filter-row">
-            <div className="field compact-field">
-              <label htmlFor="teacherSessionSearch">Tìm học sinh hoặc mã phiên</label>
-              <input
-                id="teacherSessionSearch"
-                value={query}
-                placeholder="Tên, mã học sinh, S_..."
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-            <div className="field compact-field">
-              <label htmlFor="teacherSessionStatus">Trạng thái phiên</label>
-              <select id="teacherSessionStatus" value={sessionStatus} onChange={(event) => setSessionStatus(event.target.value)}>
-                <option value="">Tất cả</option>
-                <option value="open">Đang mở</option>
-                <option value="finished">Đã kết thúc</option>
-              </select>
-            </div>
-            <button className="btn secondary" type="button" disabled={!query && !sessionStatus} onClick={clearFilters}>Xóa bộ lọc</button>
-          </div>
-          <p className="result-count">{loading ? "Đang cập nhật..." : `${sessions.length} kết quả`}</p>
-          <div className="session-card-grid">
-            {!sessions.length && (
-              <div className="empty-state">
-                {query || sessionStatus
-                  ? "Không có phiên nào khớp bộ lọc hiện tại. Hãy xóa bộ lọc hoặc thử từ khóa khác."
-                  : "Chưa có phiên học cho bài này. Khi học sinh bắt đầu học, phiên sẽ xuất hiện tại đây."}
+            <div className="dashboard-filters">
+              <div className="field compact-field">
+                <label htmlFor="teacherCourseSelect">Khóa học</label>
+                <select id="teacherCourseSelect" value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)}>
+                  {courses.map((entry) => <option key={entry.course_id} value={entry.course_id}>{entry.course_title}</option>)}
+                </select>
               </div>
-            )}
-            {sessions.map((session) => (
-              <article className="session-card" key={session.session_id}>
-                <div>
-                  <h3>{session.session_id}</h3>
-                  <p className="muted">{learnerLabel(session)}</p>
-                </div>
-                <dl className="compact-facts">
-                  <div><dt>Bắt đầu</dt><dd>{formatDate(session.started_at)}</dd></div>
-                  <div><dt>Mẫu ánh nhìn</dt><dd>{session.tracking_points_count ?? 0}</dd></div>
-                  <div><dt>Chỉ số</dt><dd>{session.metrics_count ?? 0}</dd></div>
-                  <div><dt>Bản đồ nhiệt</dt><dd>{session.heatmaps_count ?? 0}</dd></div>
-                  <div><dt>Ảnh chụp</dt><dd>{session.snapshot_captured ? "Đã có" : "Thiếu"}</dd></div>
-                </dl>
-                <Link className="btn primary" to={`/analytics?session_id=${encodeURIComponent(session.session_id)}&from=${encodeURIComponent(fromTeacher)}`}>
-                  Mở phân tích
-                </Link>
-              </article>
-            ))}
-          </div>
+            </div>
+          </header>
+
+          <section className="panel teacher-upload-panel">
+            <div className="section-header">
+              <div>
+                <h2>Tạo PDF lesson</h2>
+                <p className="muted">Upload một file PDF cho mỗi lesson. PPTX không còn được hỗ trợ trực tiếp.</p>
+              </div>
+            </div>
+            <form className="teacher-upload-form" onSubmit={uploadPdfLesson}>
+              <div className="field compact-field">
+                <label htmlFor="lessonTitle">Tiêu đề</label>
+                <input id="lessonTitle" value={uploadForm.title} onChange={(event) => setUploadForm((current) => ({ ...current, title: event.target.value }))} required />
+              </div>
+              <div className="field compact-field">
+                <label htmlFor="lessonDescription">Mô tả</label>
+                <input id="lessonDescription" value={uploadForm.description} onChange={(event) => setUploadForm((current) => ({ ...current, description: event.target.value }))} />
+              </div>
+              <div className="field compact-field">
+                <label htmlFor="lessonFile">PDF</label>
+                <input id="lessonFile" type="file" accept="application/pdf,.pdf" onChange={(event) => setUploadForm((current) => ({ ...current, file: event.target.files?.[0] || null }))} required />
+              </div>
+              <div className="field compact-field">
+                <label htmlFor="lessonOpensAt">Mở từ</label>
+                <input id="lessonOpensAt" type="datetime-local" value={uploadForm.available_from} onChange={(event) => setUploadForm((current) => ({ ...current, available_from: event.target.value }))} />
+              </div>
+              <div className="field compact-field">
+                <label htmlFor="lessonClosesAt">Đóng lúc</label>
+                <input id="lessonClosesAt" type="datetime-local" value={uploadForm.available_until} onChange={(event) => setUploadForm((current) => ({ ...current, available_until: event.target.value }))} />
+              </div>
+              <label className="teacher-inline-toggle">
+                <input type="checkbox" checked={uploadForm.is_enabled} onChange={(event) => setUploadForm((current) => ({ ...current, is_enabled: event.target.checked }))} />
+                <span>Bật cho học viên</span>
+              </label>
+              <button className="btn primary" type="submit" disabled={uploading || !selectedCourseId}>
+                {uploading ? "Đang upload..." : "Tạo lesson"}
+              </button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="section-header">
+              <div>
+                <h2>Course items</h2>
+                <p className="muted">{loading ? "Đang tải..." : `${items.length} item`}</p>
+              </div>
+              <div className="table-actions">
+                <button className="btn text" type="button" onClick={() => setSelectedIds(items.map((item) => item.course_item_id))}>Chọn tất cả</button>
+                <button className="btn text" type="button" onClick={() => setSelectedIds([])}>Bỏ chọn</button>
+                <button className="btn secondary" type="button" disabled={!selectedIds.length} onClick={() => bulkAction("enable")}>Bật selected</button>
+                <button className="btn secondary" type="button" disabled={!selectedIds.length} onClick={() => bulkAction("disable")}>Tắt selected</button>
+              </div>
+            </div>
+            <div className="teacher-item-list">
+              {items.map((item, index) => (
+                <article className="teacher-item-row" key={item.course_item_id}>
+                  <label className="teacher-item-select">
+                    <input type="checkbox" checked={selectedIds.includes(item.course_item_id)} onChange={() => toggleSelection(item.course_item_id)} />
+                  </label>
+                  <div className="teacher-item-main">
+                    <div className="teacher-item-head">
+                      <strong>{item.title}</strong>
+                      <span>{itemTypeLabel(item.item_type)}</span>
+                      {item.pdf_lesson?.page_count ? <span>{item.pdf_lesson.page_count} trang</span> : null}
+                      {item.test?.question_count != null ? <span>{item.test.question_count} câu hỏi</span> : null}
+                    </div>
+                    <p className="muted">{item.description || "Không có mô tả."}</p>
+                    <div className="course-meta-badges">
+                      <span className="meta-badge">{item.availability_label}</span>
+                      {item.pdf_lesson?.original_filename ? <span className="meta-badge">{item.pdf_lesson.original_filename}</span> : null}
+                    </div>
+                  </div>
+                  <div className="teacher-item-controls">
+                    <label className="teacher-inline-toggle">
+                      <input type="checkbox" checked={item.is_enabled} onChange={(event) => updateItem(item, { is_enabled: event.target.checked })} />
+                      <span>Enabled</span>
+                    </label>
+                    <input type="datetime-local" defaultValue={toLocalInput(item.available_from)} onBlur={(event) => updateItem(item, { available_from: fromLocalInput(event.target.value) })} />
+                    <input type="datetime-local" defaultValue={toLocalInput(item.available_until)} onBlur={(event) => updateItem(item, { available_until: fromLocalInput(event.target.value) })} />
+                    <div className="table-actions">
+                      <button className="btn text" type="button" disabled={index === 0} onClick={() => moveItem(item.course_item_id, -1)}>Len</button>
+                      <button className="btn text" type="button" disabled={index === items.length - 1} onClick={() => moveItem(item.course_item_id, 1)}>Xuong</button>
+                      <button className="btn text" type="button" onClick={() => deleteItem(item)}>Xóa</button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+              {!items.length && !loading && <div className="empty-state">Khóa học này chưa có course item.</div>}
+            </div>
+          </section>
+
           <div className={`status-line ${status.kind}`.trim()}>{status.message}</div>
-        </section>
-      </div>
-    </TeacherLayout>
+        </div>
+      </TeacherLayout>
     </>
   );
 }

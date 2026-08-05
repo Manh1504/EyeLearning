@@ -1,10 +1,9 @@
 import json
 from pathlib import Path
 
-from web.config import configure_cloudinary, is_cloudinary_configured
+from web.config import DATA_DIR, configure_cloudinary, is_cloudinary_configured
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-CALIBRATION_MODEL_DIR = BASE_DIR / "data" / "outputs" / "calibration_models"
+CALIBRATION_MODEL_DIR = DATA_DIR / "outputs" / "calibration_models"
 
 
 def _safe_filename(calibration_group_id: str) -> str:

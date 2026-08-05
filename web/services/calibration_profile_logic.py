@@ -31,6 +31,10 @@ def evaluate_compatibility(profile_env: dict[str, Any] | None, current_env: dict
     if model_version and model_version != MODEL_VERSION:
         reasons.append("model_version")
     profile_env = profile_env or {}
+    if current_env is None:
+        if reasons:
+            return CompatibilityResult("incompatible", tuple(reasons))
+        return CompatibilityResult("unknown", ("metadata_unavailable",))
     current_env = current_env or {}
     if profile_env.get("camera_label") and current_env.get("camera_label") and profile_env.get("camera_label") != current_env.get("camera_label"):
         reasons.append("camera")

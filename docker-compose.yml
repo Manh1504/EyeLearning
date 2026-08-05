@@ -27,15 +27,19 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://eyelearn_user:eyelearn_password@eyelearn_postgres:5432/eyelearn
-      # AI_HTTP_URL/AI_WS_URL được trả về cho BROWSER qua /client-config, nên phải là
-      # địa chỉ mà trình duyệt (không phải container) truy cập được — mặc định AI service
-      # chạy bằng docker compose riêng trong Gaze-Estimation/, publish ra host port 9000.
+      # Cho browser qua /client-config.
       AI_HTTP_URL: ${AI_HTTP_URL:-http://127.0.0.1:9000}
       AI_WS_URL: ${AI_WS_URL:-ws://127.0.0.1:9000/inference}
+      # Cho server-side call từ container web sang AI service publish trên host.
+      AI_BACKEND_HTTP_URL: ${AI_BACKEND_HTTP_URL:-http://host.docker.internal:9000}
       ENABLE_DEV_TOOLS: ${ENABLE_DEV_TOOLS:-false}
       ENABLE_MOUSE_SIMULATION: ${ENABLE_MOUSE_SIMULATION:-false}
       # Origin của frontend container (service "frontend" bên dưới, publish ra host port 8080).
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - ./web:/app/web
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
     depends_on:
       eyelearn_postgres:
         condition: service_healthy

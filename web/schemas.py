@@ -21,8 +21,12 @@ class LessonOut(BaseModel):
 class SessionOut(BaseModel):
     session_id: str
     user_id: str
-    lesson_id: str
+    lesson_id: Optional[str] = None
     course_id: Optional[str] = None
+    course_item_id: Optional[str] = None
+    pdf_lesson_id: Optional[str] = None
+    pdf_document_version: Optional[str] = None
+    test_id: Optional[str] = None
     module_id: Optional[str] = None
     activity_id: Optional[str] = None
     content_version_id: Optional[str] = None
@@ -57,8 +61,12 @@ class AOIDefinitionOut(BaseModel):
 
 class TrackingPointCreate(BaseModel):
     session_id: str
+    user_id: Optional[str] = None
     lesson_id: Optional[str] = None
     course_id: Optional[str] = None
+    course_item_id: Optional[str] = None
+    pdf_lesson_id: Optional[str] = None
+    test_id: Optional[str] = None
     module_id: Optional[str] = None
     activity_id: Optional[str] = None
     content_version_id: Optional[str] = None
@@ -81,6 +89,11 @@ class TrackingPointCreate(BaseModel):
     screen_y: Optional[float] = None
     viewport_width: Optional[int] = None
     viewport_height: Optional[int] = None
+    page_number: Optional[int] = None
+    page_x_normalized: Optional[float] = None
+    page_y_normalized: Optional[float] = None
+    page_display_width: Optional[float] = None
+    page_display_height: Optional[float] = None
     device_pixel_ratio: Optional[float] = None
     zoom: Optional[float] = None
     fullscreen: Optional[bool] = None
@@ -106,7 +119,11 @@ class TrackingPointOut(BaseModel):
     point_id: str
     session_id: str
     aoi_id: Optional[str]
+    user_id: Optional[str] = None
     course_id: Optional[str] = None
+    course_item_id: Optional[str] = None
+    pdf_lesson_id: Optional[str] = None
+    test_id: Optional[str] = None
     module_id: Optional[str] = None
     activity_id: Optional[str] = None
     content_version_id: Optional[str] = None
@@ -116,6 +133,11 @@ class TrackingPointOut(BaseModel):
     viewport_y: float
     scroll_x: float
     scroll_y: float
+    page_number: Optional[int] = None
+    page_x_normalized: Optional[float] = None
+    page_y_normalized: Optional[float] = None
+    page_display_width: Optional[float] = None
+    page_display_height: Optional[float] = None
     confidence: Optional[float]
     gaze_status: Optional[str]
     metadata_json: Optional[dict[str, Any]]
@@ -185,3 +207,200 @@ class HeatmapResponse(BaseModel):
 
 class HeatmapGenerateResponse(HeatmapResponse):
     pass
+
+
+class PDFLessonSummaryOut(BaseModel):
+    pdf_lesson_id: str
+    storage_key: str
+    pdf_url: str
+    original_filename: str
+    file_size: Optional[int] = None
+    page_count: Optional[int] = None
+    processing_status: str
+
+
+class CourseItemOut(BaseModel):
+    course_item_id: str
+    course_id: str
+    item_type: str
+    title: str
+    description: Optional[str] = None
+    display_order: int
+    is_enabled: bool
+    available_from: Optional[datetime] = None
+    available_until: Optional[datetime] = None
+    availability_label: str
+    access_state: str
+    pdf_lesson: Optional[PDFLessonSummaryOut] = None
+    test: Optional[dict[str, Any]] = None
+    progress_ratio: float = 0
+    last_page_number: Optional[int] = None
+    completed: bool = False
+    action_label: str = "Mở"
+
+
+class CourseOverviewOut(BaseModel):
+    course_id: str
+    course_title: str
+    course_description: Optional[str] = None
+    status: str
+    progress_ratio: float = 0
+    item_count: int = 0
+    available_item_count: int = 0
+    next_course_item_id: Optional[str] = None
+    next_action_label: str = "Bắt đầu"
+    items: list[CourseItemOut] = Field(default_factory=list)
+
+
+class PDFLessonCreateOut(BaseModel):
+    course_item: CourseItemOut
+
+
+class PDFLessonProgressOut(BaseModel):
+    pdf_lesson_id: str
+    user_id: str
+    last_page_number: int
+    max_page_number_seen: int
+    completed_at: Optional[datetime] = None
+    progress_ratio: float = 0
+
+
+class TeacherAttentionOut(BaseModel):
+    key: str
+    title: str
+    detail: str
+    severity: str = "info"
+
+
+class TeacherRecentSessionOut(BaseModel):
+    session_id: str
+    user_id: str
+    student_name: Optional[str] = None
+    student_code: Optional[str] = None
+    course_id: Optional[str] = None
+    course_title: Optional[str] = None
+    course_item_id: Optional[str] = None
+    pdf_lesson_id: Optional[str] = None
+    item_title: Optional[str] = None
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    tracking_points_count: int = 0
+    has_tracking_data: bool = False
+
+
+class TeacherCourseCardOut(BaseModel):
+    course_id: str
+    course_title: str
+    course_description: Optional[str] = None
+    lesson_count: int = 0
+    class_count: int = 0
+    student_count: int = 0
+    active_student_count: int = 0
+    session_count: int = 0
+    valid_tracking_session_rate: float = 0
+    recent_activity_at: Optional[datetime] = None
+
+
+class TeacherDashboardOut(BaseModel):
+    course_count: int = 0
+    class_count: int = 0
+    student_count: int = 0
+    session_count: int = 0
+    valid_tracking_session_rate: float = 0
+    courses: list[TeacherCourseCardOut] = Field(default_factory=list)
+    classes: list[dict[str, Any]] = Field(default_factory=list)
+    recent_sessions: list[TeacherRecentSessionOut] = Field(default_factory=list)
+    attention_items: list[TeacherAttentionOut] = Field(default_factory=list)
+
+
+class TeacherCourseSummaryOut(BaseModel):
+    course_id: str
+    course_title: str
+    course_description: Optional[str] = None
+    lesson_count: int = 0
+    class_count: int = 0
+    student_count: int = 0
+    active_student_count: int = 0
+    session_count: int = 0
+    valid_tracking_session_rate: float = 0
+    completed_lesson_count: int = 0
+    recent_activity_at: Optional[datetime] = None
+    recent_sessions: list[TeacherRecentSessionOut] = Field(default_factory=list)
+    attention_items: list[TeacherAttentionOut] = Field(default_factory=list)
+
+
+class TeacherPdfLessonAnalyticsRowOut(BaseModel):
+    lesson_id: str
+    lesson_title: str
+    page_count: Optional[int] = None
+    document_version: Optional[str] = None
+    enrolled_student_count: Optional[int] = None
+    students_started: int = 0
+    students_completed: Optional[int] = None
+    session_count: int = 0
+    valid_session_count: int = 0
+    valid_tracking_rate: Optional[float] = None
+    average_session_duration_seconds: Optional[float] = None
+    average_valid_gaze_time_seconds: Optional[float] = None
+    total_valid_gaze_samples: int = 0
+    pages_with_data: int = 0
+    last_activity_at: Optional[datetime] = None
+
+
+class TeacherCourseAnalyticsOut(BaseModel):
+    course_id: str
+    course_title: str
+    total_sessions: int = 0
+    students_with_activity: int = 0
+    valid_tracking_rate: Optional[float] = None
+    average_session_duration_seconds: Optional[float] = None
+    lessons: list[TeacherPdfLessonAnalyticsRowOut] = Field(default_factory=list)
+    recent_sessions: list[TeacherRecentSessionOut] = Field(default_factory=list)
+
+
+class TeacherPdfLessonPageOut(BaseModel):
+    page_number: int
+    students_viewed: int = 0
+    sessions_viewed: int = 0
+    valid_gaze_samples: int = 0
+    valid_gaze_time_seconds: Optional[float] = None
+    average_valid_gaze_time_seconds: Optional[float] = None
+    page_entry_count: int = 0
+    revisit_count: int = 0
+    tracking_quality: Optional[float] = None
+    last_activity_at: Optional[datetime] = None
+
+
+class TeacherPdfLessonAnalyticsOut(BaseModel):
+    lesson_id: str
+    course_id: str
+    lesson_title: str
+    document_version: Optional[str] = None
+    page_count: Optional[int] = None
+    students_started: int = 0
+    session_count: int = 0
+    valid_session_count: int = 0
+    valid_tracking_rate: Optional[float] = None
+    average_session_duration_seconds: Optional[float] = None
+    total_valid_gaze_samples: int = 0
+    pages_with_data: int = 0
+    first_activity_at: Optional[datetime] = None
+    last_activity_at: Optional[datetime] = None
+    pages: list[TeacherPdfLessonPageOut] = Field(default_factory=list)
+    sessions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TeacherPdfLessonHeatmapOut(BaseModel):
+    course_id: str
+    lesson_id: str
+    lesson_title: str
+    page_number: int
+    document_version: Optional[str] = None
+    page_count: Optional[int] = None
+    pdf_url: Optional[str] = None
+    included_students: int = 0
+    included_sessions: int = 0
+    valid_sample_count: int = 0
+    confidence_threshold: float = 0
+    tracking_quality: Optional[float] = None
+    points: list[dict[str, Any]] = Field(default_factory=list)

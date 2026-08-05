@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { NavLink } from "react-router-dom";
 
 function DashboardIcon(props) {
   return (
@@ -29,15 +29,6 @@ function ChartIcon(props) {
   );
 }
 
-function UsersIcon(props) {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" {...props}>
-      <path d="M6.25 9a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5ZM13.75 8.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M2.75 15.5c.7-2.1 2.57-3.25 5.5-3.25 2.93 0 4.8 1.15 5.5 3.25M12.5 15.5c.44-1.4 1.63-2.25 3.75-2.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function EyeIcon(props) {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" {...props}>
@@ -60,54 +51,21 @@ const NAV_GROUPS = [
   {
     label: "Học tập",
     items: [
-      { key: "overview", label: "Tổng quan", href: "/admin#overview", Icon: DashboardIcon },
-      { key: "sessions", label: "Phiên học", href: "/admin#sessions", Icon: ClockIcon },
-      { key: "analytics", label: "Phân tích", href: "/analytics", Icon: ChartIcon },
-    ],
-  },
-  {
-    label: "Quản trị",
-    items: [
-      { key: "courses", label: "Người dùng & phân công", href: "/admin#courses", Icon: UsersIcon },
+      { key: "overview", label: "Tổng quan", href: "/admin/overview", Icon: DashboardIcon },
+      { key: "sessions", label: "Phiên học", href: "/admin/sessions", Icon: ClockIcon },
+      { key: "analytics", label: "Phân tích", href: "/admin/analytics", Icon: ChartIcon },
     ],
   },
   {
     label: "Vận hành",
     items: [
-      { key: "trial", label: "Kiểm thử eye-tracking", href: "/admin#trial", Icon: EyeIcon },
-      { key: "system", label: "Hệ thống", href: "/admin#system", Icon: SettingsIcon },
+      { key: "eye-tracking-test", label: "Kiểm thử eye-tracking", href: "/admin/eye-tracking-test", Icon: EyeIcon },
+      { key: "system", label: "Hệ thống", href: "/admin/system", Icon: SettingsIcon },
     ],
   },
 ];
 
 export function AdminSidebar({ active = "overview", mobileOpen = false, onClose = () => {} }) {
-  const [current, setCurrent] = useState(active);
-
-  useEffect(() => {
-    function updateFromHash() {
-      if (window.location.pathname === "/analytics") {
-        setCurrent("analytics");
-        return;
-      }
-      const next = window.location.hash.replace("#", "") || "overview";
-      setCurrent(next === "management" ? "courses" : next);
-    }
-
-    updateFromHash();
-    window.addEventListener("hashchange", updateFromHash);
-    return () => window.removeEventListener("hashchange", updateFromHash);
-  }, []);
-
-  useEffect(() => {
-    function onKeyDown(event) {
-      if (event.key === "Escape") onClose();
-    }
-
-    if (!mobileOpen) return undefined;
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [mobileOpen, onClose]);
-
   return (
     <>
       <button
@@ -127,16 +85,17 @@ export function AdminSidebar({ active = "overview", mobileOpen = false, onClose 
               <p className="admin-nav-group__label">{group.label}</p>
               <div className="admin-nav-group__items">
                 {group.items.map(({ key, label, href, Icon }) => (
-                  <a
+                  <NavLink
                     key={key}
                     className="admin-nav-item"
-                    href={href}
-                    aria-current={current === key ? "page" : undefined}
+                    to={href}
+                    end={key !== "sessions" && key !== "eye-tracking-test"}
+                    aria-current={active === key ? "page" : undefined}
                     onClick={onClose}
                   >
                     <Icon className="admin-nav-item__icon" />
                     <span>{label}</span>
-                  </a>
+                  </NavLink>
                 ))}
               </div>
             </div>

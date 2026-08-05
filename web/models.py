@@ -54,7 +54,69 @@ class Course(Base):
     course_id = Column(Text, primary_key=True)
     course_title = Column(Text, nullable=False)
     course_description = Column(Text)
+    status = Column(Text, nullable=False, server_default="active")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CourseItem(Base):
+    __tablename__ = "course_items"
+
+    course_item_id = Column(Text, primary_key=True)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
+    item_type = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    description = Column(Text)
+    display_order = Column(Integer, nullable=False, default=1)
+    is_enabled = Column(Boolean, nullable=False, server_default="true")
+    available_from = Column(DateTime(timezone=True))
+    available_until = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PDFLesson(Base):
+    __tablename__ = "pdf_lessons"
+
+    pdf_lesson_id = Column(Text, primary_key=True)
+    course_item_id = Column(Text, ForeignKey("course_items.course_item_id", ondelete="CASCADE"), nullable=False, unique=True)
+    storage_key = Column(Text, nullable=False, unique=True)
+    pdf_url = Column(Text)
+    original_filename = Column(Text, nullable=False)
+    file_size = Column(BigInteger)
+    page_count = Column(Integer)
+    processing_status = Column(Text, nullable=False, server_default="READY")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Test(Base):
+    __tablename__ = "tests"
+
+    test_id = Column(Text, primary_key=True)
+    course_item_id = Column(Text, ForeignKey("course_items.course_item_id", ondelete="CASCADE"), nullable=False, unique=True)
+    question_count = Column(Integer, nullable=False, server_default="0")
+    config_json = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PDFLessonProgress(Base):
+    __tablename__ = "pdf_lesson_progress"
+
+    progress_id = Column(Text, primary_key=True)
+    user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    course_id = Column(Text, ForeignKey("courses.course_id", ondelete="CASCADE"), nullable=False)
+    course_item_id = Column(Text, ForeignKey("course_items.course_item_id", ondelete="CASCADE"), nullable=False)
+    pdf_lesson_id = Column(Text, ForeignKey("pdf_lessons.pdf_lesson_id", ondelete="CASCADE"), nullable=False)
+    last_page_number = Column(Integer, nullable=False, server_default="1")
+    max_page_number_seen = Column(Integer, nullable=False, server_default="1")
+    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "pdf_lesson_id", name="uq_pdf_lesson_progress_user_lesson"),
+    )
 
 
 class CourseModule(Base):
@@ -235,6 +297,9 @@ class CalibrationProfile(Base):
     model_version       = Column(Text, nullable=False, server_default="svr:v1")
     environment_json    = Column(JSONB)
     artifact_status     = Column(Text, nullable=False, server_default="available")
+    is_default          = Column(Boolean, nullable=False, server_default="false")
+    last_used_at        = Column(DateTime(timezone=True))
+    browser_label       = Column(Text)
     last_validation_at  = Column(DateTime(timezone=True))
     last_validation_status = Column(Text)
     updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -265,8 +330,12 @@ class Session(Base):
 
     session_id = Column(Text, primary_key=True)
     user_id = Column(Text, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"), nullable=False)
+    lesson_id = Column(Text, ForeignKey("lessons.lesson_id", ondelete="CASCADE"))
     course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    course_item_id = Column(Text, ForeignKey("course_items.course_item_id", ondelete="SET NULL"))
+    pdf_lesson_id = Column(Text, ForeignKey("pdf_lessons.pdf_lesson_id", ondelete="SET NULL"))
+    pdf_document_version = Column(Text)
+    test_id = Column(Text, ForeignKey("tests.test_id", ondelete="SET NULL"))
     module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
     activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
     content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
@@ -326,8 +395,13 @@ class TrackingPoint(Base):
 
     point_id = Column(Text, primary_key=True)
     session_id = Column(Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Text, ForeignKey("users.user_id", ondelete="SET NULL"))
     aoi_id = Column(Text, ForeignKey("aoi_definitions.aoi_id", ondelete="SET NULL"))
     course_id = Column(Text, ForeignKey("courses.course_id", ondelete="SET NULL"))
+    course_item_id = Column(Text, ForeignKey("course_items.course_item_id", ondelete="SET NULL"))
+    pdf_lesson_id = Column(Text, ForeignKey("pdf_lessons.pdf_lesson_id", ondelete="SET NULL"))
+    pdf_document_version = Column(Text)
+    test_id = Column(Text, ForeignKey("tests.test_id", ondelete="SET NULL"))
     module_id = Column(Text, ForeignKey("course_modules.module_id", ondelete="SET NULL"))
     activity_id = Column(Text, ForeignKey("lesson_activities.activity_id", ondelete="SET NULL"))
     content_version_id = Column(Text, ForeignKey("content_versions.content_version_id", ondelete="SET NULL"))
@@ -351,6 +425,11 @@ class TrackingPoint(Base):
     device_pixel_ratio = Column(Float)
     zoom = Column(Float)
     fullscreen = Column(Boolean)
+    page_number = Column(Integer)
+    page_x_normalized = Column(Float)
+    page_y_normalized = Column(Float)
+    page_display_width = Column(Float)
+    page_display_height = Column(Float)
     confidence = Column(Float)
     gaze_status = Column(Text)
     metadata_json = Column(JSONB)

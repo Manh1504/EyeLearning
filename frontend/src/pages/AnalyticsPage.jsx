@@ -24,13 +24,13 @@ function getSessionId() {
 }
 
 function getLessonId() {
-  return params().get("lesson_id") || localStorage.getItem("lesson_id") || "L001";
+  return params().get("lesson_id") || localStorage.getItem("lesson_id") || "";
 }
 
 function getBackTarget(role) {
   const from = params().get("from");
   if (from && from.startsWith("/")) return from;
-  return role === "admin" ? "/admin#sessions" : "/teacher#sessions";
+  return role === "admin" ? "/admin/sessions" : "/teacher";
 }
 
 const numberFormatter = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 });
@@ -225,7 +225,7 @@ function AnalyticsPageHeader({ role, backTarget, metadata, metrics }) {
           actions={
             <>
               <Link className="btn secondary" to={backTarget}>Quay lại</Link>
-              {role === "admin" && <Link className="btn outline" to="/lesson">Học thử với live heatmap</Link>}
+              {role === "admin" && <Link className="btn outline" to="/admin/eye-tracking-test">Kiểm thử live heatmap</Link>}
             </>
           }
         />
@@ -395,6 +395,12 @@ export default function AnalyticsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   async function load() {
+    if (!sessionId && !lessonId) {
+      setPayload(null);
+      setHeatmaps([]);
+      setStatus({ message: "Chọn khóa học và bài học để xem analytics.", kind: "" });
+      return;
+    }
     setLoading(true);
     setStatus({ message: "Đang tải learning analytics...", kind: "" });
     try {
@@ -478,7 +484,7 @@ export default function AnalyticsPage() {
     ["Bài học", lessonId],
     ["Phiên", sessionId || "Toàn bộ phiên hợp lệ"],
     ["Cập nhật", formatDate(new Date())],
-    ["Phiên bản thuật toán", payload?.algorithm_version || "-"],
+    ["Phiên bản thuật toán", payload?.algorithm_version || "Chưa ghi nhận"],
   ];
 
   const metrics = [
@@ -493,12 +499,12 @@ export default function AnalyticsPage() {
       detail: summary.sessions !== undefined && summary.valid_sessions !== undefined ? `${Math.max(0, summary.sessions - summary.valid_sessions)} phiên chưa đạt điều kiện dữ liệu` : "",
     },
     {
-      label: "Tracking coverage",
+      label: "Độ phủ tracking",
       value: fmtPct(summary.tracking_coverage, 1),
       detail: summary.tracking_coverage !== undefined ? "Tỷ lệ dữ liệu theo dõi đạt điều kiện phân tích" : "",
     },
     {
-      label: "Fixation hợp lệ",
+      label: "Số fixation hợp lệ",
       value: numberFormatter.format(summary.fixation_count ?? 0),
       detail: summary.fixation_count !== undefined ? "Tổng fixation được dùng trong báo cáo" : "",
     },
@@ -511,7 +517,7 @@ export default function AnalyticsPage() {
 
       {loading && <section className="panel analytics-panel"><EmptyState title="Đang tải dữ liệu" body="ELA đang tính lại metric từ tracking points đã ghi nhận." /></section>}
 
-      {!loading && !payload && <section className="panel analytics-panel"><EmptyState title="Không tải được analytics" body="Kiểm tra quyền truy cập, phiên học hoặc backend API." /></section>}
+      {!loading && !payload && <section className="panel analytics-panel"><EmptyState title="Không tải được phân tích" body="Kiểm tra quyền truy cập, phiên học hoặc trạng thái hệ thống rồi thử lại." /></section>}
 
       {!loading && payload && activeTab === "overview" && (
         <section className="analytics-grid" id="analytics-panel-overview" role="tabpanel" aria-labelledby="analytics-tab-overview">

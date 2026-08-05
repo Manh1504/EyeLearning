@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from time import time
 from typing import List, Optional
 
@@ -35,6 +35,7 @@ class CalibrationSubmit(BaseModel):
     device_pixel_ratio: Optional[float] = None
     camera_label: Optional[str] = None
     orientation: Optional[str] = None
+    browser_label: Optional[str] = None
     avg_error_px: Optional[float] = None
     model_x_b64: str
     model_y_b64: str
@@ -74,6 +75,13 @@ async def save_calibration(
     session = await ensure_student_owns_session(db, user, body.session_id)
 
     calibration_group_id = f"CALIB_{body.session_id}_{int(time() * 1000)}"
+    existing_default = await db.scalar(
+        select(CalibrationProfile.calibration_id)
+        .where(CalibrationProfile.user_id == session.user_id)
+        .where(CalibrationProfile.status == "active")
+        .where(CalibrationProfile.is_default.is_(True))
+        .limit(1)
+    )
 
     # Model chỉ cần lưu 1 lần (chung cho cả 9 row cùng group) — không encode
     # trùng lặp base64 vào mỗi row, chỉ lưu model_storage_url dùng chung.
@@ -106,8 +114,12 @@ async def save_calibration(
                 "device_pixel_ratio": body.device_pixel_ratio or 1,
                 "camera_label": body.camera_label,
                 "orientation": body.orientation,
+                "browser_label": body.browser_label,
             },
             artifact_status="available",
+            is_default=not bool(existing_default),
+            last_used_at=datetime.now(timezone.utc),
+            browser_label=body.browser_label,
         )
         db.add(profile)
         checkpoints_out.append(profile)

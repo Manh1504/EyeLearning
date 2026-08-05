@@ -7,15 +7,25 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = PROJECT_ROOT / ".env"
+DATA_DIR = PROJECT_ROOT / "data"
 
 load_dotenv(ENV_PATH)
 
 DEFAULT_AI_HTTP_URL = "http://127.0.0.1:9000"
 DEFAULT_AI_WS_URL = "ws://127.0.0.1:9000/inference"
+DEFAULT_BACKEND_AI_HTTP_URL = "http://host.docker.internal:9000"
 
 
 def _present(name: str) -> bool:
     return bool(os.getenv(name, "").strip())
+
+
+def app_env() -> str:
+    return os.getenv("APP_ENV", "development").strip().lower() or "development"
+
+
+def is_production_env() -> bool:
+    return app_env() == "production"
 
 
 def is_cloudinary_package_available() -> bool:
@@ -42,6 +52,10 @@ def client_config() -> dict[str, object]:
         "enable_dev_tools": os.getenv("ENABLE_DEV_TOOLS", "").strip().lower() == "true",
         "enable_mouse_simulation": os.getenv("ENABLE_MOUSE_SIMULATION", "").strip().lower() == "true",
     }
+
+
+def backend_ai_http_url() -> str:
+    return os.getenv("AI_BACKEND_HTTP_URL", DEFAULT_BACKEND_AI_HTTP_URL).strip().rstrip("/")
 
 
 def cloudinary_status() -> dict[str, bool]:

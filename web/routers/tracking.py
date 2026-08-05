@@ -1,7 +1,8 @@
-from time import time
+import hashlib
 from typing import Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,8 +42,22 @@ def _as_points(body: Union[TrackingPointBatchRequest, list[TrackingPointCreate]]
     return body.points
 
 
-def _point_id(session_id: str, timestamp_ms: int, index: int) -> str:
-    return f"gaze_{session_id}_{timestamp_ms}_{int(time() * 1000)}_{index}"
+def _point_id(point: TrackingPointCreate, session: Session, index: int) -> str:
+    payload = "|".join(
+        [
+            point.session_id,
+            str(point.timestamp_ms),
+            str(index),
+            str(point.viewport_x if point.viewport_x is not None else point.x),
+            str(point.viewport_y if point.viewport_y is not None else point.y),
+            str(point.page_number or ""),
+            str(point.page_x_normalized if point.page_x_normalized is not None else ""),
+            str(point.page_y_normalized if point.page_y_normalized is not None else ""),
+            str(point.course_item_id or session.course_item_id or ""),
+        ]
+    )
+    digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:20]
+    return f"gaze_{point.session_id}_{digest}"
 
 
 async def _load_sessions(points: list[TrackingPointCreate], db: AsyncSession) -> dict[str, Session]:
@@ -105,56 +120,68 @@ async def save_tracking_points(
         await ensure_student_owns_session(db, user, session_id)
     aoi_map = await _load_aoi_map(points, sessions, db)
 
-    rows = []
+    row_payloads = []
     for index, point in enumerate(points):
-        lesson_id = point.lesson_id or sessions[point.session_id].lesson_id
+        session = sessions[point.session_id]
+        lesson_id = point.lesson_id or session.lesson_id
         aoi_id = None
         if lesson_id and point.target_zone:
             aoi_id = aoi_map.get((lesson_id, point.target_zone))
 
-        row = TrackingPoint(
-            point_id=_point_id(point.session_id, point.timestamp_ms, index),
-            session_id=point.session_id,
-            aoi_id=aoi_id,
-            course_id=point.course_id or sessions[point.session_id].course_id,
-            module_id=point.module_id or sessions[point.session_id].module_id,
-            activity_id=point.activity_id or sessions[point.session_id].activity_id,
-            content_version_id=point.content_version_id or sessions[point.session_id].content_version_id,
-            stimulus_id=point.stimulus_id,
-            timestamp_ms=point.timestamp_ms,
-            viewport_x=point.viewport_x if point.viewport_x is not None else point.x,
-            viewport_y=point.viewport_y if point.viewport_y is not None else point.y,
-            scroll_x=point.scroll_x,
-            scroll_y=point.scroll_y,
-            stimulus_x_norm=point.stimulus_x_norm,
-            stimulus_y_norm=point.stimulus_y_norm,
-            stimulus_left=point.stimulus_left,
-            stimulus_top=point.stimulus_top,
-            stimulus_width=point.stimulus_width,
-            stimulus_height=point.stimulus_height,
-            tracking_quality=point.tracking_quality,
-            screen_x=point.screen_x,
-            screen_y=point.screen_y,
-            viewport_width=point.viewport_width,
-            viewport_height=point.viewport_height,
-            device_pixel_ratio=point.device_pixel_ratio,
-            zoom=point.zoom,
-            fullscreen=point.fullscreen,
-            confidence=point.confidence,
-            gaze_status=point.gaze_status,
-            metadata_json=point.metadata_json,
-        )
-        db.add(row)
-        rows.append(row)
+        row_payloads.append({
+            "point_id": _point_id(point, session, index),
+            "session_id": point.session_id,
+            "user_id": point.user_id or session.user_id,
+            "aoi_id": aoi_id,
+            "course_id": point.course_id or session.course_id,
+            "course_item_id": point.course_item_id or session.course_item_id,
+            "pdf_lesson_id": point.pdf_lesson_id or session.pdf_lesson_id,
+            "pdf_document_version": getattr(point, "pdf_document_version", None) or session.pdf_document_version,
+            "test_id": point.test_id or session.test_id,
+            "module_id": point.module_id or session.module_id,
+            "activity_id": point.activity_id or session.activity_id,
+            "content_version_id": point.content_version_id or session.content_version_id,
+            "stimulus_id": point.stimulus_id,
+            "timestamp_ms": point.timestamp_ms,
+            "viewport_x": point.viewport_x if point.viewport_x is not None else point.x,
+            "viewport_y": point.viewport_y if point.viewport_y is not None else point.y,
+            "scroll_x": point.scroll_x,
+            "scroll_y": point.scroll_y,
+            "stimulus_x_norm": point.stimulus_x_norm,
+            "stimulus_y_norm": point.stimulus_y_norm,
+            "stimulus_left": point.stimulus_left,
+            "stimulus_top": point.stimulus_top,
+            "stimulus_width": point.stimulus_width,
+            "stimulus_height": point.stimulus_height,
+            "tracking_quality": point.tracking_quality,
+            "screen_x": point.screen_x,
+            "screen_y": point.screen_y,
+            "viewport_width": point.viewport_width,
+            "viewport_height": point.viewport_height,
+            "page_number": point.page_number,
+            "page_x_normalized": point.page_x_normalized,
+            "page_y_normalized": point.page_y_normalized,
+            "page_display_width": point.page_display_width,
+            "page_display_height": point.page_display_height,
+            "device_pixel_ratio": point.device_pixel_ratio,
+            "zoom": point.zoom,
+            "fullscreen": point.fullscreen,
+            "confidence": point.confidence,
+            "gaze_status": point.gaze_status,
+            "metadata_json": point.metadata_json,
+        })
 
     try:
-        await db.flush()
+        statement = insert(TrackingPoint).values(row_payloads)
+        statement = statement.on_conflict_do_nothing(index_elements=[TrackingPoint.point_id]).returning(TrackingPoint)
+        result = await db.execute(statement)
+        inserted_rows = list(result.scalars().all())
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Could not insert tracking_points: {exc.__class__.__name__}",
         )
-    return {"inserted": len(rows), "points": rows}
+    return {"inserted": len(inserted_rows), "points": inserted_rows}
 
 
 @router.get("/sessions/{session_id}/tracking-points", response_model=list[TrackingPointOut])

@@ -36,6 +36,15 @@ class CalibrationProfileLogicTest(unittest.TestCase):
         self.assertEqual(result.status, "incompatible")
         self.assertIn("viewport_width", result.reasons)
 
+    def test_missing_current_environment_is_unknown_not_incompatible(self):
+        result = evaluate_compatibility(
+            {"viewport_w": 1440, "viewport_h": 900, "device_pixel_ratio": 1, "camera_label": "Laptop ở nhà"},
+            None,
+            MODEL_VERSION,
+        )
+        self.assertEqual(result.status, "unknown")
+        self.assertIn("metadata_unavailable", result.reasons)
+
     def test_validation_status_boundaries(self):
         self.assertEqual(validation_status({"valid_sample_ratio": 0.8, "median_error_norm": 0.08}), "passed")
         self.assertEqual(validation_status({"valid_sample_ratio": 0.8, "median_error_norm": 0.12}), "retry")

@@ -5,7 +5,7 @@ from fastapi import Cookie, Depends, HTTPException
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from web.models import AuthSession, CourseEnrollment, Lesson, Session, TeacherCourseAssignment, User
+from web.models import AuthSession, CourseEnrollment, CourseItem, Lesson, PDFLesson, Session, TeacherCourseAssignment, User
 from web.database import get_db
 
 SESSION_COOKIE_NAME = "ela_session"
@@ -80,6 +80,54 @@ async def ensure_student_can_access_lesson(db: AsyncSession, user: User, lesson_
         raise HTTPException(status_code=403, detail="Bạn không có quyền học bài này")
 
 
+async def ensure_student_can_access_course_item(db: AsyncSession, user: User, course_item_id: str) -> CourseItem:
+    require_role(user, {"student"})
+    result = await db.execute(select(CourseItem).where(CourseItem.course_item_id == course_item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Course item không tồn tại")
+    allowed = await db.scalar(
+        select(
+            exists().where(
+                CourseEnrollment.student_id == user.user_id,
+                CourseEnrollment.course_id == item.course_id,
+                CourseEnrollment.status == "active",
+            )
+        )
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền học nội dung này")
+    return item
+
+
+async def ensure_can_read_pdf_lesson(db: AsyncSession, user: User, pdf_lesson_id: str) -> PDFLesson:
+    result = await db.execute(select(PDFLesson).where(PDFLesson.pdf_lesson_id == pdf_lesson_id))
+    pdf_lesson = result.scalar_one_or_none()
+    if not pdf_lesson:
+        raise HTTPException(status_code=404, detail="PDF lesson không tồn tại")
+    item = await db.scalar(select(CourseItem).where(CourseItem.course_item_id == pdf_lesson.course_item_id))
+    if not item:
+        raise HTTPException(status_code=404, detail="Course item không tồn tại")
+    role = normalize_role(user.role)
+    if role == "admin":
+        return pdf_lesson
+    if role == "teacher":
+        allowed = await db.scalar(
+            select(
+                exists().where(
+                    TeacherCourseAssignment.teacher_id == user.user_id,
+                    TeacherCourseAssignment.course_id == item.course_id,
+                )
+            )
+        )
+        if allowed:
+            return pdf_lesson
+    if role == "student":
+        await ensure_student_can_access_course_item(db, user, item.course_item_id)
+        return pdf_lesson
+    raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập PDF lesson này")
+
+
 async def teacher_can_access_lesson(db: AsyncSession, user: User, lesson_id: str) -> bool:
     role = normalize_role(user.role)
     if role == "admin":
@@ -125,6 +173,6 @@ async def ensure_student_owns_session(db: AsyncSession, user: User, session_id: 
         raise HTTPException(status_code=404, detail="Session không tồn tại")
     if normalize_role(user.role) == "admin" and session.session_type == "admin_test" and session.user_id == user.user_id:
         return session
-    if session.session_type == "student_learning" and session.user_id == user.user_id:
+    if session.session_type in {"student_learning", "profile_setup"} and session.user_id == user.user_id:
         return session
     raise HTTPException(status_code=403, detail="Bạn không có quyền thao tác với phiên này")

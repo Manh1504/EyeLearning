@@ -8,14 +8,13 @@ from fastapi import HTTPException
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from web.config import configure_cloudinary, is_cloudinary_configured
+from web.config import DATA_DIR, configure_cloudinary, is_cloudinary_configured
 from web.models import AOIDefinition, Heatmap, Session, TrackingPoint
 from web.services.page_snapshot_service import snapshot_paths, snapshot_url
 
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-HEATMAP_DIR = BASE_DIR / "data" / "outputs" / "heatmaps"
+HEATMAP_DIR = DATA_DIR / "outputs" / "heatmaps"
 MAX_IMAGE_W = 2400
 MAX_IMAGE_H = 1800
 MIN_IMAGE_W = 800

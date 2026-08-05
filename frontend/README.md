@@ -57,8 +57,10 @@ Cơ chế:
 2. Stage 2 (`nginx:1.27-alpine`): serve `dist/` tĩnh, SPA fallback về
    `index.html` cho react-router, và **reverse-proxy** các path API sang
    backend (`API_UPSTREAM`, mặc định `web:8000` — tên service trong
-   `docker-compose.yml` gốc). Nhờ vậy browser gọi API cùng-origin với
-   frontend, không cần CORS.
+   `docker-compose.yml` gốc). Với các path bị trùng giữa SPA và API như
+   `/courses/...`, nginx chỉ proxy khi request là fetch/API; điều hướng
+   browser kiểu HTML sẽ quay về `index.html` để nested-route refresh không vỡ.
+   Nhờ vậy browser gọi API cùng-origin với frontend, không cần CORS.
 3. `docker-entrypoint.d/20-write-runtime-config.sh` sinh `/config.js` **lúc
    container start** (không phải lúc build) chứa `window.__ENV__.API_BASE`.
    Mặc định để trống (dùng proxy ở bước 2). Chỉ set `RUNTIME_API_BASE` nếu

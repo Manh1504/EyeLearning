@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth.jsx";
-import { getSessionContext, normalizeRole } from "../lib/session.js";
+import { currentInternalReturnTo } from "../lib/calibrationProfileNavigation.js";
+import { clearSessionContext, getSessionContext, normalizeRole } from "../lib/session.js";
+
+const LABELS = {
+  overview: "Tổng quan",
+  courses: "Khóa học",
+  analytics: "Phân tích",
+  home: "Trang chủ",
+  myCourses: "Khóa học của tôi",
+  profile: "Hồ sơ cá nhân",
+  calibrationProfiles: "Hồ sơ hiệu chuẩn",
+  privacy: "Quyền riêng tư & dữ liệu eye-tracking",
+  logout: "Đăng xuất",
+  openNavigation: "Mở điều hướng",
+  openAdminNavigation: "Mở điều hướng quản trị",
+};
 
 function roleHome(role) {
   if (role === "teacher") return "/teacher";
@@ -9,19 +24,20 @@ function roleHome(role) {
   return "/courses";
 }
 
-function navItems(role) {
+function navItems(role, labels) {
   if (role === "teacher") {
     return [
-      { label: "Tổng quan lớp học", to: "/teacher", key: "home" },
-      { label: "Phiên học", to: "/teacher#sessions", key: "sessions" },
+      { label: labels.overview, to: "/teacher", key: "overview" },
+      { label: labels.courses, to: "/teacher/courses", key: "courses" },
+      { label: labels.analytics, to: "/teacher/analytics", key: "analytics" },
     ];
   }
   if (role === "admin") {
     return [];
   }
   return [
-    { label: "Trang chủ", to: "/courses", key: "home" },
-    { label: "Khóa học của tôi", to: "/courses", key: "courses" },
+    { label: labels.home, to: "/courses", key: "home" },
+    { label: labels.myCourses, to: "/courses", key: "courses" },
   ];
 }
 
@@ -34,6 +50,7 @@ export function AppHeader({ active, sidebarToggle = null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout: revokeSession } = useAuth();
+  const labels = LABELS;
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
   const firstMenuItemRef = useRef(null);
@@ -80,26 +97,14 @@ export function AppHeader({ active, sidebarToggle = null }) {
 
   async function logout() {
     await revokeSession();
-    [
-      "session_id",
-      "lesson_id",
-      "student_code",
-      "full_name",
-      "role",
-      "calibration_ready",
-      "calibration_profile_id",
-      "calibration_viewport_w",
-      "calibration_viewport_h",
-      "calibration_is_fullscreen",
-      "calibration_completed_at",
-    ].forEach((key) => localStorage.removeItem(key));
+    clearSessionContext();
     sessionStorage.setItem("ela_logged_out", "1");
     setOpen(false);
     setMobileOpen(false);
     navigate("/login", { replace: true });
   }
 
-  const items = navItems(role);
+  const items = navItems(role, labels);
 
   return (
     <header className="app-header">
@@ -111,7 +116,7 @@ export function AppHeader({ active, sidebarToggle = null }) {
               type="button"
               aria-expanded={sidebarToggle.open}
               aria-controls={sidebarToggle.controls}
-              aria-label={sidebarToggle.label || "Mở điều hướng quản trị"}
+              aria-label={sidebarToggle.label || labels.openAdminNavigation}
               onClick={sidebarToggle.onToggle}
             >
               ☰
@@ -123,7 +128,7 @@ export function AppHeader({ active, sidebarToggle = null }) {
               className="nav-toggle"
               type="button"
               aria-expanded={mobileOpen}
-              aria-label="Mở điều hướng"
+              aria-label={labels.openNavigation}
               onClick={() => setMobileOpen((value) => !value)}
             >
               ☰
@@ -167,9 +172,18 @@ export function AppHeader({ active, sidebarToggle = null }) {
           </button>
           {open && (
             <div className="user-dropdown" role="menu">
-              <button type="button" role="menuitem" ref={firstMenuItemRef}>Hồ sơ cá nhân</button>
-              <button type="button" role="menuitem">Quyền riêng tư & dữ liệu eye-tracking</button>
-              <button className="logout-item" type="button" role="menuitem" onClick={logout}>Đăng xuất</button>
+              <button type="button" role="menuitem" ref={firstMenuItemRef}>{labels.profile}</button>
+              {role === "student" && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => navigate("/calibration-profiles", { state: { returnTo: currentInternalReturnTo(location) } })}
+                >
+                  {labels.calibrationProfiles}
+                </button>
+              )}
+              <button type="button" role="menuitem">{labels.privacy}</button>
+              <button className="logout-item" type="button" role="menuitem" onClick={logout}>{labels.logout}</button>
             </div>
           )}
         </div>

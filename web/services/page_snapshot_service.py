@@ -6,11 +6,10 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from web.config import configure_cloudinary, is_cloudinary_configured
+from web.config import DATA_DIR, configure_cloudinary, is_cloudinary_configured
 from web.models import PageSnapshot
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-PAGE_SNAPSHOT_DIR = BASE_DIR / "data" / "outputs" / "page_snapshots"
+PAGE_SNAPSHOT_DIR = DATA_DIR / "outputs" / "page_snapshots"
 
 
 def safe_snapshot_name(session_id: str, suffix: str) -> str:

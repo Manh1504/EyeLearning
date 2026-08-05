@@ -11,13 +11,18 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.authz import current_user_from_cookie, normalize_role
-from web.config import client_config
+from web.config import backend_ai_http_url
 from web.database import get_db
 from web.models import CalibrationProfile, CalibrationValidationRun, Session, User
 from web.services.calibration_profile_logic import MODEL_VERSION, evaluate_compatibility, validation_status
 from web.services.calibration_service import calibration_model_path, read_calibration_model
 
 router = APIRouter(prefix="/calibration-profiles", tags=["calibration-profiles"])
+
+
+def _ensure_profile_owner_role(user: User) -> None:
+    if normalize_role(user.role) not in {"student", "admin"}:
+        raise HTTPException(status_code=403, detail="Chỉ học sinh hoặc quản trị viên được quản lý hồ sơ căn chỉnh của chính mình")
 
 
 class EnvironmentIn(BaseModel):
@@ -27,6 +32,7 @@ class EnvironmentIn(BaseModel):
     device_pixel_ratio: float = 1
     camera_label: str | None = None
     orientation: str | None = None
+    browser_label: str | None = None
 
 
 class ProfileCreate(BaseModel):
@@ -37,6 +43,10 @@ class ProfileCreate(BaseModel):
 
 class ProfileUpdate(BaseModel):
     profile_name: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class ProfileDeleteIn(BaseModel):
+    replacement_profile_id: str | None = None
 
 
 class ProfileLoadIn(BaseModel):
@@ -75,9 +85,12 @@ def _profile_out(profile: CalibrationProfile, env: dict | None = None) -> dict:
         "quality": {"avg_error_px": profile.avg_error_px, "n_points": profile.n_points},
         "created_at": profile.trained_at,
         "updated_at": profile.updated_at,
+        "last_used_at": profile.last_used_at,
         "last_validation_at": profile.last_validation_at,
         "last_validation_status": profile.last_validation_status,
         "artifact_status": artifact_status,
+        "is_default": bool(profile.is_default),
+        "browser_label": profile.browser_label,
         "model_storage_url": profile.model_storage_url,
         "compatibility": {"status": compatibility.status, "reasons": list(compatibility.reasons)},
         "local_only": not str(profile.model_storage_url or "").startswith("http"),
@@ -112,8 +125,7 @@ async def list_profiles(
     user: User = Depends(current_user_from_cookie),
     db: AsyncSession = Depends(get_db),
 ):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được quản lý hồ sơ căn chỉnh")
+    _ensure_profile_owner_role(user)
     env = None
     if viewport_w and viewport_h:
         env = {
@@ -128,7 +140,12 @@ async def list_profiles(
         select(CalibrationProfile)
         .where(CalibrationProfile.user_id == user.user_id)
         .where(CalibrationProfile.status == "active")
-        .order_by(CalibrationProfile.last_validation_at.desc().nulls_last(), CalibrationProfile.trained_at.desc())
+        .order_by(
+            CalibrationProfile.is_default.desc(),
+            CalibrationProfile.last_used_at.desc().nulls_last(),
+            CalibrationProfile.last_validation_at.desc().nulls_last(),
+            CalibrationProfile.trained_at.desc(),
+        )
     )
     by_group: dict[str, CalibrationProfile] = {}
     for profile in result.scalars().all():
@@ -138,15 +155,13 @@ async def list_profiles(
 
 @router.get("/{profile_id}")
 async def get_profile(profile_id: str, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được xem hồ sơ căn chỉnh của chính mình")
+    _ensure_profile_owner_role(user)
     return _profile_out(await _group_head(db, user, profile_id))
 
 
 @router.post("")
 async def create_profile(body: ProfileCreate, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được tạo hồ sơ căn chỉnh")
+    _ensure_profile_owner_role(user)
     profiles = await _owned_group(db, user, body.calibration_group_id)
     if not read_calibration_model(body.calibration_group_id):
         raise HTTPException(status_code=409, detail="Artifact căn chỉnh chưa tồn tại hoặc đã hỏng")
@@ -156,6 +171,7 @@ async def create_profile(body: ProfileCreate, user: User = Depends(current_user_
         profile.environment_json = env
         profile.model_version = MODEL_VERSION
         profile.artifact_status = "available"
+        profile.browser_label = env.get("browser_label")
         profile.updated_at = datetime.now(timezone.utc)
     await db.flush()
     return _profile_out(profiles[0], env)
@@ -163,8 +179,7 @@ async def create_profile(body: ProfileCreate, user: User = Depends(current_user_
 
 @router.patch("/{profile_id}")
 async def update_profile(profile_id: str, body: ProfileUpdate, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được sửa hồ sơ căn chỉnh")
+    _ensure_profile_owner_role(user)
     profiles = await _owned_group(db, user, profile_id)
     if body.profile_name is not None:
         for profile in profiles:
@@ -174,14 +189,56 @@ async def update_profile(profile_id: str, body: ProfileUpdate, user: User = Depe
     return _profile_out(profiles[0])
 
 
-@router.delete("/{profile_id}")
-async def delete_profile(profile_id: str, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được xóa hồ sơ căn chỉnh")
+@router.post("/{profile_id}/default")
+async def set_default_profile(profile_id: str, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
+    _ensure_profile_owner_role(user)
     profiles = await _owned_group(db, user, profile_id)
+    await db.execute(
+        update(CalibrationProfile)
+        .where(CalibrationProfile.user_id == user.user_id)
+        .values(is_default=False, updated_at=datetime.now(timezone.utc))
+    )
+    for profile in profiles:
+        profile.is_default = True
+        profile.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    return _profile_out(profiles[0])
+
+
+@router.delete("/{profile_id}")
+async def delete_profile(
+    profile_id: str,
+    body: ProfileDeleteIn | None = None,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    _ensure_profile_owner_role(user)
+    profiles = await _owned_group(db, user, profile_id)
+    replacement_id = body.replacement_profile_id if body else None
+    if profiles[0].is_default:
+        result = await db.execute(
+            select(CalibrationProfile)
+            .where(CalibrationProfile.user_id == user.user_id)
+            .where(CalibrationProfile.status == "active")
+            .where(CalibrationProfile.calibration_group_id != profile_id)
+            .order_by(CalibrationProfile.last_used_at.desc().nulls_last(), CalibrationProfile.trained_at.desc())
+        )
+        replacement_profiles = list(result.scalars().all())
+        if replacement_id:
+            replacement_profiles = [profile for profile in replacement_profiles if profile.calibration_group_id == replacement_id]
+        if not replacement_profiles:
+            raise HTTPException(status_code=409, detail="Hãy chọn hồ sơ khác trước khi xóa hồ sơ đang dùng mặc định.")
+        replacement_group_id = replacement_profiles[0].calibration_group_id
+        await db.execute(
+            update(CalibrationProfile)
+            .where(CalibrationProfile.user_id == user.user_id)
+            .where(CalibrationProfile.calibration_group_id == replacement_group_id)
+            .values(is_default=True, updated_at=datetime.now(timezone.utc))
+        )
     for profile in profiles:
         profile.status = "deleted"
         profile.artifact_status = "deleted"
+        profile.is_default = False
         profile.updated_at = datetime.now(timezone.utc)
     await db.flush()
     return {"ok": True, "profile_id": profile_id}
@@ -189,8 +246,7 @@ async def delete_profile(profile_id: str, user: User = Depends(current_user_from
 
 @router.post("/{profile_id}/load")
 async def load_profile(profile_id: str, body: ProfileLoadIn, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được tải hồ sơ căn chỉnh của chính mình")
+    _ensure_profile_owner_role(user)
     profile = await _group_head(db, user, profile_id)
     session = await db.get(Session, body.session_id)
     if not session or session.user_id != user.user_id:
@@ -207,7 +263,7 @@ async def load_profile(profile_id: str, body: ProfileLoadIn, user: User = Depend
         raise HTTPException(status_code=409, detail="Dữ liệu căn chỉnh không còn trên thiết bị/server này")
 
     req = Request(
-        f"{client_config()['ai_http_url']}/calibration/load",
+        f"{backend_ai_http_url()}/calibration/load",
         data=json.dumps({
             "session_id": body.session_id,
             "model_x_b64": model_payload["model_x_b64"],
@@ -226,6 +282,10 @@ async def load_profile(profile_id: str, body: ProfileLoadIn, user: User = Depend
         raise HTTPException(status_code=409, detail=payload["error"])
     session.calibration_group_id = profile_id
     session.status = "learning"
+    profiles = await _owned_group(db, user, profile_id)
+    for row in profiles:
+        row.last_used_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(timezone.utc)
     await db.flush()
     response = {"ok": True, "profile": _profile_out(profile, env), "ai": payload}
     if compatibility.status != "compatible":
@@ -238,8 +298,7 @@ async def load_profile(profile_id: str, body: ProfileLoadIn, user: User = Depend
 
 @router.post("/{profile_id}/validation-runs")
 async def create_validation_run(profile_id: str, body: ValidationRunIn, user: User = Depends(current_user_from_cookie), db: AsyncSession = Depends(get_db)):
-    if normalize_role(user.role) != "student":
-        raise HTTPException(status_code=403, detail="Chỉ học sinh được kiểm tra hồ sơ căn chỉnh")
+    _ensure_profile_owner_role(user)
     profiles = await _owned_group(db, user, profile_id)
     session = await db.get(Session, body.session_id)
     if not session or session.user_id != user.user_id:

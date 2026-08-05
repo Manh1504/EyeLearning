@@ -2,14 +2,11 @@ export function durationText(value) {
   return value ? `${value} phút` : "Chưa đặt thời lượng";
 }
 
-export function activityLabel(type) {
+export function itemTypeLabel(type) {
   return {
-    SLIDE_DECK: "Slide",
-    DOCUMENT: "Tài liệu",
-    VIDEO: "Video",
-    QUIZ: "Câu hỏi",
-    TEXT: "Bài đọc",
-  }[type] || "Hoạt động";
+    PDF_LESSON: "Bài học PDF",
+    TEST: "Bài kiểm tra",
+  }[type] || "Nội dung";
 }
 
 export function progressState(progressRatio) {
@@ -35,7 +32,7 @@ export function primaryCourseCta(progressRatio) {
 
 export function courseVisual(course) {
   const title = `${course?.course_title || ""} ${course?.course_description || ""}`.toLowerCase();
-  const nextType = String(course?.next_activity_type || "").toUpperCase();
+  const nextType = String(course?.items?.[0]?.item_type || "").toUpperCase();
 
   if (title.includes("mlops") || title.includes("pipeline") || title.includes("machine learning")) {
     return {
@@ -44,25 +41,18 @@ export function courseVisual(course) {
       accent: "Chuỗi dữ liệu",
     };
   }
-  if (nextType === "TEXT" || title.includes("đọc") || title.includes("reading")) {
+  if (title.includes("pdf") || title.includes("reading") || nextType === "PDF_LESSON") {
     return {
       theme: "reading",
-      eyebrow: "Bài đọc",
-      accent: "Tài liệu học",
+      eyebrow: "Bài học PDF",
+      accent: "Tài liệu học tập",
     };
   }
-  if (nextType === "SLIDE_DECK" || title.includes("biểu đồ") || title.includes("data") || title.includes("chart")) {
+  if (nextType === "TEST") {
     return {
       theme: "data",
-      eyebrow: "Phân tích dữ liệu",
-      accent: "Trực quan hóa",
-    };
-  }
-  if (nextType === "VIDEO") {
-    return {
-      theme: "video",
-      eyebrow: "Bài giảng video",
-      accent: "Học theo nhịp xem",
+      eyebrow: "Bài kiểm tra",
+      accent: "Đánh giá độc lập",
     };
   }
   return {
@@ -74,9 +64,7 @@ export function courseVisual(course) {
 
 export function courseMeta(course) {
   const parts = [];
-  if (course?.instructor_name) parts.push(course.instructor_name);
-  if (course?.module_count) parts.push(`${course.module_count} chương`);
-  if (course?.lesson_count) parts.push(`${course.lesson_count} bài học`);
-  if (course?.activity_count) parts.push(`${course.activity_count} hoạt động`);
+  if (course?.item_count != null) parts.push(`${course.item_count} bài học`);
+  if (course?.available_item_count != null) parts.push(`${course.available_item_count} đang mở`);
   return parts;
 }

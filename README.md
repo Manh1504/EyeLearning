@@ -1,200 +1,181 @@
-# EyeLearning
+# EyeLearning MVP
 
-Demo phân tích hành vi học tập sử dụng FastAPI, PostgreSQL, dữ liệu gaze/tracking points chuẩn hóa, AOI metrics, page snapshots và heatmaps.
+EyeLearning la LMS MVP cho bai hoc PDF co eye-tracking. He thong gom:
 
-## Cấu trúc dự án
+- `web/`: FastAPI backend + PostgreSQL schema/migrations
+- `frontend/`: React + Vite frontend
+- `Gaze-Estimation/`: AI service cho calibration va du doan diem nhin
 
-- `web/main.py`: entrypoint của FastAPI web service.
-- `web/routers/`: các API cho session, tracking, gaze chunks, metrics, heatmaps, snapshots, debug, teacher/admin.
-- `web/services/`: logic tạo heatmap và lưu page snapshot.
-- `frontend/`: app React (Vite) — frontend đã tách hoàn toàn khỏi backend, xem `frontend/README.md`.
-- `web/migrations/`: SQL migration cho bảng analytics và heatmaps.
-- `Gaze-Estimation/`: AI service riêng cho calibration và gaze inference.
-- `data/outputs/`: ảnh snapshot/heatmap sinh ra ở local, được ignore khỏi git.
+## Development Setup
 
-## Cài đặt
+### 1. Chay bang Docker
 
 ```bash
-cd EyeLearning
-uv venv .venv
-source .venv/bin/activate
-uv pip install -r web/requirements.txt
-cp .env.example .env
-```
-
-Cấu hình `.env`, ví dụ:
-
-```env
-DATABASE_URL=postgresql+asyncpg://eyelearn_user:eyelearn_password@localhost:5433/eyelearn
-AI_HTTP_URL=http://127.0.0.1:9000
-AI_WS_URL=ws://127.0.0.1:9000/inference
-ENABLE_DEV_TOOLS=false
-ENABLE_MOUSE_SIMULATION=false
-```
-
-Cloudinary là tùy chọn. Nếu không cấu hình Cloudinary, heatmap sẽ được lưu local trong `data/outputs/`.
-
-## Chạy web backend
-
-```bash
-source .venv/bin/activate
-python -m uvicorn web.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Kiểm tra backend:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-## Chạy AI service
-
-CPU mode, dùng được trên Mac, Windows và Linux:
-
-```bash
+docker compose up -d --build
 cd Gaze-Estimation
 docker compose up -d --build
-curl http://127.0.0.1:9000/health_check
 ```
 
-GPU mode cho Windows/Linux có NVIDIA Container Toolkit:
+Backend `eyelearn_web` duoc bind-mount tu source local:
 
-```bash
-cd Gaze-Estimation
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-curl http://127.0.0.1:9000/health_check
-```
+- `./web -> /app/web`
+- `./data -> /app/data`
+- `./.env -> /app/.env`
 
-AI service cần model weights trong thư mục `Gaze-Estimation/weights/`.
+Vi vay thay doi trong `web/` se duoc container dung ngay sau khi restart process backend.
 
-## Chạy migrations
+### 2. Frontend development
 
-Nếu dùng `docker compose up` với `docker-compose.yml` ở gốc dự án, migrations
-chạy **tự động** lần đầu tiên (volume postgres rỗng) qua
-`docker-entrypoint-initdb.d`. Chỉ cần chạy tay khi bạn tự quản lý container
-postgres riêng — điều chỉnh tên container, user và database theo môi trường
-local của bạn:
+Neu `npm` tren may host dang loi, co the chay frontend qua Docker tai `http://localhost:9080`.
 
-```bash
-docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/001_analytics_tables.sql
-docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/002_heatmaps.sql
-```
-
-Kiểm tra schema:
-
-```bash
-curl http://127.0.0.1:8000/debug/schema-status
-```
-
-## Chạy frontend (React)
-
-Frontend đã tách hoàn toàn khỏi backend, xem chi tiết trong `frontend/README.md`.
-Nhanh gọn cho dev:
+Neu chay local:
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-## Chạy full stack bằng Docker Compose (khuyến nghị để host/deploy)
+### 3. Health checks
 
 ```bash
-docker network create eyelearning_default   # nếu chưa có
-docker compose up -d --build                # postgres + web backend + frontend
-cd Gaze-Estimation && docker compose up -d --build   # AI service (network riêng, publish host port 9000)
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:9000/health_check
 ```
 
-`docker-compose.yml` gốc build 3 service: `eyelearn_postgres` (tự chạy
-migrations lần đầu), `web` (FastAPI, port 8000) và `frontend` (React build
-bằng nginx, reverse-proxy API sang `web`, port 8080).
+## Migrations
 
-## Mở ứng dụng
+Database can co day du cac migration trong `web/migrations/`.
 
-```text
-http://localhost:8080/     # đã dùng docker compose (frontend qua nginx)
-http://localhost:5173/     # đang chạy `npm run dev`
-```
+Hai migration moi can co trong moi moi truong MVP hien tai:
 
-Các trang chính:
+- `018_calibration_profile_preferences.sql`
+- `019_pdf_teacher_analytics.sql`
 
-- `/`: chọn vai trò và bắt đầu phiên demo.
-- `/lesson`: giao diện học của student, calibration/gaze controls và hoàn thành session.
-- `/calibration`: calibration bằng webcam cho AI gaze.
-- `/teacher`: dashboard cho teacher, xem session theo lesson và mở analytics.
-- `/admin`: dashboard cho admin, xem health, counts, session inspector và debug tools.
-- `/analytics?session_id=YOUR_SESSION_ID`: metrics và heatmaps của một session.
-
-## Vai trò người dùng
-
-Ứng dụng hiện có 3 vai trò demo:
-
-- `student`: học bài, calibration, start/stop gaze, finish session, xem analytics của mình.
-- `teacher`: xem danh sách session theo lesson và mở analytics của từng session.
-- `admin`: xem system health, data overview, session inspector, debug panels và raw response.
-
-Ghi chú bảo mật: role selector hiện tại chỉ là MVP/demo role switching, lưu bằng `localStorage`. Production cần thay bằng authentication thật và backend permission checks.
-
-## Luồng demo nhanh
-
-Student:
-
-1. Mở `/`.
-2. Chọn `Student`.
-3. Nhập full name và student code.
-4. Start session để vào `/lesson`.
-5. Mở `/calibration`, hoàn thành calibration rồi quay lại lesson.
-6. Bấm `Start gaze`, học bài, sau đó `Stop gaze`.
-7. Bấm `Finish session`.
-8. Mở analytics để xem kết quả nếu được phép.
-
-Teacher:
-
-1. Mở `/`.
-2. Chọn `Teacher`.
-3. Vào `/teacher`.
-4. Chọn lesson, mặc định `L001`.
-5. Xem danh sách session và bấm `View analytics`.
-
-Admin:
-
-1. Mở `/`.
-2. Chọn `Admin`.
-3. Vào `/admin`.
-4. Kiểm tra API health, DB schema, AI service, Cloudinary và data counts.
-5. Search session, xem session health, mở analytics hoặc recalculate metrics.
-
-## Dev tools và mouse simulation
-
-- Student không thấy dev tools, raw API response, schema status, session health internals hoặc mouse simulation.
-- Teacher chỉ thấy analytics/session tools cần cho giảng dạy.
-- Admin thấy debug panels và raw JSON, nhưng raw JSON được collapse mặc định.
-- `ENABLE_DEV_TOOLS=true` chỉ mở thêm debug panels cho admin hoặc khi dùng `?debug=1`.
-- Mouse simulation chỉ hiển thị khi `ENABLE_MOUSE_SIMULATION=true` và đang ở admin/dev mode. Đây là công cụ developer-only, không được gọi là gaze.
-
-## Lệnh QA hữu ích
+Neu can chay tay trong container Postgres:
 
 ```bash
-curl http://127.0.0.1:8000/debug/session-health/YOUR_SESSION_ID
-curl http://127.0.0.1:8000/sessions/YOUR_SESSION_ID/tracking-summary
-curl -X POST http://127.0.0.1:8000/metrics/recalculate/YOUR_SESSION_ID
-curl http://127.0.0.1:8000/metrics/YOUR_SESSION_ID
-curl -X POST http://127.0.0.1:8000/heatmaps/generate/YOUR_SESSION_ID
-curl http://127.0.0.1:8000/heatmaps/YOUR_SESSION_ID
-curl http://127.0.0.1:8000/lessons/L001/sessions
-curl http://127.0.0.1:8000/admin/overview
+docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/018_calibration_profile_preferences.sql
+docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/019_pdf_teacher_analytics.sql
 ```
 
-## Lỗi thường gặp
+## PDF Lesson Workflow
 
-- `ModuleNotFoundError: asyncpg`: chạy uvicorn bằng Python trong `.venv`.
-- `Address already in use`: port `8000` đang được process khác dùng.
-- API connection refused: backend chưa chạy hoặc sai port.
-- DB connection failed: kiểm tra `DATABASE_URL` và port PostgreSQL.
-- AI service not connected: kiểm tra `AI_HTTP_URL`, `AI_WS_URL` và service port `9000`.
-- Webcam permission denied: cấp quyền camera cho browser.
-- Chunks đã lưu nhưng không có tracking points: kiểm tra `/debug/session-health/{session_id}`.
-- Không có AOI metrics: chạy `POST /metrics/recalculate/{session_id}`.
-- Không có heatmap image: kiểm tra session đã có tracking points rồi generate lại heatmap.
-- Không có page snapshot: overlay heatmap sẽ fallback sang grid; hãy capture snapshot trên lesson page.
-- Cloudinary chưa cấu hình: local fallback dưới `/heatmaps/file/...` là trạng thái bình thường.
+1. Teacher tai PDF len trong trang khoa hoc.
+2. Backend luu file va gan `storage_key` bat bien cho moi phien ban tai lieu.
+3. Student mo khoa hoc, chon bai hoc, vao trang chuan bi.
+4. Sau khi qua camera + nhan dien khuon mat + ho so hieu chuan + validation, student vao trang doc PDF.
+5. Frontend gui du lieu gaze da duoc map theo:
+   - `course_item_id`
+   - `pdf_document_version`
+   - `page_number`
+   - `page_x_normalized`
+   - `page_y_normalized`
+6. Teacher xem tong hop theo khoa hoc, bai hoc, trang va heatmap.
+
+## Calibration Profiles
+
+Student co the quan ly ho so hieu chuan ngay trong luong chuan bi hoac tai:
+
+- `/calibration-profiles`
+
+Ho tro:
+
+- tao ho so moi
+- chon ho so
+- doi ten
+- dat mac dinh
+- canh bao khong tuong thich thiet bi/camera
+- luu ket qua validation gan nhat
+- xoa mem ma khong xoa du lieu phien hoc lich su
+
+## Development Analytics Data
+
+Seed analytics chi dung cho development:
+
+```bash
+docker exec eyelearn_web sh -lc 'cd /app && python -m web.dev.seed_pdf_teacher_analytics'
+```
+
+Script nay:
+
+- khong duoc app import luc startup
+- khong co UI de goi
+- bi chan khi `APP_ENV=production`
+- chi duoc phep override bang `ALLOW_PRODUCTION_DEV_SEED=true`
+
+Xoa du lieu seed:
+
+```bash
+docker exec eyelearn_web sh -lc 'cd /app && python - <<\"PY\"
+import asyncio
+from web.database import AsyncSessionLocal
+from web.dev.seed_pdf_teacher_analytics import clear_seed
+
+async def main():
+    async with AsyncSessionLocal() as db:
+        await clear_seed(db)
+        await db.commit()
+
+asyncio.run(main())
+PY'
+```
+
+## Verification
+
+### Student manual test flow
+
+1. Dang nhap student
+2. Mo `/courses`
+3. Mo chi tiet khoa hoc
+4. Chon bai hoc
+5. Hoan thanh camera, nhan dien khuon mat, chon/tao ho so hieu chuan, validation
+6. Vao lesson PDF
+7. Doc it nhat 2 trang
+8. Hoan thanh lesson
+
+### Teacher analytics routes
+
+- `/teacher`
+- `/teacher/courses`
+- `/teacher/courses/:courseId`
+- `/teacher/courses/:courseId?tab=analytics`
+- `/teacher/courses/:courseId/lessons/:lessonId/analytics`
+
+### SQL queries huu ich
+
+```sql
+select session_id, user_id, course_item_id, pdf_document_version, status, started_at, ended_at
+from sessions
+where session_type = 'student_learning'
+order by started_at desc
+limit 10;
+
+select session_id, course_item_id, pdf_document_version, page_number,
+       page_x_normalized, page_y_normalized, confidence, timestamp_ms
+from tracking_points
+where session_id = 'YOUR_SESSION_ID'
+order by timestamp_ms
+limit 30;
+```
+
+### Backend test command trong Docker
+
+```bash
+docker exec eyelearn_web sh -lc 'python -m unittest web.tests.test_calibration_profile_logic web.tests.test_learning_analytics_service web.tests.test_pdf_teacher_analytics_service web.tests.test_seed_pdf_teacher_analytics'
+```
+
+## Production Build
+
+```bash
+cd frontend
+npm run build
+```
+
+## Known Limitations
+
+- Khong co browser automation co webcam trong workspace CLI nay, nen phien capture webcam that phai duoc verify thu cong trong trinh duyet.
+- Heatmap hien duoc render density tren frontend, chua dung kernel density nang cao.
+- Bo loc session/analytics hien tai van con gon, chu yeu theo khoa hoc, bai hoc, hoc vien, ngay va confidence.
+- Class analytics chua nam trong MVP hien tai.
+- Chua co full frontend integration test framework cho luong webcam/browser.

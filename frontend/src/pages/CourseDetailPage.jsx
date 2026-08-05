@@ -3,29 +3,23 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AppHeader, Breadcrumbs, PageHeader } from "../components/AppShell.jsx";
 import { StudentLayout } from "../components/Layouts.jsx";
 import { apiUrl, requestJson } from "../lib/api.js";
-import { activityLabel, courseMeta, courseVisual, durationText, primaryCourseCta, progressLabel, progressState } from "../lib/coursePresentation.js";
-import { getSessionContext, setSessionContext } from "../lib/session.js";
+import { progressLabel, primaryCourseCta, itemTypeLabel } from "../lib/coursePresentation.js";
+import { clearSessionContext, getSessionContext, setSessionContext } from "../lib/session.js";
 
-function activityIcon(type) {
-  return {
-    SLIDE_DECK: "▤",
-    VIDEO: "▶",
-    DOCUMENT: "≣",
-    QUIZ: "?",
-    TEXT: "¶",
-  }[type] || "•";
+function itemFacts(item) {
+  const parts = [itemTypeLabel(item.item_type)];
+  if (item.pdf_lesson?.page_count) parts.push(`${item.pdf_lesson.page_count} trang`);
+  if (item.test?.question_count != null) parts.push(`${item.test.question_count} câu hỏi`);
+  return parts;
 }
 
-function flattenActivities(course) {
-  return (course?.modules || []).flatMap((module) =>
-    (module.lessons || []).flatMap((lesson) =>
-      (lesson.activities || []).map((activity) => ({
-        module,
-        lesson,
-        activity,
-      }))
-    )
-  );
+function actionLabel(item) {
+  if (item.access_state === "scheduled") return item.availability_label;
+  if (item.access_state === "closed") return "Đã kết thúc thời gian truy cập";
+  if (item.access_state === "disabled") return "Giáo viên chưa mở bài";
+  if (item.completed) return "Xem lại";
+  if (item.progress_ratio > 0) return "Tiếp tục học";
+  return "Bắt đầu học";
 }
 
 export default function CourseDetailPage() {
@@ -37,7 +31,6 @@ export default function CourseDetailPage() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [starting, setStarting] = useState("");
   const [status, setStatus] = useState({ message: "", kind: "" });
-  const [openModules, setOpenModules] = useState({});
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -51,12 +44,6 @@ export default function CourseDetailPage() {
         if (!active) return;
         setCourse(data);
         setLoadFailed(false);
-        const defaultOpen = {};
-        const targetModuleId = data.next_module_id || data.modules?.[0]?.module_id;
-        (data.modules || []).forEach((module) => {
-          defaultOpen[module.module_id] = data.modules.length === 1 || module.module_id === targetModuleId;
-        });
-        setOpenModules(defaultOpen);
       } catch (error) {
         if (active) {
           setLoadFailed(true);
@@ -72,21 +59,22 @@ export default function CourseDetailPage() {
     };
   }, [courseId]);
 
-  async function startActivity(module, lesson, activity) {
+  async function startItem(item) {
+    if (item.access_state !== "available") return;
     const sessionId = `S_${context.student_code || "student"}_${Date.now()}`;
-    setStarting(activity.activity_id);
+    setStarting(item.course_item_id);
     setStatus({ message: "Đang chuẩn bị phiên học...", kind: "" });
     try {
+      clearSessionContext({ preserveIdentity: true });
       const session = await requestJson(apiUrl("/sessions"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId,
           course_id: course.course_id,
-          module_id: module.module_id,
-          lesson_id: lesson.lesson_id,
-          activity_id: activity.activity_id,
-          content_version_id: activity.content_version_id,
+          course_item_id: item.course_item_id,
+          pdf_lesson_id: item.pdf_lesson?.pdf_lesson_id || null,
+          test_id: item.test?.test_id || null,
           is_fullscreen: Boolean(document.fullscreenElement),
           viewport_w: window.innerWidth,
           viewport_h: window.innerHeight,
@@ -95,57 +83,21 @@ export default function CourseDetailPage() {
       setSessionContext({
         role: "student",
         course_id: session.course_id || course.course_id,
-        module_id: session.module_id || module.module_id,
-        lesson_id: session.lesson_id || lesson.lesson_id,
-        activity_id: session.activity_id || activity.activity_id,
-        content_version_id: session.content_version_id || activity.content_version_id || "",
+        course_item_id: session.course_item_id || item.course_item_id,
+        pdf_lesson_id: session.pdf_lesson_id || item.pdf_lesson?.pdf_lesson_id || "",
+        pdf_document_version: session.pdf_document_version || "",
+        test_id: session.test_id || item.test?.test_id || "",
         session_id: session.session_id || sessionId,
       });
       navigate("/camera-check");
     } catch (error) {
-      setStatus({ message: `Không thể bắt đầu hoạt động: ${error.message}`, kind: "error" });
+      setStatus({ message: `Không thể bắt đầu nội dung: ${error.message}`, kind: "error" });
       setStarting("");
     }
   }
 
-  function toggleModule(moduleId) {
-    setOpenModules((current) => ({ ...current, [moduleId]: !current[moduleId] }));
-  }
-
-  function openCourseContent() {
-    if (!course) return;
-    const expanded = {};
-    (course.modules || []).forEach((module) => {
-      expanded[module.module_id] = true;
-    });
-    setOpenModules(expanded);
-    window.requestAnimationFrame(() => {
-      document.getElementById("course-outline")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }
-
-  const progress = Number(course?.progress_ratio || 0);
-  const progressPct = Math.round(progress * 100);
-  const progressCopy = progressLabel(progress);
-  const visual = courseVisual(course || {});
-  const meta = course ? courseMeta(course) : [];
-  const flatActivities = course ? flattenActivities(course) : [];
-  const nextActivityIndex = flatActivities.findIndex((item) => item.activity.activity_id === course?.next_activity_id);
-
-  function activityState(globalIndex, activityId) {
-    if (progress >= 1) return "completed";
-    if (activityId === course?.next_activity_id) return progress > 0 ? "current" : "next";
-    if (nextActivityIndex > -1 && globalIndex < nextActivityIndex) return "review";
-    return "available";
-  }
-
-  function activityActionLabel(globalIndex, activityId) {
-    const state = activityState(globalIndex, activityId);
-    if (state === "completed" || state === "review") return "Xem lại";
-    if (state === "current") return "Tiếp tục học";
-    if (state === "next") return "Bắt đầu học";
-    return "Mở hoạt động";
-  }
+  const progressCopy = progressLabel(course?.progress_ratio || 0);
+  const nextItem = course?.items?.find((item) => item.course_item_id === course.next_course_item_id) || null;
 
   return (
     <>
@@ -161,7 +113,7 @@ export default function CourseDetailPage() {
 
         <PageHeader
           title={course?.course_title || "Chi tiết khóa học"}
-          description={course?.course_description || "Xem nội dung theo chương, bài học và hoạt động."}
+          description={course?.course_description || "Xem danh sách bài học và bắt đầu đúng bài đang mở."}
         />
 
         {loading && <section className="panel"><p className="muted">Đang tải nội dung khóa học...</p></section>}
@@ -175,49 +127,21 @@ export default function CourseDetailPage() {
 
         {course && !loadFailed && (
           <>
-            <section className="course-overview-hero">
-              <div className={`course-detail-cover theme-${visual.theme}`} aria-hidden="true">
-                <div className="course-art-badge">{visual.eyebrow}</div>
-                <div className="course-art-graphic">
-                  <span className="art-node art-node-a"></span>
-                  <span className="art-node art-node-b"></span>
-                  <span className="art-node art-node-c"></span>
-                  <span className="art-line art-line-a"></span>
-                  <span className="art-line art-line-b"></span>
-                  <span className="art-line art-line-c"></span>
-                </div>
-                <small>{visual.accent}</small>
+            <section className="panel student-course-summary">
+              <div className="course-summary-strip">
+                <span><strong>{course.item_count || 0}</strong> bài học</span>
+                <span><strong>{course.available_item_count || 0}</strong> đang mở</span>
+                <span><strong>{Math.round((course.progress_ratio || 0) * 100)}%</strong> tiến độ</span>
               </div>
-
-              <div className="course-overview-copy">
-                {meta.length > 0 && <div className="course-inline-meta">{meta.join(" · ")}</div>}
-                <h2>{course.course_title}</h2>
-                {course.course_description && <p className="muted">{course.course_description}</p>}
-                <div className="course-progress-stack">
-                  <div className="course-progress-header">
-                    <strong>Tiến độ học</strong>
-                    <span>{progressCopy}</span>
-                  </div>
-                  <div className="course-inline-progress" aria-label={`Tiến độ ${progressPct}%`} role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
-                    <div><i style={{ width: `${progressPct}%` }}></i></div>
-                  </div>
-                </div>
-                <div className="student-actions hero-actions">
-                  <button
-                    className="btn primary"
-                    type="button"
-                    disabled={Boolean(starting) || !course.next_activity_id}
-                    onClick={() => {
-                      const next = flatActivities.find((item) => item.activity.activity_id === course.next_activity_id) || flatActivities[0];
-                      if (next) startActivity(next.module, next.lesson, next.activity);
-                    }}
-                  >
-                    {starting ? "Đang chuẩn bị..." : primaryCourseCta(progress)}
-                  </button>
-                  <button className="btn text" type="button" onClick={openCourseContent}>
-                    Xem nội dung
-                  </button>
-                </div>
+              <div className="student-actions hero-actions">
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={Boolean(starting) || !nextItem}
+                  onClick={() => nextItem && startItem(nextItem)}
+                >
+                  {starting ? "Đang chuẩn bị..." : nextItem ? `${primaryCourseCta(course.progress_ratio || 0)}: ${nextItem.title}` : "Chưa có bài học khả dụng"}
+                </button>
               </div>
             </section>
 
@@ -225,104 +149,44 @@ export default function CourseDetailPage() {
               <div className="section-heading-row">
                 <div>
                   <h2>Nội dung khóa học</h2>
-                  <p className="muted">
-                    {(course.module_count || 0)} chương · {(course.lesson_count || 0)} bài học · {(course.activity_count || 0)} hoạt động
-                  </p>
+                  <p className="muted">{course.item_count || 0} bài học · {course.available_item_count || 0} bài đang mở</p>
                 </div>
               </div>
 
-              {course.modules.length === 0 ? (
+              {course.items.length === 0 ? (
                 <div className="empty-state layout-surface">
                   <h3>Khóa học chưa có nội dung</h3>
-                  <p>Giảng viên sẽ cập nhật bài học và hoạt động trong thời gian tới.</p>
+                  <p>Giảng viên sẽ cập nhật PDF lesson hoặc test sau.</p>
                 </div>
               ) : (
                 <div className="module-outline-list">
-                  {course.modules.map((module, moduleIndex) => {
-                    const moduleLessons = module.lessons || [];
-                    const lessonCount = moduleLessons.length;
-                    const moduleDuration = module.estimated_duration_min || moduleLessons.reduce((sum, lesson) => sum + (lesson.estimated_duration_min || 0), 0);
-                    const isOpen = course.modules.length === 1 ? true : Boolean(openModules[module.module_id]);
-                    return (
-                      <section className="module-section" key={module.module_id}>
-                        <header className="module-section-header">
-                          <button
-                            type="button"
-                            className="module-toggle"
-                            onClick={() => course.modules.length > 1 && toggleModule(module.module_id)}
-                            aria-expanded={isOpen}
-                            disabled={course.modules.length === 1}
-                          >
-                            <div>
-                              <span>Chương {moduleIndex + 1}</span>
-                              <h3>{module.module_title}</h3>
-                            </div>
-                            <div className="module-header-meta">
-                              <em>{lessonCount} bài học</em>
-                              <em>{durationText(moduleDuration)}</em>
-                              {course.modules.length > 1 && <strong>{isOpen ? "−" : "+"}</strong>}
-                            </div>
-                          </button>
-                          {module.module_description && <p className="muted">{module.module_description}</p>}
-                        </header>
-
-                        {isOpen && (
-                          <div className="module-lesson-list">
-                            {moduleLessons.length === 0 ? (
-                              <div className="empty-state compact">
-                                Bài học trong chương này sẽ được cập nhật sau.
-                              </div>
-                            ) : (
-                              moduleLessons.map((lesson, lessonIndex) => (
-                                <article className="lesson-outline-item" key={lesson.lesson_id}>
-                                  <div className="lesson-outline-header">
-                                    <span>Bài {lessonIndex + 1}</span>
-                                    <strong>{lesson.lesson_title}</strong>
-                                    {lesson.lesson_description && <p>{lesson.lesson_description}</p>}
-                                  </div>
-                                  {(lesson.activities || []).length === 0 ? (
-                                    <div className="empty-state compact">
-                                      Bài học chưa có hoạt động.
-                                    </div>
-                                  ) : (
-                                    <div className="activity-outline-list">
-                                      {lesson.activities.map((activity) => {
-                                        const globalIndex = flatActivities.findIndex((item) => item.activity.activity_id === activity.activity_id);
-                                        const itemState = activityState(globalIndex, activity.activity_id);
-                                        return (
-                                          <div className="activity-outline-row" key={activity.activity_id}>
-                                            <div className="activity-outline-main">
-                                              <span className={`activity-outline-icon state-${itemState}`}>{activityIcon(activity.activity_type)}</span>
-                                              <div>
-                                                <strong>{activity.title}</strong>
-                                                <div className="course-meta-badges">
-                                                  <span className="meta-badge">{activityLabel(activity.activity_type)}</span>
-                                                  {activity.estimated_duration_min ? <span className="meta-badge">{durationText(activity.estimated_duration_min)}</span> : null}
-                                                  {activity.tracking_enabled ? <span className="meta-badge eye">Có theo dõi ánh nhìn</span> : null}
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <button
-                                              className={itemState === "current" || itemState === "next" ? "btn primary" : "btn text"}
-                                              type="button"
-                                              disabled={Boolean(starting)}
-                                              onClick={() => startActivity(module, lesson, activity)}
-                                            >
-                                              {starting === activity.activity_id ? "Đang chuẩn bị..." : activityActionLabel(globalIndex, activity.activity_id)}
-                                            </button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </article>
-                              ))
-                            )}
+                  {course.items.map((item, index) => (
+                    <article className="lesson-outline-card" key={item.course_item_id}>
+                      <div className="lesson-outline-main">
+                        <div className="lesson-outline-copy">
+                          <span>Bài {index + 1}</span>
+                          <strong>{item.title}</strong>
+                          {item.description && <p className="muted">{item.description}</p>}
+                          <div className="course-meta-badges">
+                            {itemFacts(item).map((fact) => <span className="meta-badge" key={fact}>{fact}</span>)}
+                            <span className="meta-badge">{item.access_state === "available" ? "Đang mở" : actionLabel(item)}</span>
+                            {item.last_page_number ? <span className="meta-badge">Xem tới trang {item.last_page_number}</span> : null}
+                            {item.progress_ratio > 0 ? <span className="meta-badge eye">{Math.round(item.progress_ratio * 100)}%</span> : <span className="meta-badge">Chưa bắt đầu</span>}
                           </div>
-                        )}
-                      </section>
-                    );
-                  })}
+                        </div>
+                        <div className="lesson-outline-actions">
+                          <button
+                            className="btn primary"
+                            type="button"
+                            disabled={item.access_state !== "available" || Boolean(starting)}
+                            onClick={() => startItem(item)}
+                          >
+                            {starting === item.course_item_id ? "Đang chuẩn bị..." : actionLabel(item)}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
                 </div>
               )}
             </section>
