@@ -68,8 +68,10 @@ async function checkAi() {
   try {
     const config = clientConfig || await loadClientConfig();
     const response = await fetchWithTimeout(`${config.ai_http_url}/health_check`, {}, AI_HEALTH_TIMEOUT_MS);
-    setAiStatus(response.ok ? "connected" : "not connected", response.ok);
-    return response.ok;
+    const payload = await response.json().catch(() => ({}));
+    const ready = response.ok && payload.pipeline_loaded === true;
+    setAiStatus(ready ? "connected" : "not connected", ready);
+    return ready;
   } catch (error) {
     setAiStatus("not connected");
     setStatus(`${error.message || "AI service not connected."} URL: ${(clientConfig || {}).ai_http_url || "unknown"}`, "error");

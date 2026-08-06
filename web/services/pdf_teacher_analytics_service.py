@@ -36,12 +36,22 @@ def is_valid_pdf_point(point: TrackingPoint, minimum_confidence: float = 0) -> b
     if not (0 <= float(point.page_x_normalized) <= 1 and 0 <= float(point.page_y_normalized) <= 1):
         return False
     metadata = point.metadata_json or {}
+    if metadata.get("prediction_available") is False:
+        return False
+    if metadata.get("inside_viewport") is False:
+        return False
     if metadata.get("is_transitioning") is True:
+        return False
+    if metadata.get("is_resizing") is True:
+        return False
+    if metadata.get("is_rendering") is True:
+        return False
+    if metadata.get("in_pdf_page") is False:
         return False
     if metadata.get("in_reliable_region") is False:
         return False
-    if point.confidence is not None and point.confidence < minimum_confidence:
-        return False
+    if minimum_confidence > 0:
+        return point.confidence is not None and point.confidence >= minimum_confidence
     return True
 
 
@@ -164,7 +174,7 @@ def _session_filters(course_id: str, lesson_id: str | None = None, student_id: s
     filters = [
         Session.course_id == course_id,
         Session.session_type == "student_learning",
-        Session.status.in_(["learning", "finished", "preparing"]),
+        Session.status.in_(["learning", "finished", "abandoned", "preparing"]),
     ]
     if lesson_id:
         filters.append(Session.course_item_id == lesson_id)
@@ -203,6 +213,7 @@ async def load_valid_points(
             TrackingPoint.page_x_normalized,
             TrackingPoint.page_y_normalized,
             TrackingPoint.confidence,
+            TrackingPoint.metadata_json,
             Session.started_at,
         )
         .join(Session, Session.session_id == TrackingPoint.session_id)
@@ -210,6 +221,11 @@ async def load_valid_points(
         .where(TrackingPoint.page_number.is_not(None))
         .order_by(TrackingPoint.session_id, TrackingPoint.timestamp_ms)
     )
+    if minimum_confidence > 0:
+        stmt = stmt.where(
+            TrackingPoint.confidence.is_not(None),
+            TrackingPoint.confidence >= minimum_confidence,
+        )
     result = await db.execute(stmt)
     rows = []
     for row in result.all():
@@ -224,7 +240,7 @@ async def load_valid_points(
             page_x_normalized=row[7],
             page_y_normalized=row[8],
             confidence=row[9],
-            metadata_json={},
+            metadata_json=row[10] or {},
         )
         if not is_valid_pdf_point(point, minimum_confidence):
             continue
@@ -240,7 +256,7 @@ async def load_valid_points(
                 x=float(row[7]),
                 y=float(row[8]),
                 confidence=float(row[9]) if row[9] is not None else None,
-                started_at=row[10],
+                started_at=row[11],
             )
         )
     return rows

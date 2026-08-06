@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth.jsx";
 import { setSessionContext } from "../lib/session.js";
@@ -35,14 +35,9 @@ function CheckIcon(props) {
 }
 
 const benefits = [
-  "Theo dõi điểm nhìn trong quá trình học.",
-  "Tái sử dụng hồ sơ hiệu chỉnh.",
-  "Phân tích mức độ chú ý theo từng trang.",
-];
-
-const heroStatuses = [
-  { label: "Theo dõi", value: "Ổn định" },
-  { label: "Hiệu chỉnh", value: "Sẵn sàng" },
+  "Camera chỉ được kích hoạt khi người học đồng ý.",
+  "Tiến độ và hồ sơ hiệu chỉnh được lưu theo tài khoản.",
+  "Kết quả phân tích được phân quyền theo vai trò.",
 ];
 
 export default function LoginPage() {
@@ -52,25 +47,44 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState({ message: "", kind: "" });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const errorRef = useRef(null);
   const statusId = "login-status";
   const identifierId = "login-identifier";
   const passwordId = "login-password";
+  const identifierErrorId = "login-identifier-error";
+  const passwordErrorId = "login-password-error";
+
+  function focusErrorSummary() {
+    window.requestAnimationFrame(() => errorRef.current?.focus());
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (submitting) return;
     sessionStorage.removeItem("ela_logged_out");
 
     const normalizedIdentifier = normalizeCode(identifier);
+    const nextFieldErrors = {};
 
     if (!normalizedIdentifier) {
-      setStatus({ message: "Nhập email hoặc mã sinh viên để đăng nhập.", kind: "error" });
+      nextFieldErrors.identifier = "Vui lòng nhập email hoặc mã tài khoản.";
+    }
+    if (!password) {
+      nextFieldErrors.password = "Vui lòng nhập mật khẩu.";
+    }
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      setStatus({ message: "Vui lòng kiểm tra lại thông tin đăng nhập.", kind: "error" });
+      focusErrorSummary();
       return;
     }
 
     ["session_id", "course_id", "course_item_id", "pdf_lesson_id", "test_id", "module_id", "activity_id", "content_version_id", "calibration_ready"].forEach((key) => {
       localStorage.removeItem(key);
     });
+    setFieldErrors({});
     setSubmitting(true);
     setStatus({ message: "Đang xác thực...", kind: "" });
 
@@ -95,30 +109,34 @@ export default function LoginPage() {
       }
       navigate("/courses");
     } catch (error) {
-      setStatus({ message: `Không thể đăng nhập: ${error.message}`, kind: "error" });
+      const message = /kết nối|máy chủ|server|network|API/i.test(error.message)
+        ? "Không thể kết nối tới máy chủ. Vui lòng thử lại sau."
+        : "Email, mã tài khoản hoặc mật khẩu không chính xác.";
+      setStatus({ message, kind: "error" });
       setSubmitting(false);
+      focusErrorSummary();
     }
   }
 
   return (
     <>
-      <header className="topbar auth-topbar">
+      <header className="topbar auth-topbar gazeedu-login-header">
         <div className="auth-topbar__inner">
-          <Link className="brand auth-brand-link" to="/">ELA</Link>
+          <Link className="brand auth-brand-link" to="/">GazeEdu</Link>
           <nav className="auth-top-links" aria-label="Điều hướng phụ">
-            <Link to="/#features">Giới thiệu</Link>
+            <Link to="/">Trang chủ</Link>
             <Link to="/#privacy">Trợ giúp</Link>
           </nav>
         </div>
       </header>
 
-      <main className="auth-layout login-page">
-        <section className="auth-layout__intro" aria-label="Giới thiệu ELA">
+      <main className="auth-layout login-page gazeedu-login-page">
+        <section className="auth-layout__intro gazeedu-login-aside" aria-label="Giới thiệu GazeEdu">
           <div className="auth-layout__intro-inner">
-            <p className="auth-kicker">Nền tảng học tập có eye-tracking</p>
-            <h1>Hiểu cách người học<br />tương tác với bài giảng</h1>
+            <p className="auth-kicker">GAZEEDU · EYE-TRACKING LEARNING ANALYTICS</p>
+            <h1>Học tập và phân tích trên cùng một nền tảng.</h1>
             <p>
-              Học qua tài liệu, theo dõi mức độ tập trung và phân tích cách người học tương tác với từng nội dung.
+              Truy cập khóa học, bài giảng và các phiên học có ghi nhận điểm nhìn trong một không gian thống nhất.
             </p>
 
             <div className="auth-hero-card" aria-hidden="true">
@@ -126,10 +144,10 @@ export default function LoginPage() {
                 <article className="auth-slide-mockup">
                   <div className="auth-slide-header">
                     <div>
-                      <span className="auth-slide-eyebrow">Tài liệu học tập</span>
-                      <strong>Nội dung bài học PDF</strong>
+                      <span className="auth-slide-eyebrow">Bài giảng PDF</span>
+                      <strong>Sơ đồ nhận thức học tập</strong>
                     </div>
-                    <span className="auth-slide-badge">Trang 03</span>
+                    <span className="auth-slide-badge">Trang 08</span>
                   </div>
                   <div className="auth-slide-content">
                     <div className="auth-slide-text-block auth-slide-text-block--lg" />
@@ -150,12 +168,14 @@ export default function LoginPage() {
                 </article>
 
                 <div className="auth-status-stack">
-                  {heroStatuses.map((item) => (
-                    <div className="auth-status-card" key={item.label}>
-                      <span>{item.label}</span>
-                      <strong>{item.value}</strong>
-                    </div>
-                  ))}
+                  <div className="auth-status-card">
+                    <span>Ghi nhận</span>
+                    <strong>Đang bật</strong>
+                  </div>
+                  <div className="auth-status-card">
+                    <span>Hiệu chỉnh</span>
+                    <strong>Sẵn sàng</strong>
+                  </div>
                 </div>
               </div>
             </div>
@@ -171,27 +191,47 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="auth-layout__form" aria-label="Form đăng nhập">
+        <section className="auth-layout__form gazeedu-login-form-area" aria-label="Form đăng nhập">
           <div className="auth-layout__form-inner">
             <div className="auth-form-header">
               <h2>Chào mừng quay lại</h2>
-              <p>Đăng nhập để tiếp tục học tập trên ELA.</p>
+              <p>Đăng nhập để truy cập không gian GazeEdu theo vai trò của bạn.</p>
             </div>
 
-            <form className="form-stack" onSubmit={handleSubmit}>
+            <form className="form-stack gazeedu-login-form" onSubmit={handleSubmit} noValidate>
+              {status.kind === "error" && status.message ? (
+                <div
+                  id={statusId}
+                  className="gazeedu-login-error"
+                  role="alert"
+                  aria-live="assertive"
+                  tabIndex={-1}
+                  ref={errorRef}
+                >
+                  {status.message}
+                </div>
+              ) : (
+                <div id={statusId} className="sr-only" aria-live="polite" aria-atomic="true">
+                  {status.message}
+                </div>
+              )}
+
               <div className="field">
-                <label htmlFor={identifierId}>Email hoặc mã sinh viên</label>
+                <label htmlFor={identifierId}>Email hoặc mã tài khoản</label>
                 <input
                   id={identifierId}
                   autoComplete="username"
-                  required
-                  placeholder="Nhập email hoặc mã sinh viên"
+                  placeholder="Nhập email hoặc mã tài khoản"
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  aria-describedby={statusId}
-                  aria-invalid={status.kind === "error"}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (fieldErrors.identifier) setFieldErrors((errors) => ({ ...errors, identifier: "" }));
+                  }}
+                  aria-describedby={`${statusId}${fieldErrors.identifier ? ` ${identifierErrorId}` : ""}`}
+                  aria-invalid={fieldErrors.identifier ? "true" : undefined}
                   disabled={submitting}
                 />
+                {fieldErrors.identifier ? <p className="field-error" id={identifierErrorId}>{fieldErrors.identifier}</p> : null}
               </div>
 
               <div className="field">
@@ -203,9 +243,12 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     placeholder="Nhập mật khẩu"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    aria-describedby={statusId}
-                    aria-invalid={status.kind === "error"}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (fieldErrors.password) setFieldErrors((errors) => ({ ...errors, password: "" }));
+                    }}
+                    aria-describedby={`${statusId}${fieldErrors.password ? ` ${passwordErrorId}` : ""}`}
+                    aria-invalid={fieldErrors.password ? "true" : undefined}
                     disabled={submitting}
                   />
                   <button
@@ -219,27 +262,16 @@ export default function LoginPage() {
                     {showPassword ? <EyeOffIcon className="password-toggle__icon" /> : <EyeIcon className="password-toggle__icon" />}
                   </button>
                 </div>
+                {fieldErrors.password ? <p className="field-error" id={passwordErrorId}>{fieldErrors.password}</p> : null}
               </div>
-
-              <a className="auth-forgot" href="mailto:support@ela.edu.vn?subject=ELA%20-%20Quen%20mat%20khau">Quên mật khẩu?</a>
 
               <button className="btn primary login-submit" type="submit" disabled={submitting} aria-busy={submitting}>
                 {submitting ? <span className="login-submit__spinner" aria-hidden="true" /> : null}
                 <span>{submitting ? "Đang đăng nhập..." : "Đăng nhập"}</span>
               </button>
 
-              <div
-                id={statusId}
-                className={`status-line ${status.kind}`.trim()}
-                role={status.kind === "error" ? "alert" : "status"}
-                aria-live={status.kind === "error" ? "assertive" : "polite"}
-                aria-atomic="true"
-              >
-                {status.message}
-              </div>
-
               <p className="auth-support">
-                Cần hỗ trợ đăng nhập? <a href="mailto:support@ela.edu.vn?subject=ELA%20-%20Ho%20tro%20tai%20khoan">Liên hệ quản trị viên.</a>
+                Cần hỗ trợ đăng nhập? <a href="mailto:support@ela.edu.vn?subject=GazeEdu%20-%20Ho%20tro%20tai%20khoan">Liên hệ quản trị viên.</a>
               </p>
             </form>
           </div>

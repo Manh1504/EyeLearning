@@ -14,6 +14,7 @@ function itemFacts(item) {
 }
 
 function actionLabel(item) {
+  if (item.item_type === "TEST") return "Chưa hỗ trợ";
   if (item.access_state === "scheduled") return item.availability_label;
   if (item.access_state === "closed") return "Đã kết thúc thời gian truy cập";
   if (item.access_state === "disabled") return "Giáo viên chưa mở bài";
@@ -60,6 +61,10 @@ export default function CourseDetailPage() {
   }, [courseId]);
 
   async function startItem(item) {
+    if (item.item_type !== "PDF_LESSON") {
+      setStatus({ message: "Bài kiểm tra chưa có trình làm bài.", kind: "error" });
+      return;
+    }
     if (item.access_state !== "available") return;
     const sessionId = `S_${context.student_code || "student"}_${Date.now()}`;
     setStarting(item.course_item_id);
@@ -97,7 +102,11 @@ export default function CourseDetailPage() {
   }
 
   const progressCopy = progressLabel(course?.progress_ratio || 0);
-  const nextItem = course?.items?.find((item) => item.course_item_id === course.next_course_item_id) || null;
+  const nextItem = (
+    course?.items?.find((item) => item.course_item_id === course.next_course_item_id && item.item_type === "PDF_LESSON") ||
+    course?.items?.find((item) => item.access_state === "available" && item.item_type === "PDF_LESSON") ||
+    null
+  );
 
   return (
     <>
@@ -156,7 +165,7 @@ export default function CourseDetailPage() {
               {course.items.length === 0 ? (
                 <div className="empty-state layout-surface">
                   <h3>Khóa học chưa có nội dung</h3>
-                  <p>Giảng viên sẽ cập nhật PDF lesson hoặc test sau.</p>
+                  <p>Giáo viên sẽ cập nhật PDF lesson hoặc test sau.</p>
                 </div>
               ) : (
                 <div className="module-outline-list">
@@ -178,7 +187,7 @@ export default function CourseDetailPage() {
                           <button
                             className="btn primary"
                             type="button"
-                            disabled={item.access_state !== "available" || Boolean(starting)}
+                            disabled={item.item_type !== "PDF_LESSON" || item.access_state !== "available" || Boolean(starting)}
                             onClick={() => startItem(item)}
                           >
                             {starting === item.course_item_id ? "Đang chuẩn bị..." : actionLabel(item)}

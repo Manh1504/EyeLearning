@@ -315,7 +315,7 @@ export default function TeacherCourseDetailPage() {
           </div>
           <div className="system-status-list">
             {metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
-            <div><span>Tỷ lệ phiên có tracking</span><strong>{Math.round((summary?.valid_tracking_session_rate || 0) * 100)}%</strong></div>
+            <div><span>Phiên có dữ liệu</span><strong>{Math.round((summary?.valid_tracking_session_rate || 0) * 100)}%</strong></div>
             <div><span>Bài học đã hoàn thành</span><strong>{summary?.completed_lesson_count ?? 0}</strong></div>
             <div><span>Hoạt động gần nhất</span><strong>{fmtDate(summary?.recent_activity_at)}</strong></div>
           </div>
@@ -453,7 +453,7 @@ export default function TeacherCourseDetailPage() {
                 <th>Học viên đã học</th>
                 <th>Phiên học</th>
                 <th>Thời gian phiên trung bình</th>
-                <th>Tracking hợp lệ</th>
+                <th>Session đóng góp</th>
                 <th>Trang có dữ liệu</th>
                 <th>Hoạt động gần nhất</th>
                 <th></th>
@@ -505,7 +505,7 @@ export default function TeacherCourseDetailPage() {
     <>
       <AppHeader active="courses" />
       <TeacherLayout>
-        <Breadcrumbs items={[{ label: "Giảng viên", to: "/teacher" }, { label: "Khóa học", to: "/teacher/courses" }, { label: course?.course_title || courseId }]} />
+        <Breadcrumbs items={[{ label: "Giáo viên", to: "/teacher" }, { label: "Khóa học", to: "/teacher/courses" }, { label: course?.course_title || courseId }]} />
         <PageHeader
           title={course?.course_title || "Chi tiết khóa học"}
           description={course?.course_description || "Quản lý nội dung và theo dõi hoạt động học tập theo từng khóa học."}

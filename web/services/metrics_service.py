@@ -13,7 +13,17 @@ EPOCH_MS_THRESHOLD = 1_000_000_000_000
 
 def _is_metric_point(point: TrackingPoint) -> bool:
     metadata = point.metadata_json or {}
+    if metadata.get("prediction_available") is False:
+        return False
+    if metadata.get("inside_viewport") is False:
+        return False
     if metadata.get("is_transitioning") is True:
+        return False
+    if metadata.get("is_resizing") is True:
+        return False
+    if metadata.get("is_rendering") is True:
+        return False
+    if metadata.get("in_pdf_page") is False:
         return False
     if metadata.get("in_reliable_region") is False:
         return False

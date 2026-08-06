@@ -1,3 +1,4 @@
+import json
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -80,7 +81,13 @@ def _ai_service_status() -> dict:
     url = f"{backend_ai_http_url()}/health_check"
     try:
         with urlopen(url, timeout=1.5) as response:
-            return {"ok": 200 <= response.status < 300, "url": url}
+            payload = json.loads(response.read().decode("utf-8"))
+            return {
+                "ok": 200 <= response.status < 300 and payload.get("pipeline_loaded") is True,
+                "url": url,
+                "pipeline_loaded": payload.get("pipeline_loaded"),
+                "status": payload.get("status"),
+            }
     except (OSError, URLError) as exc:
         return {"ok": False, "url": url, "error": str(exc)}
 

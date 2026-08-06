@@ -6,7 +6,7 @@ export default function TeacherClassesPage() {
     <>
       <AppHeader active="classes" />
       <TeacherLayout>
-        <Breadcrumbs items={[{ label: "Giảng viên", to: "/teacher" }, { label: "Lớp học" }]} />
+        <Breadcrumbs items={[{ label: "Giáo viên", to: "/teacher" }, { label: "Lớp học" }]} />
         <PageHeader
           title="Lớp học"
           description="Tổ chức học viên theo từng nhóm để theo dõi tiến độ và hoạt động học tập."

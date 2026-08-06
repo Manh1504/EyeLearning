@@ -33,6 +33,7 @@ class SessionOut(BaseModel):
     calibration_group_id: Optional[str]
     started_at: Optional[datetime]
     ended_at: Optional[datetime]
+    last_heartbeat_at: Optional[datetime] = None
     is_fullscreen: Optional[bool]
     viewport_w: Optional[int]
     viewport_h: Optional[int]
@@ -66,12 +67,14 @@ class TrackingPointCreate(BaseModel):
     course_id: Optional[str] = None
     course_item_id: Optional[str] = None
     pdf_lesson_id: Optional[str] = None
+    pdf_document_version: Optional[str] = None
     test_id: Optional[str] = None
     module_id: Optional[str] = None
     activity_id: Optional[str] = None
     content_version_id: Optional[str] = None
     stimulus_id: Optional[str] = None
-    timestamp_ms: int
+    t: Optional[int] = None
+    timestamp_ms: Optional[int] = None
     viewport_x: Optional[float] = None
     viewport_y: Optional[float] = None
     x: Optional[float] = None
@@ -98,12 +101,19 @@ class TrackingPointCreate(BaseModel):
     zoom: Optional[float] = None
     fullscreen: Optional[bool] = None
     target_zone: Optional[str] = None
+    conf: Optional[float] = None
     confidence: Optional[float] = None
     gaze_status: Optional[str] = None
     metadata_json: Optional[dict[str, Any]] = None
 
     @model_validator(mode="after")
     def validate_coordinates(self):
+        if self.timestamp_ms is None:
+            self.timestamp_ms = self.t
+        if self.timestamp_ms is None:
+            raise ValueError("timestamp_ms or fallback t is required")
+        if self.confidence is None:
+            self.confidence = self.conf
         if self.viewport_x is None and self.x is None:
             raise ValueError("viewport_x or fallback x is required")
         if self.viewport_y is None and self.y is None:
@@ -123,6 +133,7 @@ class TrackingPointOut(BaseModel):
     course_id: Optional[str] = None
     course_item_id: Optional[str] = None
     pdf_lesson_id: Optional[str] = None
+    pdf_document_version: Optional[str] = None
     test_id: Optional[str] = None
     module_id: Optional[str] = None
     activity_id: Optional[str] = None

@@ -345,10 +345,11 @@ class Session(Base):
     calibration_group_id = Column(Text)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True))
+    last_heartbeat_at = Column(DateTime(timezone=True))
     is_fullscreen = Column(Boolean)
     viewport_w = Column(Integer)
     viewport_h = Column(Integer)
-    status = Column(Text, nullable=False, server_default="calibrating")
+    status = Column(Text, nullable=False, server_default="preparing")
     session_type = Column(Text, nullable=False, server_default="student_learning")
     created_by_role = Column(Text)
 

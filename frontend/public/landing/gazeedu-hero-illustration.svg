@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="980" viewBox="0 0 1200 980" fill="none">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#0B1F3A" flood-opacity="0.14"/>
+    </filter>
+
+    <filter id="softBlur" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+
+    <radialGradient id="heatStrong" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF6A00" stop-opacity="0.88"/>
+      <stop offset="28%" stop-color="#FFB000" stop-opacity="0.72"/>
+      <stop offset="58%" stop-color="#E4F238" stop-opacity="0.46"/>
+      <stop offset="82%" stop-color="#48D07A" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#48D07A" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="heatSoft" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFD54A" stop-opacity="0.52"/>
+      <stop offset="55%" stop-color="#7EDC8C" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7EDC8C" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="paperTint" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F8FBFF"/>
+    </linearGradient>
+
+    <linearGradient id="imagePlaceholder" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E7F1FA"/>
+      <stop offset="100%" stop-color="#D5E6F4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- subtle decorative blob -->
+  <path d="M774 98C930 34 1116 144 1147 307C1171 432 1115 531 1114 648C1112 792 1000 893 859 892C702 891 586 799 567 654C548 512 607 406 607 291C607 200 674 139 774 98Z"
+        fill="#EEF6FB"/>
+
+  <!-- dots decoration -->
+  <g fill="#CFE0EF" opacity="0.7">
+    <circle cx="1092" cy="353" r="5"/>
+    <circle cx="1120" cy="353" r="5"/>
+    <circle cx="1148" cy="353" r="5"/>
+    <circle cx="1092" cy="381" r="5"/>
+    <circle cx="1120" cy="381" r="5"/>
+    <circle cx="1148" cy="381" r="5"/>
+    <circle cx="1092" cy="409" r="5"/>
+    <circle cx="1120" cy="409" r="5"/>
+    <circle cx="1148" cy="409" r="5"/>
+  </g>
+
+  <!-- document -->
+  <g filter="url(#shadow)" transform="rotate(3 690 500)">
+    <rect x="283" y="94" width="650" height="770" rx="30" fill="url(#paperTint)" stroke="#D7E2EC" stroke-width="3"/>
+
+    <!-- top media block -->
+    <rect x="340" y="156" width="220" height="150" rx="18" fill="url(#imagePlaceholder)"/>
+    <circle cx="392" cy="204" r="22" fill="#BFD4E7"/>
+    <path d="M355 281L415 225L467 274L501 244L544 291H355Z" fill="#B8CDE0"/>
+
+    <!-- top text -->
+    <rect x="608" y="165" width="240" height="14" rx="7" fill="#CDD9E4"/>
+    <rect x="608" y="197" width="204" height="12" rx="6" fill="#D9E2EA"/>
+    <rect x="608" y="225" width="224" height="12" rx="6" fill="#D9E2EA"/>
+    <rect x="608" y="253" width="170" height="12" rx="6" fill="#D9E2EA"/>
+
+    <!-- large content block -->
+    <rect x="340" y="342" width="508" height="266" rx="20" fill="#DCEAF5"/>
+    <rect x="376" y="380" width="164" height="18" rx="9" fill="#BFD0DF"/>
+    <rect x="376" y="416" width="236" height="12" rx="6" fill="#C9D8E4"/>
+    <rect x="376" y="442" width="190" height="12" rx="6" fill="#C9D8E4"/>
+
+    <!-- abstract diagram -->
+    <rect x="398" y="490" width="114" height="74" rx="14" fill="#F7FAFC" stroke="#BFD2E2" stroke-width="2"/>
+    <rect x="576" y="490" width="114" height="74" rx="14" fill="#F7FAFC" stroke="#BFD2E2" stroke-width="2"/>
+    <rect x="754" y="490" width="58" height="74" rx="14" fill="#F7FAFC" stroke="#BFD2E2" stroke-width="2"/>
+    <path d="M512 527H576" stroke="#90A8BC" stroke-width="3" stroke-linecap="round"/>
+    <path d="M690 527H754" stroke="#90A8BC" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- lower text -->
+    <rect x="340" y="658" width="330" height="14" rx="7" fill="#CBD7E1"/>
+    <rect x="340" y="689" width="382" height="12" rx="6" fill="#D9E2EA"/>
+    <rect x="340" y="716" width="316" height="12" rx="6" fill="#D9E2EA"/>
+    <rect x="340" y="743" width="354" height="12" rx="6" fill="#D9E2EA"/>
+
+    <!-- small footer card -->
+    <rect x="712" y="680" width="136" height="112" rx="16" fill="#E6F0F8"/>
+  </g>
+
+  <!-- heatmap (blurred only) -->
+  <g filter="url(#softBlur)">
+    <ellipse cx="699" cy="559" rx="178" ry="128" fill="url(#heatStrong)"/>
+    <ellipse cx="594" cy="366" rx="116" ry="86" fill="url(#heatSoft)"/>
+  </g>
+
+  <!-- crisp gaze path -->
+  <g>
+    <path d="M440 315C402 403 425 498 518 567C587 618 673 612 726 555"
+          stroke="#174EA6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M726 555C740 518 730 484 699 458"
+          stroke="#174EA6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g fill="#123F82" stroke="#FFFFFF" stroke-width="7">
+      <circle cx="440" cy="315" r="16"/>
+      <circle cx="417" cy="436" r="16"/>
+      <circle cx="518" cy="567" r="16"/>
+      <circle cx="726" cy="555" r="16"/>
+      <circle cx="699" cy="458" r="16"/>
+    </g>
+  </g>
+</svg>

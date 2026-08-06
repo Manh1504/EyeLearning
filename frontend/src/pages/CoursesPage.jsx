@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { AppHeader, Breadcrumbs, PageHeader } from "../components/AppShell.jsx";
 import { StudentLayout } from "../components/Layouts.jsx";
 import { apiUrl, requestJson } from "../lib/api.js";
@@ -204,8 +204,21 @@ export default function CoursesPage() {
             const isCompleted = display.state === "completed";
             const progress = normalizedPercent(display.progressPercent);
             return (
-              <article className="course-tile" key={course.course_id}>
-                <Link className="course-tile-link" to={`/courses/${course.course_id}`} aria-label={`Mở khóa học ${course.course_title}`}>
+              <article
+                className="course-tile"
+                key={course.course_id}
+                role="link"
+                tabIndex={0}
+                onClick={() => navigate(`/courses/${course.course_id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    navigate(`/courses/${course.course_id}`);
+                  }
+                }}
+                aria-label={`Mở khóa học ${course.course_title}`}
+              >
+                <div className="course-tile-link" aria-hidden="true">
                   <div className={`course-tile-art theme-${visual.theme}`}>
                     <div className="course-art-badge">{visual.eyebrow}</div>
                     <div className="course-document-graphic" role="img" aria-label={`Ảnh minh họa khóa học ${course.course_title}`}>
@@ -216,12 +229,10 @@ export default function CoursesPage() {
                       </span>
                     </div>
                   </div>
-                </Link>
+                </div>
                 <div className="course-tile-body">
                   <div className="course-tile-header">
-                    <Link className="course-title-link" to={`/courses/${course.course_id}`}>
-                      <h2>{course.course_title}</h2>
-                    </Link>
+                    <h2>{course.course_title}</h2>
                   </div>
                   <p className="course-tile-description">{course.course_description || "Khóa học chưa có mô tả."}</p>
 
@@ -266,13 +277,13 @@ export default function CoursesPage() {
                     className="btn primary"
                     type="button"
                     disabled={Boolean(starting) || !targetItem}
-                    onClick={() => startItem(course, targetItem)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      startItem(course, targetItem);
+                    }}
                   >
                     {starting === targetItem?.course_item_id ? "Đang chuẩn bị..." : display.ctaLabel}
                   </button>
-                  <Link className="btn text course-content-link" to={`/courses/${course.course_id}`}>
-                    Xem nội dung
-                  </Link>
                   {!targetItem && <span className="muted">Hiện chưa có bài học nào đang mở.</span>}
                 </div>
               </article>

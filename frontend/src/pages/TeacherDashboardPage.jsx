@@ -89,7 +89,7 @@ export default function TeacherDashboardPage() {
     <>
       <AppHeader active="overview" />
       <TeacherLayout>
-        <Breadcrumbs items={[{ label: "Giảng viên", to: "/teacher" }, { label: "Tổng quan" }]} />
+        <Breadcrumbs items={[{ label: "Giáo viên", to: "/teacher" }, { label: "Tổng quan" }]} />
         <PageHeader
           title="Tổng quan"
           description="Theo dõi khóa học, hoạt động học tập và tín hiệu eye-tracking trong phạm vi được phân công."
@@ -99,14 +99,14 @@ export default function TeacherDashboardPage() {
           <section className="panel">
             <div className="empty-state">
               <h2>Bạn không có quyền truy cập nội dung này.</h2>
-              <p>Hãy dùng đúng tài khoản giảng viên đã được phân công khóa học.</p>
+              <p>Hãy dùng đúng tài khoản giáo viên đã được phân công khóa học.</p>
             </div>
           </section>
         )}
 
         {!accessDenied && loading && (
           <section className="panel">
-            <div className="empty-state">Đang tải tổng quan giảng viên...</div>
+            <div className="empty-state">Đang tải tổng quan giáo viên...</div>
           </section>
         )}
 

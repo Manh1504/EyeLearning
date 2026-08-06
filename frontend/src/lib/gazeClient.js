@@ -11,6 +11,7 @@ const CHUNK_INTERVAL_MS = 2000;
 const MAX_CHUNK_POINTS = 30;    // ở 10Hz, 2s window ~20 điểm — vẫn dưới ngưỡng này,
                                  // không cần đổi (chunk vẫn flush theo timer, không bị
                                  // flush sớm do đầy buffer).
+const MAX_PENDING_CHUNKS = 100;
 const RELIABLE_REGION_INSET_X = 0.12;
 const RELIABLE_REGION_INSET_TOP = 0.12;
 const RELIABLE_REGION_INSET_BOTTOM = 0.12;
@@ -39,14 +40,18 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
   let seq = 0;
   let chunkBuffer = [];
   let chunkStartMs = null;
+  let pendingChunks = [];
+  let flushPromise = null;
   let debugDotVisible = false;
 
   async function checkAi() {
     try {
       const cfg = await loadClientConfig();
       const response = await fetch(`${cfg.ai_http_url}/health_check`);
-      setAiStatus(response.ok ? "Sẵn sàng" : "Chưa kết nối", response.ok);
-      return response.ok;
+      const payload = await response.json().catch(() => ({}));
+      const ready = response.ok && payload.pipeline_loaded === true;
+      setAiStatus(ready ? "Sẵn sàng" : "Chưa kết nối", ready);
+      return ready;
     } catch {
       setAiStatus("Chưa kết nối", false);
       return false;
@@ -161,10 +166,18 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
     const yNorm = Number(prediction.y);
     if (!Number.isFinite(xNorm) || !Number.isFinite(yNorm)) return null;
 
-    const viewportX = clamp(xNorm * window.innerWidth, 0, window.innerWidth - 1);
-    const viewportY = clamp(yNorm * window.innerHeight, 0, window.innerHeight - 1);
-    const zoneEl = document.elementFromPoint(viewportX, viewportY)?.closest("[data-zone]");
-    const metadata = lessonPointMetadata(viewportX, viewportY, zoneEl);
+    const rawViewportX = xNorm * window.innerWidth;
+    const rawViewportY = yNorm * window.innerHeight;
+    const insideViewport =
+      rawViewportX >= 0 &&
+      rawViewportX < window.innerWidth &&
+      rawViewportY >= 0 &&
+      rawViewportY < window.innerHeight;
+    const zoneEl = insideViewport
+      ? document.elementFromPoint(rawViewportX, rawViewportY)?.closest("[data-zone]")
+      : null;
+    const metadata = lessonPointMetadata(rawViewportX, rawViewportY, zoneEl);
+    const confidence = Number.isFinite(Number(prediction.confidence)) ? Number(prediction.confidence) : null;
     const now = Date.now();
     return {
       event_id: `gaze_${ctx.session_id}_${now}`,
@@ -173,6 +186,7 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       course_id: ctx.course_id || metadata.course_id || null,
       course_item_id: ctx.course_item_id || metadata.course_item_id || null,
       pdf_lesson_id: ctx.pdf_lesson_id || metadata.pdf_lesson_id || null,
+      pdf_document_version: ctx.pdf_document_version || null,
       test_id: ctx.test_id || null,
       module_id: ctx.module_id || metadata.module_id || null,
       activity_id: ctx.activity_id || metadata.activity_id || null,
@@ -182,10 +196,10 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       student_code: ctx.student_code,
       full_name: ctx.full_name,
       timestamp_ms: now,
-      viewport_x: viewportX,
-      viewport_y: viewportY,
-      x: viewportX,
-      y: viewportY,
+      viewport_x: rawViewportX,
+      viewport_y: rawViewportY,
+      x: rawViewportX,
+      y: rawViewportY,
       scroll_x: window.scrollX,
       scroll_y: window.scrollY,
       stimulus_x_norm: metadata.slide_x_norm,
@@ -200,17 +214,21 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       page_display_width: metadata.page_display_width,
       page_display_height: metadata.page_display_height,
       tracking_quality: metadata.in_reliable_region ? "reliable" : "outside_reliable_region",
-      screen_x: typeof window.screenX === "number" ? window.screenX + viewportX : null,
-      screen_y: typeof window.screenY === "number" ? window.screenY + viewportY : null,
+      screen_x: typeof window.screenX === "number" ? window.screenX + rawViewportX : null,
+      screen_y: typeof window.screenY === "number" ? window.screenY + rawViewportY : null,
       viewport_width: window.innerWidth,
       viewport_height: window.innerHeight,
       device_pixel_ratio: window.devicePixelRatio || 1,
       zoom: window.visualViewport?.scale || 1,
       fullscreen: Boolean(document.fullscreenElement),
       target_zone: zoneEl?.dataset.zone || null,
-      confidence: 1,
-      gaze_status: "valid",
-      metadata_json: metadata,
+      confidence,
+      gaze_status: "predicted",
+      metadata_json: {
+        ...metadata,
+        inside_viewport: insideViewport,
+        prediction_available: true,
+      },
     };
   }
 
@@ -219,8 +237,10 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
     if (!dot) return;
     dot.hidden = !debugDotVisible || !point;
     if (!debugDotVisible || !point) return;
-    dot.style.left = `${point.viewport_x}px`;
-    dot.style.top = `${point.viewport_y}px`;
+    const displayX = clamp(point.viewport_x, 0, window.innerWidth - 1);
+    const displayY = clamp(point.viewport_y, 0, window.innerHeight - 1);
+    dot.style.left = `${displayX}px`;
+    dot.style.top = `${displayY}px`;
   }
 
   function publishPoint(point) {
@@ -241,54 +261,108 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
     seq = Math.floor(Date.now() / 1000);
   }
 
-  async function sendChunk() {
+  function delay(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function sealCurrentChunk() {
     if (!chunkBuffer.length) return;
     const ctx = getContext();
-    const points = chunkBuffer.slice();
-    const payload = {
+    const points = chunkBuffer;
+    pendingChunks.push({
       session_id: ctx.session_id,
       lesson_id: ctx.lesson_id,
       seq,
       start_ms: chunkStartMs || points[0].timestamp_ms,
       points,
       data: points,
-    };
-
-    let response = await fetch(apiUrl("/gaze/chunks"), {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
     });
-    let responseText = response.ok ? "" : await response.text();
-    let saveTarget = "/gaze/chunks";
 
-    if (!response.ok) {
-      response = await fetch(apiUrl("/tracking/points"), {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(points),
-      });
-      responseText = response.ok ? "" : await response.text();
-      saveTarget = "/tracking/points";
-    }
-
-    if (!response.ok) {
-      setTrackingState?.("SAVE_FAILED");
-      setStatus("Không thể gửi một phần dữ liệu eye-tracking. Hệ thống sẽ dừng ghi cho đến khi bạn thử lại.", "error");
-      return;
-    }
-
+    seq += 1;
     chunkBuffer = [];
     chunkStartMs = null;
-    seq += 1;
 
-    window.dispatchEvent(
-      new CustomEvent("eyelearn:gaze-chunk-saved", {
-        detail: { session_id: ctx.session_id, seq: payload.seq, n_points: points.length },
-      })
-    );
+    if (pendingChunks.length > MAX_PENDING_CHUNKS) {
+      running = false;
+      setTrackingState?.("SAVE_FAILED");
+      setStatus("Bộ nhớ chờ lưu đã đầy. Phiên ghi nhận được tạm dừng để tránh mất dữ liệu.", "error");
+      if (frameTimer) window.clearInterval(frameTimer);
+      if (chunkTimer) window.clearInterval(chunkTimer);
+      frameTimer = null;
+      chunkTimer = null;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    }
+  }
+
+  async function postChunkWithRetry(chunk, maxAttempts = 4) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(apiUrl("/gaze/chunks"), {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(chunk),
+        });
+
+        if (response.ok) {
+          return await response.json();
+        }
+
+        const text = await response.text();
+        if (response.status >= 400 && response.status < 500 && response.status !== 409) {
+          throw new Error(text || `HTTP ${response.status}`);
+        }
+
+        lastError = new Error(text || `HTTP ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      }
+
+      await delay(500 * (2 ** attempt));
+    }
+
+    throw lastError || new Error("Không thể gửi gaze chunk.");
+  }
+
+  async function pumpChunkQueue() {
+    if (flushPromise) return flushPromise;
+    if (!pendingChunks.length) return undefined;
+
+    flushPromise = (async () => {
+      while (pendingChunks.length) {
+        const chunk = pendingChunks[0];
+        await postChunkWithRetry(chunk);
+        pendingChunks.shift();
+
+        window.dispatchEvent(
+          new CustomEvent("eyelearn:gaze-chunk-saved", {
+            detail: { session_id: chunk.session_id, seq: chunk.seq, n_points: chunk.points.length },
+          })
+        );
+      }
+    })();
+
+    try {
+      return await flushPromise;
+    } finally {
+      flushPromise = null;
+    }
+  }
+
+  async function sendChunk() {
+    sealCurrentChunk();
+    if (!pendingChunks.length) return;
+
+    try {
+      await pumpChunkQueue();
+    } catch {
+      setTrackingState?.("SAVE_FAILED");
+      setStatus("Dữ liệu chưa gửi được và đang được giữ trong hàng đợi.", "error");
+    }
   }
 
   async function sendFrame() {
@@ -331,8 +405,20 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
       await startCamera();
       setTrackingState?.("CONNECTING");
       setStatus("Đang kết nối eye-tracking...");
+      const tokenPayload = await fetch(apiUrl(`/sessions/${encodeURIComponent(ctx.session_id)}/tracking-token`), {
+        method: "POST",
+        credentials: "include",
+      }).then(async (response) => {
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new Error(text || "Không thể tạo tracking token.");
+        }
+        return response.json();
+      });
       const separator = cfg.ai_ws_url.includes("?") ? "&" : "?";
-      ws = new WebSocket(`${cfg.ai_ws_url}${separator}session_id=${encodeURIComponent(ctx.session_id)}`);
+      ws = new WebSocket(
+        `${cfg.ai_ws_url}${separator}session_id=${encodeURIComponent(ctx.session_id)}&token=${encodeURIComponent(tokenPayload.token)}`
+      );
 
       await new Promise((resolve, reject) => {
         ws.addEventListener("open", () => {

@@ -1,9 +1,9 @@
-from time import time
-from typing import List, Optional
+from typing import Optional
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,25 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.authz import current_user_from_cookie, ensure_can_read_session_analytics, ensure_student_owns_session
 from web.models import AOIDefinition, GazeChunk, Session, TrackingPoint, User
+from web.schemas import TrackingPointCreate
+from web.services.tracking_ingestion import tracking_point_payload
 
 router = APIRouter(prefix="/gaze", tags=["gaze"])
 logger = logging.getLogger(__name__)
-
-
-class GazePoint(BaseModel):
-    t: Optional[int] = None
-    timestamp_ms: Optional[int] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    viewport_x: Optional[float] = None
-    viewport_y: Optional[float] = None
-    scroll_x: float = 0
-    scroll_y: float = 0
-    target_zone: Optional[str] = None
-    gaze_status: Optional[str] = None
-    conf: Optional[float] = None
-    confidence: Optional[float] = None
-    metadata_json: Optional[dict] = None
 
 
 class GazeChunkCreate(BaseModel):
@@ -37,13 +23,16 @@ class GazeChunkCreate(BaseModel):
     lesson_id: Optional[str] = None
     seq: int
     start_ms: int
-    data: List[GazePoint] = Field(default_factory=list)
-    points: List[GazePoint] = Field(default_factory=list)
+    data: list[TrackingPointCreate] = Field(default_factory=list)
+    points: list[TrackingPointCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def normalize_points(self):
         if not self.data and self.points:
             self.data = self.points
+        for point in self.data:
+            if point.session_id != self.session_id:
+                raise ValueError("Mọi gaze point phải thuộc cùng session với chunk")
         return self
 
 
@@ -76,24 +65,27 @@ async def save_gaze_chunk(
     if session.session_type == "student_learning" and session.status != "learning":
         raise HTTPException(status_code=409, detail="Phiên học chưa sẵn sàng ghi dữ liệu gaze. Hãy tải hồ sơ căn chỉnh và kiểm tra nhanh trước.")
 
-    chunk_id = f"chunk_{body.session_id}_{body.seq}_{int(time() * 1000)}"
+    chunk_id = f"chunk_{body.session_id}_{body.seq}"
     raw_chunk_enabled = await _table_exists(db, "gaze_chunks")
     if raw_chunk_enabled:
-        chunk = GazeChunk(
-            chunk_id=chunk_id,
-            session_id=body.session_id,
-            seq=body.seq,
-            start_ms=body.start_ms,
-            data=[p.model_dump() for p in body.data],
+        statement = (
+            insert(GazeChunk)
+            .values(
+                chunk_id=chunk_id,
+                session_id=body.session_id,
+                seq=body.seq,
+                start_ms=body.start_ms,
+                data=[p.model_dump() for p in body.data],
+            )
+            .on_conflict_do_nothing(index_elements=[GazeChunk.session_id, GazeChunk.seq])
         )
-        db.add(chunk)
 
         try:
-            await db.flush()
+            await db.execute(statement)
         except SQLAlchemyError as exc:
             logger.exception("Could not save gaze chunk session_id=%s seq=%s", body.session_id, body.seq)
             raise HTTPException(
-                status_code=409,
+                status_code=500,
                 detail=f"Could not save gaze chunk seq={body.seq}: {exc.__class__.__name__}",
             )
 
@@ -109,8 +101,7 @@ async def save_gaze_chunk(
         )
         aoi_map = {aoi.aoi_key: aoi.aoi_id for aoi in result.scalars().all()}
 
-    inserted_points = 0
-    now_ms = int(time() * 1000)
+    row_payloads = []
     for index, point in enumerate(body.data):
         viewport_x = point.viewport_x if point.viewport_x is not None else point.x
         viewport_y = point.viewport_y if point.viewport_y is not None else point.y
@@ -121,25 +112,22 @@ async def save_gaze_chunk(
         if timestamp_ms is None:
             timestamp_ms = body.start_ms + index
 
-        db.add(
-            TrackingPoint(
-                point_id=f"gaze_{body.session_id}_{timestamp_ms}_{now_ms}_{body.seq}_{index}",
-                session_id=body.session_id,
-                aoi_id=aoi_map.get(point.target_zone) if point.target_zone else None,
-                timestamp_ms=timestamp_ms,
-                viewport_x=viewport_x,
-                viewport_y=viewport_y,
-                scroll_x=point.scroll_x,
-                scroll_y=point.scroll_y,
-                confidence=point.confidence if point.confidence is not None else point.conf,
-                gaze_status=point.gaze_status or "gaze_chunk",
-                metadata_json=point.metadata_json,
-            )
+        payload = tracking_point_payload(
+            point,
+            session,
+            point_id=f"gaze_{body.session_id}_{body.seq}_{index}",
+            aoi_id=aoi_map.get(point.target_zone) if point.target_zone else None,
         )
-        inserted_points += 1
+        payload["gaze_status"] = payload["gaze_status"] or "gaze_chunk"
+        row_payloads.append(payload)
 
     try:
-        await db.flush()
+        inserted_points = 0
+        if row_payloads:
+            statement = insert(TrackingPoint).values(row_payloads)
+            statement = statement.on_conflict_do_nothing(index_elements=[TrackingPoint.point_id])
+            result = await db.execute(statement)
+            inserted_points = int(result.rowcount or 0)
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=500,

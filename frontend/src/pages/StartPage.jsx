@@ -1,107 +1,205 @@
 import { Link } from "react-router-dom";
 
-const FEATURES = [
-  ["Học trực tuyến", "Tổ chức bài học, transcript, quiz và ghi chú trong một không gian học tập thống nhất."],
-  ["Eye-tracking", "Ước tính vùng nhìn trong phiên học khi người học chủ động cho phép camera."],
-  ["Learning analytics", "Tổng hợp tín hiệu học tập theo AOI để giảng viên cải thiện nội dung và hỗ trợ lớp học."],
+const CAPABILITIES = [
+  {
+    icon: "lesson",
+    title: "Tổ chức bài học",
+    description: "Quản lý khóa học, bài giảng PDF và tiến độ học tập trong một không gian thống nhất.",
+  },
+  {
+    icon: "attention",
+    title: "Ghi nhận điểm nhìn",
+    description: "Ghi lại vị trí nhìn theo từng trang trong các phiên học được người học chủ động cho phép.",
+  },
+  {
+    icon: "improve",
+    title: "Phân tích để cải thiện",
+    description: "Tổng hợp heatmap và tín hiệu theo trang để giáo viên điều chỉnh nội dung.",
+  },
 ];
+
+const WORKFLOW_STEPS = [
+  ["Chuẩn bị phiên học", "Chọn khóa học, bài giảng và hồ sơ hiệu chỉnh phù hợp."],
+  ["Kiểm tra camera và hiệu chỉnh", "Xác nhận quyền camera, môi trường học và độ ổn định."],
+  ["Học và ghi nhận điểm nhìn", "GazeEdu ghi nhận điểm nhìn theo từng trang khi có đồng ý."],
+  ["Xem kết quả phân tích", "Giáo viên xem heatmap và vùng nội dung cần xem xét thêm."],
+];
+
+const PRIVACY_PRINCIPLES = [
+  "Chủ động cấp quyền camera",
+  "Luôn hiển thị trạng thái ghi nhận",
+  "Phân quyền truy cập theo vai trò",
+];
+
+function CapabilityIcon({ type }) {
+  if (type === "attention") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 12s3.2-5.5 9-5.5S21 12 21 12s-3.2 5.5-9 5.5S3 12 3 12Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.7" />
+      </svg>
+    );
+  }
+  if (type === "improve") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 19h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M7 16v-4M12 16V7M17 16v-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="m7 10 5-5 5 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 4.75h9.5A2.5 2.5 0 0 1 18 7.25v12H8.5A2.5 2.5 0 0 1 6 16.75v-12Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 8.25h6M9 11.75h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 export default function StartPage() {
   return (
     <>
-      <header className="topbar landing-nav">
-        <div className="brand">ELA</div>
-        <nav className="role-nav" aria-label="Landing navigation">
-          <a href="#features">Tính năng</a>
-          <a href="#workflow">Cách hoạt động</a>
-          <a href="#privacy">Quyền riêng tư</a>
-        </nav>
-        <Link className="btn primary" to="/login">Đăng nhập</Link>
+      <header className="gaze-landing-header">
+        <div className="gaze-landing-header__inner">
+          <div className="gaze-landing-brand" aria-label="GazeEdu">
+            <span className="gaze-landing-brand__mark" aria-hidden="true">G</span>
+            <span>GazeEdu</span>
+          </div>
+          <nav className="gaze-landing-nav" aria-label="Landing navigation">
+            <a href="#features">Tính năng</a>
+            <a href="#workflow">Cách hoạt động</a>
+            <a href="#teachers">Dành cho giáo viên</a>
+            <a href="#privacy">Quyền riêng tư</a>
+          </nav>
+          <Link className="gaze-landing-login" to="/login">Đăng nhập</Link>
+        </div>
       </header>
 
-      <main className="landing-page">
-        <section className="landing-hero">
-          <div className="landing-copy">
-            <div className="course-kicker">ELA · Eye Learning Analytics</div>
-            <h1>Nền tảng LMS hiểu cách người học tương tác với bài giảng.</h1>
+      <main className="landing-page gaze-landing">
+        <section className="gaze-landing-hero gazeedu-landing-hero">
+          <div className="gaze-landing-copy gazeedu-landing-hero-copy">
+            <div className="gaze-landing-eyebrow">GAZEEDU · EYE-TRACKING LEARNING ANALYTICS</div>
+            <h1>Biết người học nhìn vào đâu trong từng bài giảng.</h1>
             <p>
-              ELA dành cho sinh viên, giảng viên và quản trị viên cần một hệ thống học trực tuyến có
-              eye-tracking minh bạch, analytics theo bài học và kiểm soát dữ liệu rõ ràng.
+              GazeEdu giúp giáo viên nhận biết vùng nội dung được nhìn nhiều, bị bỏ qua
+              hoặc cần xem xét thêm thông qua dữ liệu điểm nhìn trong từng phiên học.
             </p>
-            <div className="hero-actions">
-              <Link className="btn primary" to="/login">Đăng nhập</Link>
-              <a className="btn" href="#features">Khám phá nền tảng</a>
-              <Link className="btn" to="/login">Xem bài học mẫu</Link>
+            <p className="gaze-landing-consent">
+              <span aria-hidden="true">✓</span>
+              Camera chỉ được sử dụng khi người học chủ động đồng ý.
+            </p>
+            <div className="gaze-landing-actions">
+              <a className="gaze-landing-action gaze-landing-action--primary" href="#features">Khám phá nền tảng</a>
+              <a className="gaze-landing-action gaze-landing-action--secondary" href="#workflow">Xem cách hoạt động</a>
             </div>
           </div>
 
-          <div className="landing-visual" aria-label="ELA learning analytics preview">
-            <div className="visual-header">
-              <span>Live lesson</span>
-              <strong>Đọc biểu đồ dữ liệu</strong>
-            </div>
-            <div className="visual-slide">
-              <h2>So sánh xu hướng theo thời gian</h2>
-              <div className="chart-bars">
-                <span></span><span></span><span></span><span></span><span></span>
-              </div>
-              <div className="heat-spot heat-spot-one"></div>
-              <div className="heat-spot heat-spot-two"></div>
-            </div>
-            <div className="visual-stats">
-              <div><span>AOI-mapped</span><strong>76%</strong></div>
-              <div><span>Signal quality</span><strong>87</strong></div>
-              <div><span>Privacy</span><strong>Consent</strong></div>
+          <div className="gazeedu-landing-hero-visual" aria-hidden="true">
+            <div className="gazeedu-landing-hero-blob">
+              <img
+                src="/landing/gazeedu-hero-illustration.svg"
+                alt=""
+                width="1200"
+                height="980"
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+              />
             </div>
           </div>
         </section>
 
-        <section className="landing-section" id="features">
-          <div className="section-heading">
-            <div className="course-kicker">Tính năng chính</div>
-            <h2>Một LMS cho học, đo lường và cải tiến bài giảng.</h2>
+        <section className="gaze-landing-section gaze-value-section" id="features">
+          <span className="landing-anchor" id="teachers" aria-hidden="true" />
+          <div className="gaze-section-heading">
+            <p>Giá trị cốt lõi</p>
+            <h2>Không chỉ tổ chức lớp học, mà còn giúp cải thiện bài giảng.</h2>
           </div>
-          <div className="feature-grid">
-            {FEATURES.map(([title, body]) => (
-              <article className="panel feature-card" key={title}>
-                <h3>{title}</h3>
-                <p className="muted">{body}</p>
+          <div className="gaze-capability-row">
+            {CAPABILITIES.map((item) => (
+              <article className="gaze-capability" key={item.title}>
+                <span className="gaze-capability__icon">
+                  <CapabilityIcon type={item.icon} />
+                </span>
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="landing-section split-section" id="workflow">
-          <div>
-            <div className="course-kicker">Cách hệ thống hoạt động</div>
-            <h2>Từ đăng nhập đến analytics sau buổi học.</h2>
+        <section className="gaze-landing-section gaze-workflow-section" id="workflow">
+          <div className="gaze-section-heading gaze-section-heading--center">
+            <p>Cách hoạt động</p>
+            <h2>Một phiên học với GazeEdu diễn ra thế nào?</h2>
           </div>
-          <div className="workflow-list">
-            {[
-              "Đăng nhập và vào trang chủ theo vai trò.",
-              "Sinh viên chọn khóa học, kiểm tra camera và hiệu chỉnh ánh nhìn.",
-              "Phiên học ghi tracking points theo vùng AOI đã định nghĩa.",
-              "Giảng viên xem dashboard lớp học và heatmap tổng hợp sau phiên.",
-            ].map((item, index) => (
-              <div className="workflow-step" key={item}>
+          <ol className="gaze-workflow-timeline">
+            {WORKFLOW_STEPS.map(([title, body], index) => (
+              <li className="gaze-workflow-step" key={title}>
                 <span>{String(index + 1).padStart(2, "0")}</span>
-                <p>{item}</p>
-              </div>
+                <h3>{title}</h3>
+                <p>{body}</p>
+              </li>
             ))}
+          </ol>
+        </section>
+
+        <section className="gaze-landing-section gaze-privacy-section" id="privacy">
+          <div className="gaze-permission-ui" aria-label="Minh họa hộp thoại quyền camera">
+            <div className="gaze-permission-ui__browser">
+              <span />
+              <span />
+              <span />
+              <strong>gazeedu.local/session</strong>
+            </div>
+            <div className="gaze-permission-ui__camera">
+              <div className="gaze-permission-ui__frame">
+                <span className="gaze-permission-ui__face" />
+                <span className="gaze-permission-ui__scan gaze-permission-ui__scan--one" />
+                <span className="gaze-permission-ui__scan gaze-permission-ui__scan--two" />
+              </div>
+              <div className="gaze-permission-ui__dialog">
+                <strong>Cho phép sử dụng camera?</strong>
+                <p>GazeEdu cần quyền camera để ghi nhận điểm nhìn trong phiên học này.</p>
+                <div>
+                  <button type="button">Từ chối</button>
+                  <button type="button">Cho phép</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="gaze-privacy-copy">
+            <div className="gaze-section-heading">
+              <p>Quyền riêng tư</p>
+              <h2>Quyền riêng tư được thiết kế ngay từ đầu.</h2>
+            </div>
+            <p>
+              Camera chỉ được kích hoạt sau khi người học đồng ý. Trước mỗi phiên,
+              GazeEdu hiển thị rõ dữ liệu được xử lý, mục đích sử dụng và ai có quyền
+              xem kết quả phân tích.
+            </p>
+            <ul className="gaze-privacy-principles">
+              {PRIVACY_PRINCIPLES.map((item) => (
+                <li key={item}>
+                  <span aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <div className="gaze-closing-cta" aria-labelledby="gaze-closing-title">
+              <h2 id="gaze-closing-title">Sẵn sàng sử dụng GazeEdu?</h2>
+              <Link className="gaze-landing-action gaze-landing-action--primary" to="/login">Đăng nhập</Link>
+            </div>
           </div>
         </section>
 
-        <section className="landing-section privacy-band" id="privacy">
-          <div>
-            <div className="course-kicker">Cam kết dữ liệu</div>
-            <h2>Camera và ánh nhìn luôn cần sự đồng ý rõ ràng.</h2>
-          </div>
-          <p>
-            ELA chỉ dùng eye-tracking như tín hiệu kỹ thuật và tương tác học tập. Hệ thống không suy
-            diễn mức độ hiểu bài, thái độ hay năng lực cá nhân từ camera. Người học có thể biết khi
-            nào camera bật, dữ liệu nào được gửi và phiên nào đang được ghi nhận.
-          </p>
-        </section>
+        <footer className="gaze-landing-footer">
+          <span>© 2026 GazeEdu</span>
+          <a href="#privacy">Quyền riêng tư</a>
+          <a href="#privacy">Điều khoản sử dụng</a>
+        </footer>
       </main>
     </>
   );

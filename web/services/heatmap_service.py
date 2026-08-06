@@ -63,7 +63,17 @@ def _metadata_bool(metadata: dict, key: str) -> bool | None:
 
 def _is_heatmap_point(point: TrackingPoint, slide_mode: bool = False) -> bool:
     metadata = point.metadata_json or {}
+    if _metadata_bool(metadata, "prediction_available") is False:
+        return False
+    if _metadata_bool(metadata, "inside_viewport") is False:
+        return False
     if _metadata_bool(metadata, "is_transitioning") is True:
+        return False
+    if _metadata_bool(metadata, "is_resizing") is True:
+        return False
+    if _metadata_bool(metadata, "is_rendering") is True:
+        return False
+    if _metadata_bool(metadata, "in_pdf_page") is False:
         return False
     if _metadata_bool(metadata, "in_reliable_region") is False:
         return False

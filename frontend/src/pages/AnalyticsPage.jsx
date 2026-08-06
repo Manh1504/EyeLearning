@@ -213,7 +213,7 @@ function AnalyticsPageHeader({ role, backTarget, metadata, metrics }) {
       <Breadcrumbs
         items={[
           role === "admin" ? { label: "Quản trị", to: "/admin" } : { label: "Lớp học", to: "/teacher" },
-          { label: "ELA" },
+          { label: "GazeEdu" },
           { label: "Learning Analytics" },
         ]}
       />
@@ -515,7 +515,7 @@ export default function AnalyticsPage() {
       <AnalyticsPageHeader role={role} backTarget={backTarget} metadata={metadata} metrics={metrics} />
       <AnalyticsTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {loading && <section className="panel analytics-panel"><EmptyState title="Đang tải dữ liệu" body="ELA đang tính lại metric từ tracking points đã ghi nhận." /></section>}
+      {loading && <section className="panel analytics-panel"><EmptyState title="Đang tải dữ liệu" body="GazeEdu đang tính lại metric từ tracking points đã ghi nhận." /></section>}
 
       {!loading && !payload && <section className="panel analytics-panel"><EmptyState title="Không tải được phân tích" body="Kiểm tra quyền truy cập, phiên học hoặc trạng thái hệ thống rồi thử lại." /></section>}
 

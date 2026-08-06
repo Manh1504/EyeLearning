@@ -166,7 +166,7 @@ function cameraErrorCopy(error) {
   if (!navigator.mediaDevices?.getUserMedia) {
     return {
       title: "Trình duyệt không hỗ trợ camera",
-      detail: "Hãy dùng Chrome, Edge hoặc Safari phiên bản mới và mở ELA bằng HTTPS hoặc localhost.",
+      detail: "Hãy dùng Chrome, Edge hoặc Safari phiên bản mới và mở GazeEdu bằng HTTPS hoặc localhost.",
     };
   }
   if (name === "NotAllowedError" || name === "SecurityError") {
@@ -432,8 +432,10 @@ export default function CalibrationPage({ mode = "lesson" }) {
     try {
       const config = clientConfigRef.current || (await loadConfig());
       const response = await fetchWithTimeout(`${config.ai_http_url}/health_check`, {}, AI_HEALTH_TIMEOUT_MS);
-      setAiStatus(response.ok ? "Sẵn sàng" : "Chưa kết nối", response.ok);
-      return response.ok;
+      const payload = await response.json().catch(() => ({}));
+      const ready = response.ok && payload.pipeline_loaded === true;
+      setAiStatus(ready ? "Sẵn sàng" : "Chưa kết nối", ready);
+      return ready;
     } catch (error) {
       setAiStatus("Chưa kết nối", false);
       setStatus(
@@ -485,7 +487,7 @@ export default function CalibrationPage({ mode = "lesson" }) {
       const track = nextStream.getVideoTracks()[0];
       setPreviewActive(true);
       setSetupSignals({
-        framing: "Đã thấy khuôn mặt trong camera",
+        framing: "Camera đã mở được",
       });
       setCameraStatus("Đã cấp quyền");
       if (!profileName) setProfileName(suggestedProfileName());
@@ -1079,9 +1081,9 @@ export default function CalibrationPage({ mode = "lesson" }) {
     if (validationState === "PASS") return "Camera và hồ sơ hiệu chỉnh đã sẵn sàng cho bài học này.";
     if (validationState === "WARNING") return "Hồ sơ hiện tại chưa đạt ngưỡng khuyến nghị. Bạn vẫn có thể vào bài học và kiểm tra lại sau nếu cần.";
     if (validationState === "FAIL") return "Kết quả hiện tại chưa đủ ổn định để theo dõi ánh nhìn trong bài học. Hãy kiểm tra lại hoặc tạo hồ sơ hiệu chỉnh mới.";
-    if (activeStep.id === "camera") return "Cho phép ELA truy cập camera để kiểm tra thiết bị và tìm hồ sơ phù hợp.";
+    if (activeStep.id === "camera") return "Cho phép GazeEdu truy cập camera để kiểm tra thiết bị và tìm hồ sơ phù hợp.";
     if (activeStep.id === "signals") return "Chỉ cần camera nhìn thấy khuôn mặt của bạn là có thể tiếp tục.";
-    if (activeStep.id === "profile") return selectedProfile ? "ELA sẽ dùng hồ sơ phù hợp nhất với thiết bị hiện tại." : "Thiết bị này chưa có hồ sơ phù hợp hoặc bạn cần đổi sang hồ sơ khác.";
+    if (activeStep.id === "profile") return selectedProfile ? "GazeEdu sẽ dùng hồ sơ phù hợp nhất với thiết bị hiện tại." : "Thiết bị này chưa có hồ sơ phù hợp hoặc bạn cần đổi sang hồ sơ khác.";
     if (activeStep.id === "validation") return "Nhìn lần lượt vào các điểm xuất hiện trên màn hình. Quá trình mất khoảng 15 giây.";
     return "Hồ sơ hiệu chỉnh đã phù hợp với thiết bị và điều kiện hiện tại.";
   }
@@ -1090,7 +1092,7 @@ export default function CalibrationPage({ mode = "lesson" }) {
     if (previewMode === "loading") {
       return {
         title: "Đang mở camera...",
-        detail: "ELA đang kiểm tra thiết bị và xin quyền truy cập camera.",
+        detail: "GazeEdu đang kiểm tra thiết bị và xin quyền truy cập camera.",
       };
     }
     if (previewMode === "denied") {

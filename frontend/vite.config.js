@@ -40,6 +40,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: true,   // <-- Thêm dòng này
     proxy: Object.fromEntries(
       API_PATHS.map((path) => [path, apiProxy])
     ),

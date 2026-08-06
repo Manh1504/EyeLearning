@@ -1,12 +1,17 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from typing import List
+import base64
+import hashlib
+import hmac
 import json
 import numpy as np
 import cv2
 from models import Pipline
 from calibration import Calibration
 import os
+import time
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -21,6 +26,13 @@ class Config:
     calibrator             = os.environ.get("calibrator")
     device                 = os.environ.get("device")
     size                   = int(os.environ.get("size"))
+    tracking_token_secret  = os.environ.get("TRACKING_TOKEN_SECRET", "dev-tracking-token-secret")
+    max_ws_frame_bytes     = int(os.environ.get("AI_MAX_WS_FRAME_BYTES", str(2 * 1024 * 1024)))
+    allowed_ws_origins     = [
+        origin.strip()
+        for origin in os.environ.get("AI_WS_ORIGINS", os.environ.get("AI_CORS_ORIGINS", "http://localhost:5173,http://localhost:9080")).split(",")
+        if origin.strip()
+    ]
 
 config = Config()
 
@@ -77,24 +89,72 @@ def validation_metrics(predictions: list[dict], viewport_w: int, viewport_h: int
 # ─── App ──────────────────────────────────────────────────────
 app = FastAPI(title="EyeLearn — AI Service", version="0.1.0")
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("AI_CORS_ORIGINS", "http://localhost:5173,http://localhost:9080").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+
+@app.on_event("startup")
+def load_pipeline_on_startup():
+    get_pipeline()
 
 
 # ─── Health check ─────────────────────────────────────────────
 @app.get("/health_check")
 def health_check():
-    return {
-        "status": "ok",
+    get_pipeline()
+    payload = {
+        "status": "ready" if pipeline is not None else "not_ready",
         "device": config.device,
         "pipeline_loaded": pipeline is not None,
         "pipeline_error": pipeline_error,
     }
+    if pipeline is None:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
+
+
+def _b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def verify_tracking_token(token: str | None, session_id: str) -> bool:
+    if not token or "." not in token:
+        return False
+    payload_part, signature_part = token.rsplit(".", 1)
+    expected = hmac.new(
+        config.tracking_token_secret.encode("utf-8"),
+        payload_part.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    try:
+        provided = _b64url_decode(signature_part)
+        payload = json.loads(_b64url_decode(payload_part).decode("utf-8"))
+    except Exception:
+        return False
+    if not hmac.compare_digest(expected, provided):
+        return False
+    if payload.get("session_id") != session_id:
+        return False
+    if int(payload.get("exp") or 0) < int(time.time()):
+        return False
+    return True
+
+
+def websocket_origin_allowed(websocket: WebSocket) -> bool:
+    origin = websocket.headers.get("origin")
+    return not origin or origin in config.allowed_ws_origins
 
 
 # ─── Calibration ──────────────────────────────────────────────
@@ -282,7 +342,15 @@ Nhận : JSON  — {"x": float, "y": float}          nếu thành công
 async def inference(
     websocket:  WebSocket,
     session_id: str = Query(...),
+    token: str | None = Query(default=None),
 ):
+    if not websocket_origin_allowed(websocket):
+        await websocket.close(code=1008)
+        return
+    if not verify_tracking_token(token, session_id):
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     active_pipeline = get_pipeline()
@@ -303,6 +371,10 @@ async def inference(
             payload = await websocket.receive_bytes()
             if not payload:
                 continue
+            if len(payload) > config.max_ws_frame_bytes:
+                await websocket.send_text(json.dumps({"error": "Frame too large"}))
+                await websocket.close(code=1009)
+                return
 
             try:
                 nparr = np.frombuffer(payload, np.uint8)

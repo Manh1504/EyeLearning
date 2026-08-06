@@ -1,6 +1,12 @@
 import logging
+import base64
+import hashlib
+import hmac
+import json
+import os
+from datetime import datetime, timezone
 from time import time
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.authz import current_user_from_cookie, ensure_student_can_access_course_item, ensure_student_owns_session, normalize_role
 from web.database import get_db
-from web.models import CourseItem, PDFLesson, Session, User
+from web.models import CourseItem, PDFLesson, PDFLessonProgress, Session, User
 from web.schemas import SessionOut
 
 logger = logging.getLogger(__name__)
@@ -34,6 +40,92 @@ class ProfileSetupSessionCreate(BaseModel):
     viewport_w: Optional[int] = None
     viewport_h: Optional[int] = None
     is_fullscreen: Optional[bool] = None
+
+
+class ClosePdfSessionRequest(BaseModel):
+    last_page_number: int
+    max_page_number_seen: int
+    action: Literal["complete", "exit"]
+
+
+class TrackingTokenOut(BaseModel):
+    session_id: str
+    token: str
+    expires_at: int
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _tracking_token_secret() -> str:
+    return os.getenv("TRACKING_TOKEN_SECRET", "dev-tracking-token-secret")
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _sign_tracking_token(session_id: str, ttl_seconds: int = 600) -> tuple[str, int]:
+    expires_at = int(time()) + ttl_seconds
+    payload = {
+        "session_id": session_id,
+        "exp": expires_at,
+        "purpose": "ai_tracking",
+    }
+    payload_part = _b64url(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signature = hmac.new(
+        _tracking_token_secret().encode("utf-8"),
+        payload_part.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    return f"{payload_part}.{_b64url(signature)}", expires_at
+
+
+def _clamped_page(value: int, page_count: int) -> int:
+    return min(max(1, int(value or 1)), max(1, page_count))
+
+
+async def _update_pdf_progress_for_session(
+    db: AsyncSession,
+    session: Session,
+    pdf_lesson: PDFLesson,
+    *,
+    last_page_number: int,
+    max_page_number_seen: int,
+    completed: bool,
+) -> PDFLessonProgress:
+    page_count = pdf_lesson.page_count or 1
+    last_page = _clamped_page(last_page_number, page_count)
+    max_seen = _clamped_page(max(max_page_number_seen, last_page), page_count)
+
+    progress = await db.scalar(
+        select(PDFLessonProgress).where(
+            PDFLessonProgress.pdf_lesson_id == pdf_lesson.pdf_lesson_id,
+            PDFLessonProgress.user_id == session.user_id,
+        )
+    )
+    if not progress:
+        course_id = session.course_id
+        if not course_id:
+            item = await db.scalar(select(CourseItem).where(CourseItem.course_item_id == pdf_lesson.course_item_id))
+            course_id = item.course_id if item else None
+        if not course_id:
+            raise HTTPException(status_code=400, detail="Session không gắn với khóa học hợp lệ")
+        progress = PDFLessonProgress(
+            progress_id=f"PLP_{session.user_id}_{pdf_lesson.pdf_lesson_id}",
+            user_id=session.user_id,
+            course_id=course_id,
+            course_item_id=session.course_item_id or pdf_lesson.course_item_id,
+            pdf_lesson_id=pdf_lesson.pdf_lesson_id,
+        )
+        db.add(progress)
+
+    progress.last_page_number = last_page
+    progress.max_page_number_seen = max(progress.max_page_number_seen or 1, max_seen, progress.last_page_number)
+    if completed:
+        progress.completed_at = _utc_now()
+    return progress
 
 
 @router.post("", response_model=SessionOut)
@@ -76,6 +168,7 @@ async def create_session(
         session_type="admin_test" if role == "admin" else "student_learning",
         created_by_role=role,
         status="preparing",
+        last_heartbeat_at=_utc_now(),
     )
     db.add(session)
     await db.flush()
@@ -103,6 +196,7 @@ async def create_profile_setup_session(
         session_type="student_learning",
         created_by_role=role,
         status="preparing",
+        last_heartbeat_at=_utc_now(),
     )
     db.add(session)
     await db.flush()
@@ -132,10 +226,84 @@ async def finish_session(
     db: AsyncSession = Depends(get_db),
 ):
     session = await ensure_student_owns_session(db, user, session_id)
+    if session.status in {"finished", "abandoned", "failed"}:
+        return session
+    if session.pdf_lesson_id:
+        raise HTTPException(status_code=409, detail="Hãy dùng endpoint close để kết thúc phiên PDF.")
     session.status = "finished"
-    if session.ended_at is None:
-        from datetime import datetime, timezone
-
-        session.ended_at = datetime.now(timezone.utc)
+    session.ended_at = session.ended_at or _utc_now()
     await db.flush()
     return session
+
+
+@router.patch("/{session_id}/close", response_model=SessionOut)
+async def close_session(
+    session_id: str,
+    body: ClosePdfSessionRequest,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await ensure_student_owns_session(db, user, session_id)
+
+    if session.status in {"finished", "abandoned", "failed"}:
+        return session
+
+    if not session.pdf_lesson_id:
+        raise HTTPException(status_code=400, detail="Session không gắn với PDF lesson hợp lệ")
+
+    pdf_lesson = await db.scalar(select(PDFLesson).where(PDFLesson.pdf_lesson_id == session.pdf_lesson_id))
+    if not pdf_lesson:
+        raise HTTPException(status_code=400, detail="Session không gắn với PDF lesson hợp lệ")
+
+    page_count = pdf_lesson.page_count or 1
+    max_seen = _clamped_page(max(body.max_page_number_seen, body.last_page_number), page_count)
+
+    if body.action == "complete":
+        if max_seen < page_count:
+            raise HTTPException(status_code=409, detail="Bạn chưa xem tới trang cuối của bài học.")
+        session.status = "finished"
+        completed = True
+    else:
+        session.status = "abandoned"
+        completed = False
+
+    await _update_pdf_progress_for_session(
+        db,
+        session,
+        pdf_lesson,
+        last_page_number=body.last_page_number,
+        max_page_number_seen=max_seen,
+        completed=completed,
+    )
+    session.ended_at = _utc_now()
+    session.last_heartbeat_at = session.ended_at
+    await db.flush()
+    return session
+
+
+@router.patch("/{session_id}/heartbeat")
+async def heartbeat_session(
+    session_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await ensure_student_owns_session(db, user, session_id)
+    if session.status not in {"preparing", "validating", "learning"}:
+        return {"ok": True, "ignored": True}
+
+    session.last_heartbeat_at = _utc_now()
+    await db.flush()
+    return {"ok": True}
+
+
+@router.post("/{session_id}/tracking-token", response_model=TrackingTokenOut)
+async def create_tracking_token(
+    session_id: str,
+    user: User = Depends(current_user_from_cookie),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await ensure_student_owns_session(db, user, session_id)
+    if session.status not in {"preparing", "validating", "learning"}:
+        raise HTTPException(status_code=409, detail="Phiên không còn nhận tracking.")
+    token, expires_at = _sign_tracking_token(session.session_id)
+    return {"session_id": session.session_id, "token": token, "expires_at": expires_at}

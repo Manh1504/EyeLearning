@@ -42,7 +42,7 @@ function navItems(role, labels) {
 }
 
 function initials(name) {
-  const parts = (name || "ELA User").trim().split(/\s+/).slice(0, 2);
+  const parts = (name || "GazeEdu User").trim().split(/\s+/).slice(0, 2);
   return parts.map((part) => part[0]?.toUpperCase()).join("") || "EU";
 }
 
@@ -122,7 +122,7 @@ export function AppHeader({ active, sidebarToggle = null }) {
               ☰
             </button>
           ) : null}
-          <Link className="brand app-brand" to={roleHome(role)}>ELA</Link>
+          <Link className="brand app-brand" to={roleHome(role)}>GazeEdu</Link>
           {items.length > 0 && (
             <button
               className="nav-toggle"

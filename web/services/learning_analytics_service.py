@@ -49,9 +49,19 @@ def _is_learning_session(session: Session) -> bool:
 
 def _is_valid_content_sample(point: TrackingPoint) -> bool:
     metadata = _meta(point)
+    if metadata.get("prediction_available") is False:
+        return False
+    if metadata.get("inside_viewport") is False:
+        return False
     if metadata.get("is_transitioning") is True:
         return False
+    if metadata.get("is_resizing") is True:
+        return False
+    if metadata.get("is_rendering") is True:
+        return False
     if metadata.get("ui_interaction") is True:
+        return False
+    if metadata.get("in_pdf_page") is False:
         return False
     if metadata.get("in_reliable_region") is False:
         return False

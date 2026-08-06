@@ -4,7 +4,6 @@ from time import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -784,10 +783,21 @@ async def teacher_pdf_lesson_document(
     role = normalize_role(user.role)
     if role not in {"teacher", "admin"} or not await _can_access_course(db, user, course_id):
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem dữ liệu phân tích này.")
-    path = DATA_DIR / "uploads" / "pdf_lessons" / document_version
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Không tìm thấy tệp PDF cho phiên bản này")
-    return FileResponse(path, media_type="application/pdf")
+
+    result = await db.execute(
+        select(PDFLesson)
+        .join(CourseItem, CourseItem.course_item_id == PDFLesson.course_item_id)
+        .where(
+            CourseItem.course_id == course_id,
+            CourseItem.course_item_id == lesson_id,
+            PDFLesson.storage_key == document_version,
+        )
+    )
+    pdf_lesson = result.scalar_one_or_none()
+    if not pdf_lesson:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên bản PDF thuộc bài học này.")
+
+    return pdf_file_response(pdf_lesson.storage_key)
 
 
 @router.post("/{course_id}/lessons/pdf", response_model=PDFLessonCreateOut)

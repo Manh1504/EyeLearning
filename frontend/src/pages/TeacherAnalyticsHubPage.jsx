@@ -73,7 +73,7 @@ export default function TeacherAnalyticsHubPage() {
     : [
         { label: "Khóa học có dữ liệu", value: courses.filter((course) => (course.lessons || []).some((lesson) => lesson.session_count > 0)).length },
         { label: "Tổng phiên học", value: summary.totalSessions },
-        { label: "Tracking hợp lệ", value: formatPercent(summary.validTrackingRate) },
+        { label: "Phiên có dữ liệu", value: formatPercent(summary.validTrackingRate) },
         { label: "Phiên trung bình", value: formatSeconds(courses.flatMap((course) => course.lessons || []).filter((lesson) => lesson.average_session_duration_seconds != null).reduce((sum, lesson) => sum + Number(lesson.average_session_duration_seconds || 0), 0) / Math.max(1, courses.flatMap((course) => course.lessons || []).filter((lesson) => lesson.average_session_duration_seconds != null).length)) },
       ];
   const recentSessions = (dashboard?.recent_sessions || []).slice(0, 6);
@@ -82,11 +82,11 @@ export default function TeacherAnalyticsHubPage() {
     <>
       <AppHeader active="analytics" />
       <TeacherLayout>
-        <Breadcrumbs items={[{ label: "Giảng viên", to: "/teacher" }, { label: "Phân tích" }]} />
+        <Breadcrumbs items={[{ label: "Giáo viên", to: "/teacher" }, { label: "Phân tích" }]} />
         <PageHeader title="Phân tích" description="Theo dõi dữ liệu học tập và bản đồ nhiệt từ các bài học PDF đã phát sinh phiên học thật." />
 
         {loading && <section className="panel"><div className="empty-state">Đang tải dữ liệu phân tích...</div></section>}
-        {!loading && accessDenied && <section className="panel"><div className="empty-state"><h2>Bạn không có quyền xem dữ liệu phân tích này.</h2><p>Hãy dùng đúng tài khoản giảng viên đã được phân công khóa học.</p></div></section>}
+        {!loading && accessDenied && <section className="panel"><div className="empty-state"><h2>Bạn không có quyền xem dữ liệu phân tích này.</h2><p>Hãy dùng đúng tài khoản giáo viên đã được phân công khóa học.</p></div></section>}
         {!loading && !accessDenied && error && <section className="panel"><div className="empty-state"><h2>Không thể tải dữ liệu phân tích.</h2><p>Vui lòng thử lại.</p></div></section>}
 
         {!loading && !accessDenied && !error && (
@@ -114,7 +114,7 @@ export default function TeacherAnalyticsHubPage() {
                       <th>Khóa học</th>
                       <th>Bài học có dữ liệu</th>
                       <th>Tổng phiên học</th>
-                      <th>Tracking hợp lệ</th>
+                      <th>Phiên có dữ liệu</th>
                       <th>Hoạt động gần nhất</th>
                       <th></th>
                     </tr>

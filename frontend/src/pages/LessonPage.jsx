@@ -4,7 +4,7 @@ import * as pdfjs from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { LearningLayout } from "../components/Layouts.jsx";
 import { apiUrl, requestJson } from "../lib/api.js";
-import { clearSessionContext, getSessionContext } from "../lib/session.js";
+import { clearSessionContext, getSessionContext, setSessionContext } from "../lib/session.js";
 import { createGazeClient } from "../lib/gazeClient.js";
 import { createLiveHeatmap } from "../lib/liveHeatmap.js";
 import { capturePageSnapshot } from "../lib/pageSnapshot.js";
@@ -94,6 +94,7 @@ export default function LessonPage() {
   const [autoStartTick, setAutoStartTick] = useState(0);
   const debugRender = import.meta.env.DEV;
   const adminTestMode = context.session_type === "admin_test";
+  const activePdfLessonId = currentItem?.pdf_lesson?.pdf_lesson_id || context.pdf_lesson_id;
 
   function setGazeStatus(message, kind = "") {
     setStatus({ message, kind });
@@ -104,7 +105,7 @@ export default function LessonPage() {
   }
 
   useEffect(() => {
-    if (!context.course_id || !context.pdf_lesson_id || !context.session_id) {
+    if (!context.course_id || !context.session_id || (!context.pdf_lesson_id && !context.course_item_id)) {
       sessionStorage.setItem("lesson_preflight_notice", "Cần hoàn tất bước chuẩn bị học trước khi mở bài học.");
       navigate("/camera-check");
       return;
@@ -119,17 +120,27 @@ export default function LessonPage() {
     async function boot() {
       setLoading(true);
       try {
-        const [courseData, progressData] = await Promise.all([
-          requestJson(apiUrl(`/courses/${encodeURIComponent(context.course_id)}`)),
-          adminTestMode
-            ? Promise.resolve({ last_page_number: 1, max_page_number_seen: 1 })
-            : requestJson(apiUrl(`/courses/pdf-lessons/${encodeURIComponent(context.pdf_lesson_id)}/progress`)),
-        ]);
+        const courseData = await requestJson(apiUrl(`/courses/${encodeURIComponent(context.course_id)}`));
         if (!active) return;
-        const item = (courseData.items || []).find((entry) => entry.pdf_lesson?.pdf_lesson_id === context.pdf_lesson_id);
+        const item = (courseData.items || []).find((entry) => {
+          if (context.pdf_lesson_id && entry.pdf_lesson?.pdf_lesson_id === context.pdf_lesson_id) return true;
+          if (context.course_item_id && entry.course_item_id === context.course_item_id) return true;
+          return false;
+        });
         if (!item?.pdf_lesson?.pdf_url) {
           throw new Error("Không tìm thấy PDF lesson cho phiên học này.");
         }
+        const resolvedPdfLessonId = item.pdf_lesson.pdf_lesson_id;
+        const progressData = adminTestMode
+          ? { last_page_number: 1, max_page_number_seen: 1 }
+          : await requestJson(apiUrl(`/courses/pdf-lessons/${encodeURIComponent(resolvedPdfLessonId)}/progress`));
+        if (!active) return;
+        setSessionContext({
+          course_id: courseData.course_id || context.course_id,
+          course_item_id: item.course_item_id,
+          pdf_lesson_id: resolvedPdfLessonId,
+          pdf_document_version: item.pdf_lesson.storage_key || context.pdf_document_version || "",
+        });
         setCourse(courseData);
         setCurrentItem(item);
         setCurrentPage(progressData.last_page_number || 1);
@@ -174,7 +185,7 @@ export default function LessonPage() {
       renderTasks.current.clear();
       renderGenerations.current.clear();
     };
-  }, [context.course_id, context.pdf_lesson_id, context.session_id, navigate]);
+  }, [adminTestMode, context.course_id, context.course_item_id, context.pdf_document_version, context.pdf_lesson_id, context.session_id, navigate]);
 
   useEffect(() => {
     if (!viewerRef.current) return;
@@ -382,13 +393,12 @@ export default function LessonPage() {
 
   useEffect(() => {
     if (adminTestMode) return;
-    if (!context.pdf_lesson_id) return;
+    if (!activePdfLessonId) return;
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(async () => {
       try {
-        await fetch(apiUrl(`/courses/pdf-lessons/${encodeURIComponent(context.pdf_lesson_id)}/progress`), {
+        await requestJson(apiUrl(`/courses/pdf-lessons/${encodeURIComponent(activePdfLessonId)}/progress`), {
           method: "POST",
-          credentials: "include",
           body: progressForm(currentPage, maxSeenPage, false),
         });
       } catch {
@@ -398,7 +408,22 @@ export default function LessonPage() {
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
-  }, [adminTestMode, context.pdf_lesson_id, currentPage, maxSeenPage]);
+  }, [adminTestMode, activePdfLessonId, currentPage, maxSeenPage]);
+
+  useEffect(() => {
+    if (!context.session_id) return undefined;
+    const heartbeat = () => {
+      fetch(apiUrl(`/sessions/${encodeURIComponent(context.session_id)}/heartbeat`), {
+        method: "PATCH",
+        credentials: "include",
+      }).catch(() => {});
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 15_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [context.session_id]);
 
   useEffect(() => {
     if (!pdfDoc) return;
@@ -480,7 +505,7 @@ export default function LessonPage() {
     window.__ELA_PDF_CONTEXT__ = {
       courseId: context.course_id || null,
       courseItemId: context.course_item_id || null,
-      pdfLessonId: context.pdf_lesson_id || null,
+      pdfLessonId: activePdfLessonId || null,
       pdfDocumentVersion: context.pdf_document_version || null,
       currentPage,
       isTransitioning: false,
@@ -490,7 +515,7 @@ export default function LessonPage() {
     return () => {
       delete window.__ELA_PDF_CONTEXT__;
     };
-  }, [context.course_id, context.course_item_id, context.pdf_lesson_id, context.pdf_document_version, currentPage, viewerResizing, visiblePages, renderedPages]);
+  }, [activePdfLessonId, context.course_id, context.course_item_id, context.pdf_document_version, currentPage, viewerResizing, visiblePages, renderedPages]);
 
   useEffect(() => {
     autoStartKeyRef.current = `${context.session_id}:${context.pdf_document_version || "unknown"}:${localStorage.getItem("calibration_profile_id") || ""}`;
@@ -523,25 +548,26 @@ export default function LessonPage() {
     });
   }, [context.session_id, pdfDoc, renderedPages, currentPage, aiStatus.ok, viewerResizing, trackingState, autoStartTick]);
 
-  async function finishSession() {
+  async function closeSession(action) {
     if (!context.session_id) return;
     setFinishing(true);
     try {
       await gazeClientRef.current?.stopGaze?.();
       setIsTracking(false);
       await capturePageSnapshot(context.session_id).catch(() => {});
-      if (!adminTestMode) {
-        await fetch(apiUrl(`/courses/pdf-lessons/${encodeURIComponent(context.pdf_lesson_id)}/progress`), {
-          method: "POST",
-          credentials: "include",
-          body: progressForm(currentPage, Math.max(maxSeenPage, currentPage), true),
-        });
-      }
-      await requestJson(apiUrl(`/sessions/${encodeURIComponent(context.session_id)}/finish`), { method: "PATCH" });
+      await requestJson(apiUrl(`/sessions/${encodeURIComponent(context.session_id)}/close`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          last_page_number: currentPage,
+          max_page_number_seen: Math.max(maxSeenPage, currentPage),
+        }),
+      });
       clearSessionContext({ preserveIdentity: true });
-      navigate(adminTestMode ? `/admin/eye-tracking-test/${encodeURIComponent(context.session_id)}` : "/courses");
+      navigate(adminTestMode ? `/admin/eye-tracking-test/${encodeURIComponent(context.session_id)}` : `/courses/${course?.course_id || context.course_id}`);
     } catch (error) {
-      setStatus({ message: `Không thể kết thúc phiên: ${error.message}`, kind: "error" });
+      setStatus({ message: error.message, kind: "error" });
       setFinishing(false);
     }
   }
@@ -593,6 +619,7 @@ export default function LessonPage() {
 
   const totalPages = currentItem.pdf_lesson?.page_count || 0;
   const completedLesson = maxSeenPage >= Math.max(1, totalPages);
+  const canComplete = totalPages > 0 && maxSeenPage >= totalPages;
   const trackingLabel = trackingToolbarLabel(trackingState);
 
   return (
@@ -611,11 +638,11 @@ export default function LessonPage() {
             {trackingLabel}
           </span>
           {manualRetryVisible && <button className="btn secondary" type="button" onClick={retryTrackingConnection}>Thử kết nối lại</button>}
-          <button className="btn primary" type="button" disabled={finishing} onClick={finishSession}>
+          <button className="btn primary" type="button" disabled={finishing || !canComplete} onClick={() => closeSession("complete")}>
             {finishing ? "Đang hoàn tất..." : "Hoàn thành bài học"}
           </button>
-          <button className="btn text lesson-back-action" type="button" onClick={() => navigate(`/courses/${course?.course_id}`)}>
-            ← Quay lại khóa học
+          <button className="btn text lesson-back-action" type="button" disabled={finishing} onClick={() => closeSession("exit")}>
+            Lưu và thoát
           </button>
         </div>
       </header>

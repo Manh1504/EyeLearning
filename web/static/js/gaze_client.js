@@ -57,8 +57,10 @@ async function checkAi() {
   try {
     const cfg = await loadConfig();
     const response = await fetch(`${cfg.ai_http_url}/health_check`);
-    setAiStatus(response.ok ? "AI connected" : "AI not connected", response.ok);
-    return response.ok;
+    const payload = await response.json().catch(() => ({}));
+    const ready = response.ok && payload.pipeline_loaded === true;
+    setAiStatus(ready ? "AI connected" : "AI not connected", ready);
+    return ready;
   } catch {
     setAiStatus("AI service not connected. Start AI service on port 9000.");
     return false;
@@ -116,9 +118,17 @@ function gazeEventFromPrediction(prediction) {
   const yNorm = Number(prediction.y);
   if (!Number.isFinite(xNorm) || !Number.isFinite(yNorm)) return null;
 
-  const viewportX = clamp(xNorm * window.innerWidth, 0, window.innerWidth - 1);
-  const viewportY = clamp(yNorm * window.innerHeight, 0, window.innerHeight - 1);
-  const zoneEl = document.elementFromPoint(viewportX, viewportY)?.closest("[data-zone]");
+  const rawViewportX = xNorm * window.innerWidth;
+  const rawViewportY = yNorm * window.innerHeight;
+  const insideViewport =
+    rawViewportX >= 0 &&
+    rawViewportX < window.innerWidth &&
+    rawViewportY >= 0 &&
+    rawViewportY < window.innerHeight;
+  const zoneEl = insideViewport
+    ? document.elementFromPoint(rawViewportX, rawViewportY)?.closest("[data-zone]")
+    : null;
+  const confidence = Number.isFinite(Number(prediction.confidence)) ? Number(prediction.confidence) : null;
   const now = Date.now();
   return {
     event_id: `gaze_${ctx.session_id}_${now}`,
@@ -128,15 +138,19 @@ function gazeEventFromPrediction(prediction) {
     student_code: ctx.student_code,
     full_name: ctx.full_name,
     timestamp_ms: now,
-    viewport_x: viewportX,
-    viewport_y: viewportY,
-    x: viewportX,
-    y: viewportY,
+    viewport_x: rawViewportX,
+    viewport_y: rawViewportY,
+    x: rawViewportX,
+    y: rawViewportY,
     scroll_x: window.scrollX,
     scroll_y: window.scrollY,
     target_zone: zoneEl?.dataset.zone || null,
-    confidence: 1,
-    gaze_status: "valid",
+    confidence,
+    gaze_status: "predicted",
+    metadata_json: {
+      inside_viewport: insideViewport,
+      prediction_available: true,
+    },
   };
 }
 
@@ -144,8 +158,10 @@ function updateDebugDot(point) {
   if (!gazeDot) return;
   gazeDot.hidden = !debugDotVisible || !point;
   if (!debugDotVisible || !point) return;
-  gazeDot.style.left = `${point.viewport_x}px`;
-  gazeDot.style.top = `${point.viewport_y}px`;
+  const displayX = clamp(point.viewport_x, 0, window.innerWidth - 1);
+  const displayY = clamp(point.viewport_y, 0, window.innerHeight - 1);
+  gazeDot.style.left = `${displayX}px`;
+  gazeDot.style.top = `${displayY}px`;
 }
 
 function publishPoint(point) {
@@ -235,8 +251,15 @@ async function startGaze() {
   try {
     const cfg = await loadConfig();
     await startCamera();
+    const tokenPayload = await fetch(`/sessions/${encodeURIComponent(ctx.session_id)}/tracking-token`, {
+      method: "POST",
+      credentials: "include",
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    });
     const separator = cfg.ai_ws_url.includes("?") ? "&" : "?";
-    ws = new WebSocket(`${cfg.ai_ws_url}${separator}session_id=${encodeURIComponent(ctx.session_id)}`);
+    ws = new WebSocket(`${cfg.ai_ws_url}${separator}session_id=${encodeURIComponent(ctx.session_id)}&token=${encodeURIComponent(tokenPayload.token)}`);
 
     ws.addEventListener("open", () => {
       running = true;

@@ -43,8 +43,21 @@ class TeacherPdfAnalyticsServiceTest(unittest.TestCase):
     def test_low_confidence_is_excluded(self):
         self.assertFalse(is_valid_pdf_point(tracking_point(confidence=0.2), minimum_confidence=0.5))
 
+    def test_missing_confidence_is_allowed_without_threshold(self):
+        self.assertTrue(is_valid_pdf_point(tracking_point(confidence=None), minimum_confidence=0))
+
+    def test_missing_confidence_is_excluded_with_threshold(self):
+        self.assertFalse(is_valid_pdf_point(tracking_point(confidence=None), minimum_confidence=0.5))
+
     def test_transitioning_samples_are_excluded(self):
         self.assertFalse(is_valid_pdf_point(tracking_point(metadata_json={"is_transitioning": True})))
+
+    def test_unstable_pdf_samples_are_excluded(self):
+        self.assertFalse(is_valid_pdf_point(tracking_point(metadata_json={"inside_viewport": False})))
+        self.assertFalse(is_valid_pdf_point(tracking_point(metadata_json={"prediction_available": False})))
+        self.assertFalse(is_valid_pdf_point(tracking_point(metadata_json={"is_rendering": True})))
+        self.assertFalse(is_valid_pdf_point(tracking_point(metadata_json={"is_resizing": True})))
+        self.assertFalse(is_valid_pdf_point(tracking_point(metadata_json={"in_pdf_page": False})))
 
     def test_page_aggregation_counts_unique_students_sessions_and_revisits(self):
         rows = aggregate_page_metrics(

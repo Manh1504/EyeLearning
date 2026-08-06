@@ -11,6 +11,7 @@ from web.database import get_db
 from web.authz import current_user_from_cookie, ensure_can_read_session_analytics, ensure_student_owns_session
 from web.models import AOIDefinition, AOIMetric, GazeChunk, Heatmap, Session, TrackingPoint, User
 from web.services.page_snapshot_service import snapshot_paths
+from web.services.tracking_ingestion import tracking_point_payload
 from web.schemas import TrackingPointBatchOut, TrackingPointBatchRequest, TrackingPointCreate, TrackingPointOut
 
 router = APIRouter(tags=["tracking"])
@@ -19,7 +20,17 @@ EPOCH_MS_THRESHOLD = 1_000_000_000_000
 
 def _is_reliable_sample(point: TrackingPoint) -> bool:
     metadata = point.metadata_json or {}
+    if metadata.get("prediction_available") is False:
+        return False
+    if metadata.get("inside_viewport") is False:
+        return False
     if metadata.get("is_transitioning") is True:
+        return False
+    if metadata.get("is_resizing") is True:
+        return False
+    if metadata.get("is_rendering") is True:
+        return False
+    if metadata.get("in_pdf_page") is False:
         return False
     if metadata.get("in_reliable_region") is False:
         return False
@@ -128,48 +139,14 @@ async def save_tracking_points(
         if lesson_id and point.target_zone:
             aoi_id = aoi_map.get((lesson_id, point.target_zone))
 
-        row_payloads.append({
-            "point_id": _point_id(point, session, index),
-            "session_id": point.session_id,
-            "user_id": point.user_id or session.user_id,
-            "aoi_id": aoi_id,
-            "course_id": point.course_id or session.course_id,
-            "course_item_id": point.course_item_id or session.course_item_id,
-            "pdf_lesson_id": point.pdf_lesson_id or session.pdf_lesson_id,
-            "pdf_document_version": getattr(point, "pdf_document_version", None) or session.pdf_document_version,
-            "test_id": point.test_id or session.test_id,
-            "module_id": point.module_id or session.module_id,
-            "activity_id": point.activity_id or session.activity_id,
-            "content_version_id": point.content_version_id or session.content_version_id,
-            "stimulus_id": point.stimulus_id,
-            "timestamp_ms": point.timestamp_ms,
-            "viewport_x": point.viewport_x if point.viewport_x is not None else point.x,
-            "viewport_y": point.viewport_y if point.viewport_y is not None else point.y,
-            "scroll_x": point.scroll_x,
-            "scroll_y": point.scroll_y,
-            "stimulus_x_norm": point.stimulus_x_norm,
-            "stimulus_y_norm": point.stimulus_y_norm,
-            "stimulus_left": point.stimulus_left,
-            "stimulus_top": point.stimulus_top,
-            "stimulus_width": point.stimulus_width,
-            "stimulus_height": point.stimulus_height,
-            "tracking_quality": point.tracking_quality,
-            "screen_x": point.screen_x,
-            "screen_y": point.screen_y,
-            "viewport_width": point.viewport_width,
-            "viewport_height": point.viewport_height,
-            "page_number": point.page_number,
-            "page_x_normalized": point.page_x_normalized,
-            "page_y_normalized": point.page_y_normalized,
-            "page_display_width": point.page_display_width,
-            "page_display_height": point.page_display_height,
-            "device_pixel_ratio": point.device_pixel_ratio,
-            "zoom": point.zoom,
-            "fullscreen": point.fullscreen,
-            "confidence": point.confidence,
-            "gaze_status": point.gaze_status,
-            "metadata_json": point.metadata_json,
-        })
+        row_payloads.append(
+            tracking_point_payload(
+                point,
+                session,
+                point_id=_point_id(point, session, index),
+                aoi_id=aoi_id,
+            )
+        )
 
     try:
         statement = insert(TrackingPoint).values(row_payloads)

@@ -76,7 +76,7 @@ export function AdminSidebar({ active = "overview", mobileOpen = false, onClose 
       />
       <aside id="admin-sidebar" className={`app-sidebar admin-sidebar ${mobileOpen ? "is-open" : ""}`} aria-label="Điều hướng quản trị">
         <div className="admin-sidebar__module">
-          <span>Quản trị ELA</span>
+          <span>Quản trị GazeEdu</span>
         </div>
 
         <nav className="admin-sidebar__nav" aria-label="Điều hướng quản trị">

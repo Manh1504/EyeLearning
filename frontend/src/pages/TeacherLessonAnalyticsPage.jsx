@@ -15,6 +15,10 @@ function fmtDate(value) {
   return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
+function confidenceLabel(value) {
+  return value == null ? "Chưa được mô hình cung cấp" : formatPercent(value);
+}
+
 export default function TeacherLessonAnalyticsPage() {
   const { courseId = "", lessonId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -29,7 +33,7 @@ export default function TeacherLessonAnalyticsPage() {
   const heatmapOverlayRef = useRef(null);
   const wrapRef = useRef(null);
   const [viewerWidth, setViewerWidth] = useState(720);
-  const [minimumConfidence, setMinimumConfidence] = useState(Number(searchParams.get("confidence") || 0));
+  const minimumConfidence = 0;
 
   useEffect(() => {
     let active = true;
@@ -119,8 +123,8 @@ export default function TeacherLessonAnalyticsPage() {
     ? [
         { label: "Học viên đã học", value: payload.students_started },
         { label: "Phiên học", value: payload.session_count },
-        { label: "Tracking hợp lệ", value: formatPercent(payload.valid_tracking_rate) },
-        { label: "Mẫu gaze hợp lệ", value: payload.total_valid_gaze_samples },
+        { label: "Session đóng góp", value: payload.valid_session_count },
+        { label: "Mẫu gaze map vào PDF", value: payload.total_valid_gaze_samples },
       ]
     : [];
 
@@ -130,11 +134,11 @@ export default function TeacherLessonAnalyticsPage() {
     <>
       <AppHeader active="analytics" />
       <TeacherLayout>
-        <Breadcrumbs items={[{ label: "Giảng viên", to: "/teacher" }, { label: "Khóa học", to: "/teacher/courses" }, { label: payload?.lesson_title || "Phân tích bài học" }]} />
+        <Breadcrumbs items={[{ label: "Giáo viên", to: "/teacher" }, { label: "Khóa học", to: "/teacher/courses" }, { label: payload?.lesson_title || "Phân tích bài học" }]} />
         <PageHeader title={payload?.lesson_title || "Phân tích bài học"} description="Dữ liệu thật theo từng trang PDF và bản đồ nhiệt theo tọa độ chuẩn hóa của trang." actions={<Link className="btn secondary" to={`/teacher/courses/${courseId}?tab=analytics`}>Quay lại khóa học</Link>} />
 
         {loading && <section className="panel"><div className="empty-state">Đang tải dữ liệu phân tích...</div></section>}
-        {!loading && accessDenied && <section className="panel"><div className="empty-state"><h2>Bạn không có quyền xem dữ liệu phân tích này.</h2><p>Hãy dùng đúng tài khoản giảng viên đã được phân công khóa học.</p></div></section>}
+        {!loading && accessDenied && <section className="panel"><div className="empty-state"><h2>Bạn không có quyền xem dữ liệu phân tích này.</h2><p>Hãy dùng đúng tài khoản giáo viên đã được phân công khóa học.</p></div></section>}
         {!loading && !accessDenied && error && <section className="panel"><div className="empty-state"><h2>Không thể tải dữ liệu phân tích.</h2><p>Vui lòng thử lại.</p></div></section>}
         {!loading && !accessDenied && !error && payload && (
           <>
@@ -153,7 +157,6 @@ export default function TeacherLessonAnalyticsPage() {
                       const next = new URLSearchParams(current);
                       next.set("tab", key);
                       next.set("page", String(pageNumber));
-                      next.set("confidence", String(minimumConfidence));
                       return next;
                     });
                   }}>{label}</button>
@@ -184,7 +187,7 @@ export default function TeacherLessonAnalyticsPage() {
                         <th>Phiên học</th>
                         <th>Thời gian nhìn hợp lệ trung bình</th>
                         <th>Lượt quay lại</th>
-                        <th>Chất lượng tracking</th>
+                        <th>Confidence</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -196,7 +199,7 @@ export default function TeacherLessonAnalyticsPage() {
                           <td>{row.sessions_viewed}</td>
                           <td>{formatSeconds(row.average_valid_gaze_time_seconds)}</td>
                           <td>{row.revisit_count}</td>
-                          <td>{formatPercent(row.tracking_quality)}</td>
+                          <td>{confidenceLabel(row.tracking_quality)}</td>
                           <td><button className="btn text" type="button" onClick={() => {
                             setPageNumber(row.page_number);
                             setTab("heatmap");
@@ -227,10 +230,6 @@ export default function TeacherLessonAnalyticsPage() {
                 </article>
                 <article className="panel" ref={wrapRef}>
                   <div className="section-header"><div><h2>Bản đồ nhiệt</h2><p className="muted">Các điểm được vẽ theo tọa độ chuẩn hóa của trang PDF.</p></div></div>
-                  <div className="field compact-field">
-                    <label htmlFor="heatmapConfidence">Ngưỡng độ tin cậy</label>
-                    <input id="heatmapConfidence" type="range" min="0" max="1" step="0.1" value={minimumConfidence} onChange={(event) => setMinimumConfidence(Number(event.target.value))} />
-                  </div>
                   <div style={{ position: "relative", width: "100%" }}>
                     <canvas ref={canvasRef} />
                     <canvas ref={heatmapOverlayRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.55 }} />
@@ -248,9 +247,8 @@ export default function TeacherLessonAnalyticsPage() {
                     <div><span>Học viên</span><strong>{heatmap?.included_students ?? 0}</strong></div>
                     <div><span>Phiên học</span><strong>{heatmap?.included_sessions ?? 0}</strong></div>
                     <div><span>Mẫu hợp lệ</span><strong>{heatmap?.valid_sample_count ?? 0}</strong></div>
-                    <div><span>Ngưỡng confidence</span><strong>{heatmap?.confidence_threshold ?? 0}</strong></div>
                     <div><span>Phiên bản tài liệu</span><strong>{heatmap?.document_version || "—"}</strong></div>
-                    <div><span>Chất lượng tracking</span><strong>{formatPercent(heatmap?.tracking_quality)}</strong></div>
+                    <div><span>Confidence</span><strong>{confidenceLabel(heatmap?.tracking_quality)}</strong></div>
                   </div>
                 </article>
               </section>
@@ -268,7 +266,7 @@ export default function TeacherLessonAnalyticsPage() {
                         <th>Thời lượng</th>
                         <th>Trang đã xem</th>
                         <th>Mẫu tracking hợp lệ</th>
-                        <th>Chất lượng tracking</th>
+                        <th>Confidence</th>
                         <th>Phiên bản tài liệu</th>
                       </tr>
                     </thead>
@@ -280,7 +278,7 @@ export default function TeacherLessonAnalyticsPage() {
                           <td>{formatSeconds(row.duration_seconds)}</td>
                           <td>{row.pages_viewed}</td>
                           <td>{row.valid_tracking_samples}</td>
-                          <td>{formatPercent(row.tracking_quality)}</td>
+                          <td>{confidenceLabel(row.tracking_quality)}</td>
                           <td>{row.document_version || "—"}</td>
                         </tr>
                       ))}

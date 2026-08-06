@@ -8,10 +8,10 @@ import { clearSessionContext, setSessionContext } from "../lib/session.js";
 
 const STATUS_LABELS = {
   preparing: "Đang chuẩn bị",
-  calibrating: "Đang hiệu chỉnh",
+  validating: "Đang kiểm tra",
   learning: "Đang học",
   finished: "Đã hoàn thành",
-  abandoned: "Đã hủy",
+  abandoned: "Đã thoát",
   failed: "Thất bại",
   cancelled: "Đã hủy",
 };
@@ -54,7 +54,7 @@ function canAnalyzeSession(session) {
 }
 
 function isRecentlyActive(session, now = Date.now()) {
-  if (!session || session.ended_at || session.status === "finished" || session.status === "abandoned") return false;
+  if (!session || session.ended_at || ["finished", "abandoned", "failed"].includes(session.status)) return false;
   const started = session.started_at ? new Date(session.started_at).getTime() : 0;
   if (!started) return false;
   return now - started <= 30 * 60 * 1000;
@@ -205,7 +205,7 @@ export default function AdminOverviewPage() {
     <AdminChrome
       active="overview"
       title="Tổng quan quản trị"
-      description="Tóm tắt vận hành hệ thống ELA, phiên học gần đây và cảnh báo quan trọng."
+      description="Tóm tắt vận hành hệ thống GazeEdu, phiên học gần đây và cảnh báo quan trọng."
       actions={<button className="btn secondary" type="button" onClick={reload}>Làm mới</button>}
     >
       {state === "loading" && <LoadingState label="Đang tải tổng quan quản trị..." />}
@@ -313,7 +313,7 @@ export function AdminSessionsPage() {
         <>
           <section className="panel admin-filter-panel">
             <label><span>Tìm kiếm</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Session ID, người dùng, bài học..." /></label>
-            <label><span>Trạng thái</span><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Tất cả</option><option value="preparing">Đang chuẩn bị</option><option value="calibrating">Đang hiệu chỉnh</option><option value="learning">Đang học</option><option value="finished">Hoàn thành</option><option value="abandoned">Đã hủy</option></select></label>
+            <label><span>Trạng thái</span><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Tất cả</option><option value="preparing">Đang chuẩn bị</option><option value="validating">Đang kiểm tra</option><option value="learning">Đang học</option><option value="finished">Hoàn thành</option><option value="abandoned">Đã thoát</option><option value="failed">Lỗi</option></select></label>
             <label><span>Loại phiên</span><select value={sessionType} onChange={(e) => setSessionType(e.target.value)}><option value="">Tất cả</option><option value="student_learning">Phiên học chính thức</option><option value="admin_test">Phiên kiểm thử admin</option></select></label>
             <label><span>Dữ liệu gaze</span><select value={gazeFilter} onChange={(e) => setGazeFilter(e.target.value)}><option value="all">Tất cả</option><option value="with">Có mẫu gaze</option><option value="without">Không có mẫu gaze</option></select></label>
             <details className="admin-advanced-filters">
@@ -606,7 +606,7 @@ export function AdminUsersPage() {
           <section className="metric-strip">
             <div><span>Tất cả người dùng</span><strong>{counts.users ?? 0}</strong></div>
             <div><span>Học viên</span><strong>{counts.students ?? 0}</strong></div>
-            <div><span>Giảng viên</span><strong>{counts.teachers ?? 0}</strong></div>
+            <div><span>Giáo viên</span><strong>{counts.teachers ?? 0}</strong></div>
             <div><span>Quản trị viên</span><strong>{counts.admins ?? 0}</strong></div>
             <div><span>Chưa phân loại</span><strong>{unclassified}</strong></div>
           </section>

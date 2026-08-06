@@ -44,7 +44,7 @@ export default function TeacherCoursesPage() {
     <>
       <AppHeader active="courses" />
       <TeacherLayout>
-        <Breadcrumbs items={[{ label: "Giảng viên", to: "/teacher" }, { label: "Khóa học" }]} />
+        <Breadcrumbs items={[{ label: "Giáo viên", to: "/teacher" }, { label: "Khóa học" }]} />
         <PageHeader
           title="Khóa học"
           description="Quản lý nội dung, theo dõi hoạt động học tập và mở phân tích theo từng khóa học."
@@ -63,7 +63,7 @@ export default function TeacherCoursesPage() {
             {!loading && accessDenied && (
               <div className="empty-state">
                 <h2>Bạn không có quyền truy cập nội dung này.</h2>
-                <p>Hãy dùng đúng tài khoản giảng viên đã được phân công khóa học.</p>
+                <p>Hãy dùng đúng tài khoản giáo viên đã được phân công khóa học.</p>
               </div>
             )}
             {!loading && !accessDenied && courses.length > 0 && (
