@@ -18,3 +18,5 @@ Gaze-Estimation/weights/
 *.task
 *.log
 .pytest_cache/
+data/uploads/*
+!data/uploads/.gitkeep
