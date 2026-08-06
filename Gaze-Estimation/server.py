@@ -1,38 +1,22 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from typing import List
-import base64
-import hashlib
-import hmac
 import json
 import numpy as np
 import cv2
 from models import Pipline
 from calibration import Calibration
 import os
-import time
 from dotenv import load_dotenv
-from pydantic import BaseModel
 
 load_dotenv()
 
+
 # ─── Config ───────────────────────────────────────────────────
 class Config:
-    face_detector          = os.environ.get("face_detector")
-    face_detector_weight   = os.environ.get("face_detector_weight")
-    gaze_estimator         = os.environ.get("gaze_estimator")
-    gaze_estimator_weight  = os.environ.get("gaze_estimator_weight")
-    calibrator             = os.environ.get("calibrator")
-    device                 = os.environ.get("device")
-    size                   = int(os.environ.get("size"))
-    tracking_token_secret  = os.environ.get("TRACKING_TOKEN_SECRET", "dev-tracking-token-secret")
-    max_ws_frame_bytes     = int(os.environ.get("AI_MAX_WS_FRAME_BYTES", str(2 * 1024 * 1024)))
-    allowed_ws_origins     = [
-        origin.strip()
-        for origin in os.environ.get("AI_WS_ORIGINS", os.environ.get("AI_CORS_ORIGINS", "http://localhost:5173,http://localhost:9080")).split(",")
-        if origin.strip()
-    ]
+    def __init__(self):
+        self.device = os.getenv("DEVICE", "cuda")
+
 
 config = Config()
 
@@ -58,122 +42,43 @@ def get_pipeline():
 # { session_id: Calibration }
 calibrators: dict[str, Calibration] = {}
 
-
-class LoadCalibrationRequest(BaseModel):
-    session_id: str
-    model_x_b64: str
-    model_y_b64: str
-    model_format: str = "joblib"
-
-
-def validation_metrics(predictions: list[dict], viewport_w: int, viewport_h: int) -> dict:
-    valid = [item for item in predictions if item.get("ok")]
-    if not predictions:
-        return {
-            "sample_count": 0,
-            "valid_sample_count": 0,
-            "valid_sample_ratio": 0,
-            "median_error_norm": None,
-            "max_error_norm": None,
-        }
-    diagonal = float(np.sqrt(viewport_w ** 2 + viewport_h ** 2)) or 1.0
-    errors = [item["error_px"] / diagonal for item in valid]
-    return {
-        "sample_count": len(predictions),
-        "valid_sample_count": len(valid),
-        "valid_sample_ratio": len(valid) / len(predictions),
-        "median_error_norm": float(np.median(errors)) if errors else None,
-        "max_error_norm": float(np.max(errors)) if errors else None,
-    }
-
 # ─── App ──────────────────────────────────────────────────────
 app = FastAPI(title="EyeLearn — AI Service", version="0.1.0")
 
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv("AI_CORS_ORIGINS", "http://localhost:5173,http://localhost:9080").split(",")
-    if origin.strip()
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def load_pipeline_on_startup():
-    get_pipeline()
 
 
 # ─── Health check ─────────────────────────────────────────────
 @app.get("/health_check")
 def health_check():
-    get_pipeline()
-    payload = {
-        "status": "ready" if pipeline is not None else "not_ready",
-        "device": config.device,
+    return {
+        "status": "ok",
         "pipeline_loaded": pipeline is not None,
         "pipeline_error": pipeline_error,
     }
-    if pipeline is None:
-        return JSONResponse(status_code=503, content=payload)
-    return payload
-
-
-def _b64url_decode(value: str) -> bytes:
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
-
-
-def verify_tracking_token(token: str | None, session_id: str) -> bool:
-    if not token or "." not in token:
-        return False
-    payload_part, signature_part = token.rsplit(".", 1)
-    expected = hmac.new(
-        config.tracking_token_secret.encode("utf-8"),
-        payload_part.encode("ascii"),
-        hashlib.sha256,
-    ).digest()
-    try:
-        provided = _b64url_decode(signature_part)
-        payload = json.loads(_b64url_decode(payload_part).decode("utf-8"))
-    except Exception:
-        return False
-    if not hmac.compare_digest(expected, provided):
-        return False
-    if payload.get("session_id") != session_id:
-        return False
-    if int(payload.get("exp") or 0) < int(time.time()):
-        return False
-    return True
-
-
-def websocket_origin_allowed(websocket: WebSocket) -> bool:
-    origin = websocket.headers.get("origin")
-    return not origin or origin in config.allowed_ws_origins
 
 
 # ─── Calibration ──────────────────────────────────────────────
 """
-Nhận N ảnh + N tọa độ (x, y normalized 0–1) → train SVR → lưu vào calibrators[session_id]
+Nhận N ảnh + N tọa độ (x, y normalized 0–1) → train model → lưu vào calibrators[session_id]
 
 Form fields:
   - session_id  : str
   - points      : JSON string, VD: [{"x": 0.5, "y": 0.5, "name": "top-left"}, ...]
   - frames      : List[UploadFile] — ảnh JPEG tương ứng với từng điểm
-  - viewport_w  : int — window.innerWidth lúc calib (dùng để quy avg_error ra pixel thật)
+  - viewport_w  : int — window.innerWidth lúc calib
   - viewport_h  : int — window.innerHeight lúc calib
 
 Response:
   - {
       "message": str, "session_id": str, "n_points": int,
-      "avg_error_px": float,
       "per_point": [{"name": str, "x": float, "y": float, "pitch": float, "yaw": float}, ...],
-      "model_x_b64": str, "model_y_b64": str, "model_format": "joblib"
     }
   - {"error": str}
 """
@@ -182,152 +87,64 @@ async def calibrate(
     session_id: str              = Form(...),
     points:     str              = Form(...),
     frames:     List[UploadFile] = File(...),
-    viewport_w: int               = Form(1920),
-    viewport_h: int               = Form(1080),
+    viewport_w: int              = Form(1920),
+    viewport_h: int              = Form(1080),
 ):
-    try:
-        active_pipeline = get_pipeline()
-        if active_pipeline is None:
-            return {"error": f"AI pipeline failed to load: {pipeline_error}"}
+    pipe = get_pipeline()
+    if pipe is None:
+        return {"error": f"Pipeline not available: {pipeline_error}"}
 
+    try:
         points_list = json.loads(points)
+    except json.JSONDecodeError:
+        return {"error": "Invalid JSON in 'points' field"}
 
-        if len(points_list) != len(frames):
-            return {"error": f"Số điểm ({len(points_list)}) và số ảnh ({len(frames)}) không khớp."}
+    if len(points_list) != len(frames):
+        return {"error": f"Mismatch: {len(points_list)} points but {len(frames)} frames"}
 
-        if len(points_list) < 5:
-            return {"error": "Cần ít nhất 5 điểm calibration."}
+    gaze_data = []
+    per_point = []
 
-        points_arr = np.array([[p["x"], p["y"]] for p in points_list])  # (N, 2)
-        names_list = [p.get("name") for p in points_list]
+    for point_info, frame_file in zip(points_list, frames):
+        raw = await frame_file.read()
+        img_array = np.frombuffer(raw, dtype=np.uint8)
+        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        if frame is None:
+            return {"error": f"Cannot decode frame for point '{point_info.get('name', '?')}'"}
 
-        # Decode ảnh
-        images = []
-        for file in frames:
-            image_bytes = await file.read()
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if img is None:
-                return {"error": f"Lỗi đọc ảnh: {file.filename}"}
-            images.append(img)
+        result = pipe.process(frame)
+        if result is None:
+            return {"error": f"No face detected in frame '{point_info.get('name', '?')}'"}
 
-        # Chạy pipeline lấy pitch/yaw cho từng frame
-        rgb_images = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in images]
-        raw_results = [active_pipeline(img) for img in rgb_images]
+        pitch, yaw, tx, ty, depth = result
+        gaze_data.append([pitch, yaw])
+        per_point.append({
+            "name": point_info.get("name", ""),
+            "x": point_info["x"],
+            "y": point_info["y"],
+            "pitch": float(pitch),
+            "yaw": float(yaw),
+        })
 
-        # Lọc bỏ frame không detect được khuôn mặt
-        valid = [
-            (r, p, n) for r, p, n in zip(raw_results, points_arr, names_list) if r is not None
-        ]
-        if len(valid) < 5:
-            return {"error": f"Chỉ detect được {len(valid)} khuôn mặt, cần ít nhất 5."}
+    gaze_arr = np.array(gaze_data)
+    points_arr = np.array([[p["x"], p["y"]] for p in points_list])
 
-        results_arr = np.array([v[0] for v in valid])   # (M, 2) — pitch/yaw
-        points_arr  = np.array([v[1] for v in valid])   # (M, 2) — x/y
-        names_arr   = [v[2] for v in valid]
+    model_path = f"weights/calibration_{session_id}.ubj"
+    calibrator = Calibration(
+        root=None,
+        model_path=model_path,
+        viewport_w=viewport_w,
+        viewport_h=viewport_h,
+    )
+    calibrator.create_calibration_model_for_api_version(gaze_arr, points_arr)
+    calibrators[session_id] = calibrator
 
-        # Train SVR
-        cal = Calibration(model_name=config.calibrator)
-        cal.creat_calibration_model(results_arr, points_arr)
-        calibrators[session_id] = cal
-
-        avg_error_px = cal.compute_avg_error_px(results_arr, points_arr, viewport_w, viewport_h)
-        model_x_b64, model_y_b64 = cal.export_models_b64()
-
-        per_point = [
-            {
-                "name": name,
-                "x": float(point[0]),
-                "y": float(point[1]),
-                "pitch": float(result[0]),
-                "yaw": float(result[1]),
-            }
-            for result, point, name in zip(results_arr, points_arr, names_arr)
-        ]
-
-        return {
-            "message":      "Calibration thành công",
-            "session_id":   session_id,
-            "n_points":     len(valid),
-            "avg_error_px": avg_error_px,
-            "per_point":    per_point,
-            "model_x_b64":  model_x_b64,
-            "model_y_b64":  model_y_b64,
-            "model_format": "joblib",
-        }
-
-    except Exception as e:
-        return {"error": f"Lỗi server: {str(e)}"}
-
-
-@app.post("/calibration/load")
-async def load_calibration(body: LoadCalibrationRequest):
-    if body.model_format != "joblib":
-        return {"error": "Unsupported calibration model format"}
-    try:
-        cal = Calibration(model_name=config.calibrator)
-        cal.import_models_b64(body.model_x_b64, body.model_y_b64)
-        calibrators[body.session_id] = cal
-        return {"ok": True, "session_id": body.session_id, "model_format": body.model_format}
-    except Exception as exc:
-        return {"error": f"Không thể tải hồ sơ căn chỉnh: {str(exc)}"}
-
-
-@app.post("/calibration/validate")
-async def validate_calibration(
-    session_id: str = Form(...),
-    points: str = Form(...),
-    frames: List[UploadFile] = File(...),
-    viewport_w: int = Form(1920),
-    viewport_h: int = Form(1080),
-):
-    try:
-        active_pipeline = get_pipeline()
-        if active_pipeline is None:
-            return {"error": f"AI pipeline failed to load: {pipeline_error}"}
-        if session_id not in calibrators:
-            return {"error": "session_id chưa được load hồ sơ căn chỉnh"}
-
-        points_list = json.loads(points)
-        if len(points_list) != len(frames):
-            return {"error": f"Số điểm ({len(points_list)}) và số ảnh ({len(frames)}) không khớp."}
-
-        predictions = []
-        cal = calibrators[session_id]
-        diagonal = float(np.sqrt(viewport_w ** 2 + viewport_h ** 2)) or 1.0
-        for point, file in zip(points_list, frames):
-            image_bytes = await file.read()
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if img is None:
-                predictions.append({"name": point.get("name"), "ok": False, "error": "Invalid image"})
-                continue
-            result = active_pipeline(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-            if result is None:
-                predictions.append({"name": point.get("name"), "ok": False, "error": "No face detected"})
-                continue
-            pred_x, pred_y = cal.predict_gaze(result[0], result[1])
-            err_x_px = (pred_x - float(point["x"])) * viewport_w
-            err_y_px = (pred_y - float(point["y"])) * viewport_h
-            error_px = float(np.sqrt(err_x_px ** 2 + err_y_px ** 2))
-            predictions.append({
-                "name": point.get("name"),
-                "ok": True,
-                "target_x": float(point["x"]),
-                "target_y": float(point["y"]),
-                "pred_x": float(pred_x),
-                "pred_y": float(pred_y),
-                "error_px": error_px,
-                "error_norm": error_px / diagonal,
-            })
-
-        return {
-            "session_id": session_id,
-            "predictions": predictions,
-            "metrics": validation_metrics(predictions, viewport_w, viewport_h),
-        }
-    except Exception as exc:
-        return {"error": f"Lỗi validation: {str(exc)}"}
+    return {
+        "message": "Calibration successful",
+        "session_id": session_id,
+        "n_points": len(points_list),
+        "per_point": per_point,
+    }
 
 
 # ─── Inference (WebSocket) ────────────────────────────────────
@@ -342,63 +159,62 @@ Nhận : JSON  — {"x": float, "y": float}          nếu thành công
 async def inference(
     websocket:  WebSocket,
     session_id: str = Query(...),
-    token: str | None = Query(default=None),
 ):
-    if not websocket_origin_allowed(websocket):
-        await websocket.close(code=1008)
-        return
-    if not verify_tracking_token(token, session_id):
-        await websocket.close(code=1008)
-        return
-
     await websocket.accept()
 
-    active_pipeline = get_pipeline()
-    if active_pipeline is None:
-        await websocket.send_text(json.dumps({"error": f"AI pipeline failed to load: {pipeline_error}"}))
-        await websocket.close()
-        return
-
     if session_id not in calibrators:
-        await websocket.send_text(json.dumps({"error": "session_id chưa được calibrate"}))
-        await websocket.close()
+        await websocket.send_json({"error": f"Session '{session_id}' not calibrated yet"})
+        await websocket.close(code=4000)
         return
 
-    cal = calibrators[session_id]
+    pipe = get_pipeline()
+    if pipe is None:
+        await websocket.send_json({"error": f"Pipeline not available: {pipeline_error}"})
+        await websocket.close(code=4001)
+        return
+
+    calibrator = calibrators[session_id]
 
     try:
         while True:
-            payload = await websocket.receive_bytes()
-            if not payload:
+            data = await websocket.receive_bytes()
+            img_array = np.frombuffer(data, dtype=np.uint8)
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            if frame is None:
+                await websocket.send_json({"error": "Cannot decode frame"})
                 continue
-            if len(payload) > config.max_ws_frame_bytes:
-                await websocket.send_text(json.dumps({"error": "Frame too large"}))
-                await websocket.close(code=1009)
-                return
 
-            try:
-                nparr = np.frombuffer(payload, np.uint8)
-                img   = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            result = pipe.process(frame)
+            if result is None:
+                await websocket.send_json({"error": "No face detected"})
+                continue
 
-                if img is None:
-                    await websocket.send_text(json.dumps({"error": "Invalid image"}))
-                    continue
-
-                rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                result  = active_pipeline(rgb_img)
-
-                if result is not None:
-                    pred_x, pred_y = cal.predict_gaze(result[0], result[1])
-                    await websocket.send_text(json.dumps({
-                        "x": float(pred_x),
-                        "y": float(pred_y),
-                    }))
-                else:
-                    await websocket.send_text(json.dumps({"error": "No face detected"}))
-
-            except Exception as e:
-                print(f"[Frame error] {e}")
-                await websocket.send_text(json.dumps({"error": "Frame processing error"}))
+            pitch, yaw, tx, ty, depth = result
+            x_px, y_px = calibrator.predict(pitch, yaw)
+            await websocket.send_json({"x": float(x_px), "y": float(y_px)})
 
     except WebSocketDisconnect:
-        print(f"[Disconnected] session_id={session_id}")
+        pass
+
+
+# ─── Calibration status ───────────────────────────────────────
+@app.get("/calibration_status")
+def calibration_status(session_id: str = Query(...)):
+    if session_id in calibrators:
+        return {"status": "calibrated", "session_id": session_id}
+    return {"status": "not_found", "session_id": session_id}
+
+
+# ─── Delete calibration ───────────────────────────────────────
+@app.delete("/calibration")
+def delete_calibration(session_id: str = Query(...)):
+    if session_id not in calibrators:
+        return {"error": f"Session '{session_id}' not found"}
+
+    del calibrators[session_id]
+
+    model_path = f"weights/calibration_{session_id}.ubj"
+    if os.path.exists(model_path):
+        os.remove(model_path)
+
+    return {"message": f"Session '{session_id}' deleted"}
