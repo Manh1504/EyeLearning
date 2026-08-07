@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-MODEL_VERSION = "svr:v1"
+MODEL_VERSION = "linear_tan:v1"
 VIEWPORT_TOLERANCE_RATIO = 0.08
 DPR_TOLERANCE = 0.05
 VALIDATION_LEASE_MINUTES = 45

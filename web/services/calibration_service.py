@@ -15,14 +15,17 @@ def calibration_model_url(calibration_group_id: str) -> str:
     return f"/calibration/model-file/{_safe_filename(calibration_group_id)}"
 
 
-def save_calibration_model(calibration_group_id: str, model_x_b64: str, model_y_b64: str) -> str:
+def save_calibration_model(calibration_group_id: str, model_x_b64: str, model_y_b64: str, model_format: str | None = None) -> str:
     """Gộp model_x/model_y (đã serialize base64 bởi AI Service) thành 1 file JSON,
     lưu local + upload Cloudinary (nếu có cấu hình) — trả về URL để lưu vào
     calibration_profiles.model_storage_url."""
     CALIBRATION_MODEL_DIR.mkdir(parents=True, exist_ok=True)
     filename = _safe_filename(calibration_group_id)
     path = CALIBRATION_MODEL_DIR / filename
-    path.write_text(json.dumps({"model_x_b64": model_x_b64, "model_y_b64": model_y_b64}), encoding="utf-8")
+    path.write_text(
+        json.dumps({"model_x_b64": model_x_b64, "model_y_b64": model_y_b64, "model_format": model_format}),
+        encoding="utf-8",
+    )
 
     if is_cloudinary_configured():
         try:

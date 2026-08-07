@@ -14,6 +14,7 @@ from web.authz import current_user_from_cookie, ensure_can_read_session_analytic
 from web.models import CalibrationProfile, Session, User
 from web.services.calibration_service import calibration_model_url
 from web.services.calibration_service import CALIBRATION_MODEL_DIR, save_calibration_model
+from web.services.calibration_profile_logic import MODEL_VERSION
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
 
@@ -39,7 +40,7 @@ class CalibrationSubmit(BaseModel):
     avg_error_px: Optional[float] = None
     model_x_b64: str
     model_y_b64: str
-    model_format: str = "joblib"
+    model_format: str = "linear_tan_json_v1"
     checkpoints: List[CalibrationCheckpointIn]
 
 
@@ -85,7 +86,7 @@ async def save_calibration(
 
     # Model chỉ cần lưu 1 lần (chung cho cả 9 row cùng group) — không encode
     # trùng lặp base64 vào mỗi row, chỉ lưu model_storage_url dùng chung.
-    model_storage_url = save_calibration_model(calibration_group_id, body.model_x_b64, body.model_y_b64)
+    model_storage_url = save_calibration_model(calibration_group_id, body.model_x_b64, body.model_y_b64, body.model_format)
 
     checkpoints_out = []
     for idx, checkpoint in enumerate(body.checkpoints):
@@ -106,7 +107,7 @@ async def save_calibration(
             model_storage_url=model_storage_url,
             model_format=body.model_format,
             profile_name=body.profile_name or f"Hồ sơ căn chỉnh {datetime.now().strftime('%d/%m %H:%M')}",
-            model_version="svr:v1",
+            model_version=MODEL_VERSION,
             environment_json={
                 "viewport_w": body.viewport_w,
                 "viewport_h": body.viewport_h,
