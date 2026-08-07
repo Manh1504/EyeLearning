@@ -6,6 +6,10 @@ import numpy as np
 import cv2
 from models import Pipline
 from calibration import Calibration
+import base64
+import hashlib
+import hmac
+import time
 import os
 from dotenv import load_dotenv
 
@@ -16,6 +20,18 @@ load_dotenv()
 class Config:
     def __init__(self):
         self.device = os.getenv("DEVICE", "cuda")
+        self.tracking_token_secret = os.getenv(
+            "TRACKING_TOKEN_SECRET",
+            "dev-tracking-token-secret",
+        )
+        self.allowed_ws_origins = [
+            origin.strip()
+            for origin in os.getenv(
+                "AI_WS_ORIGINS",
+                "http://localhost:5173,http://localhost:9080",
+            ).split(",")
+            if origin.strip()
+]
 
 
 config = Config()
@@ -146,6 +162,49 @@ async def calibrate(
         "per_point": per_point,
     }
 
+def _b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def verify_tracking_token(token: str | None, session_id: str) -> bool:
+    if not token or "." not in token:
+        return False
+
+    payload_part, signature_part = token.rsplit(".", 1)
+
+    expected_signature = hmac.new(
+        config.tracking_token_secret.encode("utf-8"),
+        payload_part.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+
+    try:
+        provided_signature = _b64url_decode(signature_part)
+        payload = json.loads(
+            _b64url_decode(payload_part).decode("utf-8")
+        )
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return False
+
+    if not hmac.compare_digest(expected_signature, provided_signature):
+        return False
+
+    if payload.get("session_id") != session_id:
+        return False
+
+    if payload.get("purpose") != "ai_tracking":
+        return False
+
+    if int(payload.get("exp") or 0) < int(time.time()):
+        return False
+
+    return True
+
+
+def websocket_origin_allowed(websocket: WebSocket) -> bool:
+    origin = websocket.headers.get("origin")
+    return not origin or origin in config.allowed_ws_origins
 
 # ─── Inference (WebSocket) ────────────────────────────────────
 """
@@ -157,9 +216,18 @@ Nhận : JSON  — {"x": float, "y": float}          nếu thành công
 """
 @app.websocket("/inference")
 async def inference(
-    websocket:  WebSocket,
+    websocket: WebSocket,
     session_id: str = Query(...),
+    token: str | None = Query(default=None),
 ):
+    if not websocket_origin_allowed(websocket):
+        await websocket.close(code=1008)
+        return
+
+    if not verify_tracking_token(token, session_id):
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     if session_id not in calibrators:
