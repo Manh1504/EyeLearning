@@ -75,6 +75,31 @@ class TeacherPdfAnalyticsServiceTest(unittest.TestCase):
         self.assertEqual(page1["revisit_count"], 1)
         self.assertGreater(page1["valid_gaze_samples"], 0)
 
+    def test_outside_reliable_region_is_excluded(self):
+        self.assertFalse(
+            is_valid_pdf_point(
+                tracking_point(
+                    metadata_json={
+                        "in_pdf_page": True,
+                        "in_reliable_region": False,
+                        "is_transitioning": False,
+                    }
+                )
+            )
+        )
+
+    def test_explicitly_outside_pdf_is_excluded(self):
+        self.assertFalse(
+            is_valid_pdf_point(
+                tracking_point(
+                    metadata_json={
+                        "in_pdf_page": False,
+                        "in_reliable_region": True,
+                        "is_transitioning": False,
+                    }
+                )
+            )
+        )
 
 if __name__ == "__main__":
     unittest.main()

@@ -36,6 +36,12 @@ def is_valid_pdf_point(point: TrackingPoint, minimum_confidence: float = 0) -> b
     if not (0 <= float(point.page_x_normalized) <= 1 and 0 <= float(point.page_y_normalized) <= 1):
         return False
     metadata = point.metadata_json or {}
+    if metadata.get("in_pdf_page") is False:
+        return False
+    if metadata.get("is_transitioning") is True:
+        return False
+    if metadata.get("in_reliable_region") is False:
+        return False
     if metadata.get("prediction_available") is False:
         return False
     if metadata.get("inside_viewport") is False:
@@ -203,6 +209,7 @@ async def load_valid_points(
     filters = _session_filters(course_id, lesson_id, student_id, date_from, date_to, document_version)
     stmt = (
         select(
+            TrackingPoint.metadata_json,
             TrackingPoint.session_id,
             Session.user_id,
             TrackingPoint.course_id,
@@ -213,6 +220,10 @@ async def load_valid_points(
             TrackingPoint.page_x_normalized,
             TrackingPoint.page_y_normalized,
             TrackingPoint.confidence,
+            TrackingPoint.page_y_normalized,
+            TrackingPoint.confidence,
+            TrackingPoint.metadata_json,
+            Session.started_at,
             TrackingPoint.metadata_json,
             Session.started_at,
         )
