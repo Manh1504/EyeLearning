@@ -673,7 +673,9 @@ export default function LessonPage() {
         <main className="pdf-lesson-main" ref={scrollPaneRef} tabIndex={0} aria-label="Khu vực đọc PDF">
           <div className="pdf-scroll-viewport" ref={viewerRef}>
             <div className="pdf-reader-column">
-              {pageMeta.map((meta) => (
+              {pageMeta.map((meta) => {
+                const fitted = fittedPageSize(meta, viewerWidth, paneHeight);
+                return (
                 <section
                   key={stablePageKey(context.pdf_document_version, meta.pageNumber)}
                   ref={(node) => {
@@ -685,7 +687,11 @@ export default function LessonPage() {
                   data-page-number={meta.pageNumber}
                   data-page-width={meta.width}
                   data-page-height={meta.height}
-                  style={{ minHeight: `${fittedPageSize(meta, viewerWidth, paneHeight).height}px` }}
+                  style={{
+                    width: `${fitted.width}px`,
+                    minHeight: `${fitted.height}px`,
+                    maxWidth: "100%",
+                  }}
                 >
                   <canvas ref={(node) => {
                     if (node) canvasRefs.current.set(meta.pageNumber, node);
@@ -708,7 +714,8 @@ export default function LessonPage() {
                     </div>
                   )}
                 </section>
-              ))}
+                );
+                })}
             </div>
           </div>
           {!!status.message && (

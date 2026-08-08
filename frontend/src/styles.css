@@ -5716,8 +5716,8 @@ input:focus-visible {
 }
 
 .student-lesson-viewer {
-  height: calc(100dvh - 68px);
-  min-height: calc(100dvh - 68px);
+  height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   width: min(var(--layout-max), calc(100% - 32px));
@@ -5918,15 +5918,21 @@ input:focus-visible {
 }
 
 .admin-lesson-diagnostics {
-  flex: 0 0 auto;
-  width: min(1180px, calc(100vw - 40px));
-  margin: 0 auto 8px;
+  position: fixed;
+  top: 84px;
+  right: 16px;
+  z-index: 10000;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 100px);
+  overflow: auto;
+  margin: 0;
   border: 1px solid rgba(8, 104, 154, 0.14);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.94);
   padding: 8px 12px;
   color: var(--text);
   font-size: 12px;
+  box-shadow: 0 12px 32px rgba(18, 44, 72, 0.18);
 }
 
 .admin-lesson-diagnostics summary {
@@ -7670,7 +7676,7 @@ code {
   }
 
   .pdf-page-card {
-    padding: 14px;
+    padding: 0;
   }
 }
 
