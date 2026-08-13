@@ -85,7 +85,7 @@ export default function TeacherLessonAnalyticsPage() {
     });
     observer.observe(wrapRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [tab]);
 
   useEffect(() => {
     async function renderPage() {
@@ -231,8 +231,8 @@ export default function TeacherLessonAnalyticsPage() {
                 <article className="panel" ref={wrapRef}>
                   <div className="section-header"><div><h2>Bản đồ nhiệt</h2><p className="muted">Các điểm được vẽ theo tọa độ chuẩn hóa của trang PDF.</p></div></div>
                   <div style={{ position: "relative", width: "100%" }}>
-                    <canvas ref={canvasRef} />
-                    <canvas ref={heatmapOverlayRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.55 }} />
+                    <canvas ref={canvasRef} style={{ display: "block", maxWidth: "100%" }} />
+                    <canvas ref={heatmapOverlayRef} style={{ position: "absolute", inset: 0, maxWidth: "100%", pointerEvents: "none", opacity: 0.55 }} />
                   </div>
                   {!heatmap?.points?.length && <div className="empty-state compact">Chưa có dữ liệu phân tích.</div>}
                   <div className="course-meta-badges">

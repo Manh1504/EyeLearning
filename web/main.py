@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,7 +48,12 @@ async def reject_untrusted_write_origins(request: Request, call_next):
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         origin = request.headers.get("origin")
         if origin and origin not in _allowed_origins:
-            return JSONResponse({"detail": "Origin không được phép"}, status_code=403)
+            # Request same-origin (Origin trùng Host header) luôn được phép — cần cho
+            # deploy sau reverse-proxy có host public không biết trước (vd. vast.ai),
+            # nơi không thể liệt kê origin vào CORS_ORIGINS từ trước.
+            host = request.headers.get("host", "")
+            if urlparse(origin).netloc != host:
+                return JSONResponse({"detail": "Origin không được phép"}, status_code=403)
     return await call_next(request)
 
 # Routers

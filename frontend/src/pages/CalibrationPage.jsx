@@ -429,21 +429,27 @@ export default function CalibrationPage({ mode = "lesson" }) {
   }
 
   async function checkAi() {
-    try {
-      const config = clientConfigRef.current || (await loadConfig());
-      const response = await fetchWithTimeout(`${config.ai_http_url}/health_check`, {}, AI_HEALTH_TIMEOUT_MS);
-      const payload = await response.json().catch(() => ({}));
-      const ready = response.ok && payload.pipeline_loaded === true;
-      setAiStatus(ready ? "Sẵn sàng" : "Chưa kết nối", ready);
-      return ready;
-    } catch (error) {
-      setAiStatus("Chưa kết nối", false);
-      setStatus(
-        `${error.message || "Dịch vụ eye-tracking chưa kết nối."} URL: ${clientConfigRef.current?.ai_http_url || "unknown"}`,
-        "error"
-      );
-      return false;
-    }
+      try {
+        const config = clientConfigRef.current || (await loadConfig());
+        const response = await fetchWithTimeout(`${config.ai_http_url}/health_check`, {}, AI_HEALTH_TIMEOUT_MS);
+        const payload = await response.json().catch(() => ({}));
+        const ready = response.ok && payload.pipeline_loaded === true;
+        setAiStatus(ready ? "Sẵn sàng" : "Chưa kết nối", ready);
+        if (!ready) {
+          const reason = payload.pipeline_error
+            ? `Dịch vụ eye-tracking chưa sẵn sàng: ${payload.pipeline_error}`
+            : "Dịch vụ eye-tracking chưa sẵn sàng (model chưa load xong). Kiểm tra lại AI Service rồi thử lại.";
+          setStatus(reason, "error");
+        }
+        return ready;
+      } catch (error) {
+        setAiStatus("Chưa kết nối", false);
+        setStatus(
+          `${error.message || "Dịch vụ eye-tracking chưa kết nối."} URL: ${clientConfigRef.current?.ai_http_url || "unknown"}`,
+          "error"
+        );
+        return false;
+      }
   }
 
   function positionDot() {
@@ -943,18 +949,6 @@ export default function CalibrationPage({ mode = "lesson" }) {
   }
 
   useEffect(() => {
-    function onKeydown(event) {
-      if (event.code === "Space" && activeRef.current) {
-        event.preventDefault();
-        captureCurrentPoint();
-      }
-    }
-    document.addEventListener("keydown", onKeydown);
-    return () => document.removeEventListener("keydown", onKeydown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     if (!accountMode) {
       loadConfig()
         .then(checkAi)
@@ -1328,21 +1322,17 @@ export default function CalibrationPage({ mode = "lesson" }) {
               <button className="btn danger" type="button" onClick={() => cancelCalibration()}>Dừng</button>
             </div>
             <div className="calibration-instruction">
-              {captureModeRef.current === "validation" ? "Nhìn vào điểm để kiểm tra nhanh, sau đó bấm Space" : "Nhìn vào điểm, sau đó bấm Space"}
+              {captureModeRef.current === "validation" ? "Nhìn vào điểm để kiểm tra nhanh, sau đó click vào điểm để tiếp tục" : "Nhìn vào điểm, sau đó click vào điểm để tiếp tục"}
             </div>
             <button
-              className="calibration-capture-btn"
-              type="button"
-              disabled={captureDisabled}
-              onClick={captureCurrentPoint}
-            >
-              {captureDisabled ? "Đang ghi nhận" : "Ghi nhận"}
-            </button>
-            <div
               ref={dotRef}
+              type="button"
               className="calibration-dot"
               style={{ left: `${dotPos.left}px`, top: `${dotPos.top}px` }}
-            ></div>
+              disabled={captureDisabled}
+              onClick={captureCurrentPoint}
+              aria-label="Click vào điểm để ghi nhận và chuyển sang điểm tiếp theo"
+            ></button>
           </section>
         )}
         <video ref={videoRef} autoPlay playsInline muted hidden></video>
@@ -1614,21 +1604,17 @@ export default function CalibrationPage({ mode = "lesson" }) {
             <button className="btn danger" type="button" onClick={() => cancelCalibration()}>Dừng</button>
           </div>
           <div className="calibration-instruction">
-            {captureModeRef.current === "validation" ? "Nhìn vào điểm để kiểm tra nhanh, sau đó bấm Space" : "Nhìn vào điểm, sau đó bấm Space"}
+            {captureModeRef.current === "validation" ? "Nhìn vào điểm để kiểm tra nhanh, sau đó click vào điểm để tiếp tục" : "Nhìn vào điểm, sau đó click vào điểm để tiếp tục"}
           </div>
           <button
-            className="calibration-capture-btn"
-            type="button"
-            disabled={captureDisabled}
-            onClick={captureCurrentPoint}
-          >
-            {captureDisabled ? "Đang ghi nhận" : "Ghi nhận"}
-          </button>
-          <div
             ref={dotRef}
+            type="button"
             className="calibration-dot"
             style={{ left: `${dotPos.left}px`, top: `${dotPos.top}px` }}
-          ></div>
+            disabled={captureDisabled}
+            onClick={captureCurrentPoint}
+            aria-label="Click vào điểm để ghi nhận và chuyển sang điểm tiếp theo"
+          ></button>
         </section>
       )}
       <canvas ref={canvasRef} hidden></canvas>

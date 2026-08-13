@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
@@ -16,6 +18,7 @@ import hashlib
 import hmac
 import time
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,10 +36,21 @@ class Config:
             origin.strip()
             for origin in os.getenv(
                 "AI_WS_ORIGINS",
-                "http://localhost:5173,http://localhost:9080",
+                (
+                    "http://localhost:5173,http://127.0.0.1:5173,"
+                    "http://localhost:5174,http://127.0.0.1:5174,"
+                    "http://localhost:8080,http://127.0.0.1:8080,"
+                    "http://localhost:9080,http://127.0.0.1:9080,"
+                    "http://localhost:3000,http://127.0.0.1:3000,"
+                    "http://localhost:63342,http://127.0.0.1:63342"
+                ),
             ).split(",")
             if origin.strip()
-]
+        ]
+        # Cho phép mọi origin local: localhost / 127.0.0.1, bất kể port/scheme.
+        self.allow_localhost_origins = (
+            os.getenv("AI_ALLOW_LOCALHOST_ORIGINS", "true").strip().lower() == "true"
+        )
 
 
 config = Config()
@@ -71,10 +85,18 @@ class CalibrationLoadRequest(BaseModel):
     model_x_b64: str
     model_y_b64: str
     model_format: str
-
 # ─── App ──────────────────────────────────────────────────────
-app = FastAPI(title="EyeLearn — AI Service", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load pipeline ngay khi server start, thay vì chờ request đầu tiên tới
+    # /calibrate hoặc /inference — nếu không thì /health_check sẽ luôn báo
+    # pipeline_loaded=false vì get_pipeline() chưa từng được gọi, và frontend
+    # lại gate chính /calibrate đằng sau kết quả /health_check (deadlock).
+    get_pipeline()
+    yield
 
+
+app = FastAPI(title="EyeLearn — AI Service", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -313,7 +335,22 @@ def verify_tracking_token(token: str | None, session_id: str) -> bool:
 
 def websocket_origin_allowed(websocket: WebSocket) -> bool:
     origin = websocket.headers.get("origin")
-    return not origin or origin in config.allowed_ws_origins
+    if not origin:
+        return True
+    if origin in config.allowed_ws_origins:
+        return True
+    if config.allow_localhost_origins:
+        try:
+            hostname = urlparse(origin).hostname or ""
+        except ValueError:
+            hostname = ""
+        if hostname == "localhost" or hostname == "127.0.0.1":
+            return True
+    print(
+        f"[WebSocket] Rejected origin '{origin}' (allowed: {config.allowed_ws_origins})",
+        flush=True,
+    )
+    return False
 
 # ─── Inference (WebSocket) ────────────────────────────────────
 """

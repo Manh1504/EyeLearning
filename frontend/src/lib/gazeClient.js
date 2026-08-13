@@ -45,17 +45,24 @@ export function createGazeClient({ refs, getContext, setStatus, setAiStatus, cal
   let debugDotVisible = false;
 
   async function checkAi() {
-    try {
-      const cfg = await loadClientConfig();
-      const response = await fetch(`${cfg.ai_http_url}/health_check`);
-      const payload = await response.json().catch(() => ({}));
-      const ready = response.ok && payload.pipeline_loaded === true;
-      setAiStatus(ready ? "Sẵn sàng" : "Chưa kết nối", ready);
-      return ready;
-    } catch {
-      setAiStatus("Chưa kết nối", false);
-      return false;
-    }
+      try {
+        const cfg = await loadClientConfig();
+        const response = await fetch(`${cfg.ai_http_url}/health_check`);
+        const payload = await response.json().catch(() => ({}));
+        const ready = response.ok && payload.pipeline_loaded === true;
+        setAiStatus(ready ? "Sẵn sàng" : "Chưa kết nối", ready);
+        if (!ready) {
+          const reason = payload.pipeline_error
+            ? `Dịch vụ eye-tracking chưa sẵn sàng: ${payload.pipeline_error}`
+            : "Dịch vụ eye-tracking chưa sẵn sàng (model chưa load xong). Kiểm tra lại AI Service rồi thử lại.";
+          setStatus?.(reason, "error");
+        }
+        return ready;
+      } catch (error) {
+        setAiStatus("Chưa kết nối", false);
+        setStatus?.(error.message || "Dịch vụ eye-tracking chưa kết nối.", "error");
+        return false;
+      }
   }
 
   async function startCamera() {

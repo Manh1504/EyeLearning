@@ -1,181 +1,134 @@
-# EyeLearning MVP
+# EyeLearning
 
-EyeLearning la LMS MVP cho bai hoc PDF co eye-tracking. He thong gom:
+LMS cho bài học PDF có eye-tracking. Hệ thống gồm 3 khối:
 
-- `web/`: FastAPI backend + PostgreSQL schema/migrations
-- `frontend/`: React + Vite frontend
-- `Gaze-Estimation/`: AI service cho calibration va du doan diem nhin
+| Thư mục | Vai trò |
+|---|---|
+| `web/` | Backend FastAPI + PostgreSQL migrations (`web/migrations/`, 21 file `000` → `020`) |
+| `frontend/` | Frontend React (Vite), nginx serve + reverse-proxy API |
+| `Gaze-Estimation/` | AI Service (FastAPI, port 9000) — calibration + dự đoán điểm nhìn |
 
-## Development Setup
+Chạy đầy đủ gồm 4 service:
 
-### 1. Chay bang Docker
+| Service | Container | Port host → container | File compose |
+|---|---|---|---|
+| Postgres | `eyelearn_postgres` | `5433 → 5432` | `docker-compose.yml` (gốc) |
+| Backend | `eyelearn_web` | `8000 → 8000` | `docker-compose.yml` (gốc) |
+| Frontend | `eyelearn_frontend` | `9080 → 80` | `docker-compose.yml` (gốc) |
+| AI | `eyelearn_ai` | `9000 → 9000` | `Gaze-Estimation/docker-compose.yml` |
+
+## Yêu cầu
+
+- Docker + Docker Compose.
+- **Model weights** — KHÔNG nằm trong git. Tải tại [Google Drive](https://drive.google.com/drive/folders/1olXtxlqBb7gW_nnB4p_dSDXV2t2IMy5B?usp=sharing) (~6 file, ~1.7GB) và copy vào `Gaze-Estimation/weights/` trước khi chạy.
+
+## Pull code về máy chạy thử
 
 ```bash
+git clone https://github.com/Manh1504/EyeLearning
+cd EyeLearning
+
+# 1. Tải model weights vào Gaze-Estimation/weights/ (link ở mục Yêu cầu)
+
+# 2. Network dùng chung cho cả 2 nhóm compose (bỏ qua nếu báo "already exists")
+docker network create eyelearning_default
+
+# 3. Postgres + backend + frontend
 docker compose up -d --build
+
+# 4. AI Service (mặc định build bản CPU-only, chạy được mọi máy, không cần GPU)
 cd Gaze-Estimation
 docker compose up -d --build
+cd ..
 ```
 
-Backend `eyelearn_web` duoc bind-mount tu source local:
+Mở **`http://localhost:9080`**, chọn role `Student`, nhập tên + student code, Start session.
 
-- `./web -> /app/web`
-- `./data -> /app/data`
-- `./.env -> /app/.env`
+> Nếu bỏ qua bước 4: app vẫn mở được nhưng calibration và gaze tracking không hoạt động (không có gì trả lời ở `127.0.0.1:9000`).
 
-Vi vay thay doi trong `web/` se duoc container dung ngay sau khi restart process backend.
+### Kiểm tra sau khi lên
 
-### 2. Frontend development
+```bash
+curl http://localhost:8000/health                  # {"status":"ok"}
+curl http://localhost:8000/debug/schema-status     # đủ bảng, đúng migration
+curl http://localhost:8000/lessons/L001/aois       # seed data — phải trả về 9 AOI
+curl http://127.0.0.1:9000/health_check            # "pipeline_loaded": true
+```
 
-Neu `npm` tren may host dang loi, co the chay frontend qua Docker tai `http://localhost:9080`.
+- `/lessons/L001/aois` trả `[]` → migration chưa chạy đủ (xem mục Migrations).
+- `/health_check` trả `"pipeline_loaded": false` → thiếu model weights.
 
-Neu chay local:
+### Chạy frontend bằng npm (tuỳ chọn, khi muốn sửa UI nhanh)
 
 ```bash
 cd frontend
 npm install
-npm run dev -- --host 0.0.0.0 --port 5173
+npm run dev        # http://localhost:5173, tự proxy API sang http://127.0.0.1:8000
 ```
 
-### 3. Health checks
+Backend dev (`docker-compose.yml`) mount source `./web` nên sửa code trong `web/` được uvicorn `--reload` áp dụng ngay, không cần rebuild.
+
+### GPU (tuỳ chọn)
+
+Mặc định AI Service build bản CPU. Máy có GPU NVIDIA + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
 
 ```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:9000/health_check
+cd Gaze-Estimation
+TORCH_VARIANT=cuda DEVICE=cuda docker compose up -d --build
 ```
+
+và bỏ comment khối `deploy.resources.reservations.devices` trong `Gaze-Estimation/docker-compose.yml`.
 
 ## Migrations
 
-Database can co day du cac migration trong `web/migrations/`.
+`docker-compose.yml` mount `./web/migrations` vào `/docker-entrypoint-initdb.d` — Postgres tự chạy toàn bộ file `.sql` theo thứ tự tên, **chỉ 1 lần lúc volume còn rỗng**.
 
-Hai migration moi can co trong moi moi truong MVP hien tai:
-
-- `018_calibration_profile_preferences.sql`
-- `019_pdf_teacher_analytics.sql`
-
-Neu can chay tay trong container Postgres:
+Nếu volume `eyelearn_pgdata` đã có data từ trước và có migration mới thêm vào sau, migration mới **không tự chạy**. Hai cách:
 
 ```bash
-docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/018_calibration_profile_preferences.sql
-docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/019_pdf_teacher_analytics.sql
+# A. Chạy tay file còn thiếu (kiểm tra file thiếu qua /debug/schema-status)
+docker exec -i eyelearn_postgres psql -U eyelearn_user -d eyelearn < web/migrations/00X_ten_file.sql
+
+# B. Xoá sạch volume chạy lại từ đầu (MẤT DATA)
+docker compose down -v && docker compose up -d --build
 ```
 
-## PDF Lesson Workflow
+> Image production (`web/Dockerfile.prod`) tự chạy migration lúc khởi động qua `web.migrate` (idempotent, tracking bảng `_schema_migrations`) nên không dính vấn đề này.
 
-1. Teacher tai PDF len trong trang khoa hoc.
-2. Backend luu file va gan `storage_key` bat bien cho moi phien ban tai lieu.
-3. Student mo khoa hoc, chon bai hoc, vao trang chuan bi.
-4. Sau khi qua camera + nhan dien khuon mat + ho so hieu chuan + validation, student vao trang doc PDF.
-5. Frontend gui du lieu gaze da duoc map theo:
-   - `course_item_id`
-   - `pdf_document_version`
-   - `page_number`
-   - `page_x_normalized`
-   - `page_y_normalized`
-6. Teacher xem tong hop theo khoa hoc, bai hoc, trang va heatmap.
-
-## Calibration Profiles
-
-Student co the quan ly ho so hieu chuan ngay trong luong chuan bi hoac tai:
-
-- `/calibration-profiles`
-
-Ho tro:
-
-- tao ho so moi
-- chon ho so
-- doi ten
-- dat mac dinh
-- canh bao khong tuong thich thiet bi/camera
-- luu ket qua validation gan nhat
-- xoa mem ma khong xoa du lieu phien hoc lich su
-
-## Development Analytics Data
-
-Seed analytics chi dung cho development:
+## Dừng / dọn dẹp
 
 ```bash
-docker exec eyelearn_web sh -lc 'cd /app && python -m web.dev.seed_pdf_teacher_analytics'
+docker compose down                              # giữ data
+cd Gaze-Estimation && docker compose down        # dừng AI Service
+docker compose down -v                           # + xoá volume Postgres (mất data)
 ```
 
-Script nay:
+## Deploy (hướng Portainer)
 
-- khong duoc app import luc startup
-- khong co UI de goi
-- bi chan khi `APP_ENV=production`
-- chi duoc phep override bang `ALLOW_PRODUCTION_DEV_SEED=true`
-
-Xoa du lieu seed:
+Đích deploy hiện tại là server Docker của trường quản lý bằng Portainer (không GPU): 3 image build sẵn push lên Docker Hub + stack `portainer/stack.yml` dán vào Portainer (Stacks → Add stack → Web editor). Khai báo 3 biến môi trường lúc deploy: `DOCKER_USER`, `POSTGRES_PASSWORD`, `TRACKING_TOKEN_SECRET`.
 
 ```bash
-docker exec eyelearn_web sh -lc 'cd /app && python - <<\"PY\"
-import asyncio
-from web.database import AsyncSessionLocal
-from web.dev.seed_pdf_teacher_analytics import clear_seed
-
-async def main():
-    async with AsyncSessionLocal() as db:
-        await clear_seed(db)
-        await db.commit()
-
-asyncio.run(main())
-PY'
+docker login
+docker build -f web/Dockerfile.prod -t <DOCKER_USER>/eyelearn-web:latest ./web
+docker build -t <DOCKER_USER>/eyelearn-frontend:latest ./frontend
+cd Gaze-Estimation
+docker build -f Dockerfile.bundled -t <DOCKER_USER>/eyelearn-ai:latest .   # bake sẵn weights, CPU
+cd ..
+docker push <DOCKER_USER>/eyelearn-web:latest
+docker push <DOCKER_USER>/eyelearn-frontend:latest
+docker push <DOCKER_USER>/eyelearn-ai:latest
 ```
 
-## Verification
+Chỉ expose port `9080` (nginx); browser gọi API và AI WebSocket cùng origin qua `/ai/...`. Postgres/AI/web chỉ nói chuyện trong network nội bộ của stack.
 
-### Student manual test flow
+## Những vấn đề chưa xử lý để có thể deploy
 
-1. Dang nhap student
-2. Mo `/courses`
-3. Mo chi tiet khoa hoc
-4. Chon bai hoc
-5. Hoan thanh camera, nhan dien khuon mat, chon/tao ho so hieu chuan, validation
-6. Vao lesson PDF
-7. Doc it nhat 2 trang
-8. Hoan thanh lesson
-
-### Teacher analytics routes
-
-- `/teacher`
-- `/teacher/courses`
-- `/teacher/courses/:courseId`
-- `/teacher/courses/:courseId?tab=analytics`
-- `/teacher/courses/:courseId/lessons/:lessonId/analytics`
-
-### SQL queries huu ich
-
-```sql
-select session_id, user_id, course_item_id, pdf_document_version, status, started_at, ended_at
-from sessions
-where session_type = 'student_learning'
-order by started_at desc
-limit 10;
-
-select session_id, course_item_id, pdf_document_version, page_number,
-       page_x_normalized, page_y_normalized, confidence, timestamp_ms
-from tracking_points
-where session_id = 'YOUR_SESSION_ID'
-order by timestamp_ms
-limit 30;
-```
-
-### Backend test command trong Docker
-
-```bash
-docker exec eyelearn_web sh -lc 'python -m unittest web.tests.test_calibration_profile_logic web.tests.test_learning_analytics_service web.tests.test_pdf_teacher_analytics_service web.tests.test_seed_pdf_teacher_analytics'
-```
-
-## Production Build
-
-```bash
-cd frontend
-npm run build
-```
-
-## Known Limitations
-
-- Khong co browser automation co webcam trong workspace CLI nay, nen phien capture webcam that phai duoc verify thu cong trong trinh duyet.
-- Heatmap hien duoc render density tren frontend, chua dung kernel density nang cao.
-- Bo loc session/analytics hien tai van con gon, chu yeu theo khoa hoc, bai hoc, hoc vien, ngay va confidence.
-- Class analytics chua nam trong MVP hien tai.
-- Chua co full frontend integration test framework cho luong webcam/browser.
+1. **Model weights không nằm trong git** — phải tải tay từ Google Drive trước khi build/chạy. Image AI bundled (`Dockerfile.bundled`) phải bake sẵn weights nên rất nặng (~4–5GB), push/pull lần đầu chậm. Chưa có registry nội bộ — đang phụ thuộc Docker Hub.
+2. **Dockerfile AI Service chưa được build-test đầy đủ** — viết dựa trên đọc code (`server.py`, `requirements.txt`); lần đầu build thật nếu lỗi cài package (torch/mediapipe/L2CS cài từ GitHub) cần điều chỉnh lại Dockerfile.
+3. **Webcam yêu cầu HTTPS** — trình duyệt chặn `getUserMedia` trên trang `http://` (trừ localhost). Trước khi học sinh calibration được cần domain + chứng chỉ TLS đặt trước port 9080 (Caddy là dễ nhất, hoặc Cloudflare proxy — lưu ý Cloudflare free chỉ proxy port 80/443 nên phải đổi `"9080:80"` trong `portainer/stack.yml` thành `"80:80"`). Chưa có HTTPS thì hệ thống chạy được nhưng camera/calibration không hoạt động.
+4. **Secrets mặc định là giá trị dev** — `TRACKING_TOKEN_SECRET=dev-tracking-token-secret` và password Postgres dev. Trước khi deploy thật phải sinh giá trị ngẫu nhiên (vd. `openssl rand -hex 32`), và `TRACKING_TOKEN_SECRET` **phải trùng nhau** giữa service `web` và `ai`.
+5. **Portainer Stacks không chạy `docker build`** — quy trình build + push 3 image hiện làm tay trên máy dev; chưa có CI tự động build/push khi có release.
+6. **Backfill dữ liệu tracking cũ** — sau khi deploy schema tracking mới, phải chạy tay `scripts/backfill_tracking_pdf_context.sql` đúng 1 lần (backup DB trước: `docker exec eyelearn_postgres pg_dump -U eyelearn_user eyelearn > backup.sql`).
+7. **Hiệu năng AI trên CPU** — server trường không có GPU, inference chạy CPU chậm và ăn RAM; cần tối thiểu 8 cores / 16GB RAM, hoặc cân nhắc thuê máy có GPU và build lại bản `TORCH_VARIANT=cuda`.
+8. **Cloudinary (tuỳ chọn) chưa cấu hình** — không set `CLOUDINARY_URL` thì heatmap/page snapshot lưu disk local trong volume `eyelearn_data` (vẫn hoạt động, nhưng cần backup volume này cùng DB).
+9. **Chưa có integration test cho luồng webcam/browser** — phiên capture webcam thật phải verify thủ công trong trình duyệt sau mỗi lần deploy.

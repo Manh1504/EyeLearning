@@ -8,3 +8,4 @@ python-dotenv==1.0.1
 Pillow==10.4.0
 cloudinary==1.41.0
 pypdf==5.1.0
+numpy>=1.26

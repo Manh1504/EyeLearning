@@ -73,7 +73,7 @@ export default function LessonPage() {
   const [trackingState, setTrackingState] = useState("PAUSED");
   const [finishing, setFinishing] = useState(false);
   const [manualRetryVisible, setManualRetryVisible] = useState(false);
-  const [showGazePoint, setShowGazePoint] = useState(false);
+  const [showGazePoint, setShowGazePoint] = useState(true);
   const [showLiveHeatmap, setShowLiveHeatmap] = useState(false);
   const [diagnostics, setDiagnostics] = useState({ samples: 0, heatmapPoints: 0, lastSavedAt: "" });
   const videoRef = useRef(null);

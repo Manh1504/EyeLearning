@@ -9,7 +9,6 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer
 from utils import get_screen_size, create_points
 from xgboost import XGBRegressor
-import tkinter as tk
 import pickle
 import ubjson
 from utils import FreshFrameReader
@@ -99,6 +98,11 @@ class Calibration:
         )
 
     def collect_calibration_data(self, pipline, delay=1):
+        # Import cục bộ: chỉ nhánh GUI desktop (main.py) mới cần tkinter — để module này
+        # import được trong server.py (chạy headless, không có Tk/display) mà không đòi
+        # hỏi cài đặt native library "libtk8.6.so" chỉ dùng cho mỗi hàm này.
+        import tkinter as tk
+
         if self.new_calibration:
             # Khởi tạo GUI
             self.root.attributes('-fullscreen', True)

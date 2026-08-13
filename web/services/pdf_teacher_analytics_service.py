@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import and_, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from web.models import Course, CourseEnrollment, CourseItem, PDFLesson, PDFLessonProgress, Session, TrackingPoint
+from web.models import Course, CourseEnrollment, CourseItem, PDFLesson, PDFLessonProgress, Session, TrackingPoint, User
 
 MAX_HEATMAP_POINTS = 4000
 MAX_SAMPLE_STEP_MS = 1000
@@ -36,12 +36,6 @@ def is_valid_pdf_point(point: TrackingPoint, minimum_confidence: float = 0) -> b
     if not (0 <= float(point.page_x_normalized) <= 1 and 0 <= float(point.page_y_normalized) <= 1):
         return False
     metadata = point.metadata_json or {}
-    if metadata.get("in_pdf_page") is False:
-        return False
-    if metadata.get("is_transitioning") is True:
-        return False
-    if metadata.get("in_reliable_region") is False:
-        return False
     if metadata.get("prediction_available") is False:
         return False
     if metadata.get("inside_viewport") is False:
@@ -209,7 +203,6 @@ async def load_valid_points(
     filters = _session_filters(course_id, lesson_id, student_id, date_from, date_to, document_version)
     stmt = (
         select(
-            TrackingPoint.metadata_json,
             TrackingPoint.session_id,
             Session.user_id,
             TrackingPoint.course_id,
@@ -220,10 +213,6 @@ async def load_valid_points(
             TrackingPoint.page_x_normalized,
             TrackingPoint.page_y_normalized,
             TrackingPoint.confidence,
-            TrackingPoint.page_y_normalized,
-            TrackingPoint.confidence,
-            TrackingPoint.metadata_json,
-            Session.started_at,
             TrackingPoint.metadata_json,
             Session.started_at,
         )
@@ -412,14 +401,23 @@ async def build_lesson_analytics(
     filters = _session_filters(course_id, lesson_id, student_id, date_from, date_to, resolved_version)
     session_rows = (
         await db.execute(
-            select(Session.session_id, Session.user_id, Session.started_at, Session.ended_at).where(and_(*filters))
+            select(
+                Session.session_id,
+                Session.user_id,
+                Session.started_at,
+                Session.ended_at,
+                User.full_name,
+                User.student_code,
+            )
+            .join(User, User.user_id == Session.user_id, isouter=True)
+            .where(and_(*filters))
         )
     ).all()
     session_ids = [row[0] for row in session_rows]
     durations = []
     first_activity_at = None
     last_activity_at = None
-    for _, _, started_at, ended_at in session_rows:
+    for _, _, started_at, ended_at, _, _ in session_rows:
         if started_at:
             first_activity_at = min(first_activity_at, started_at) if first_activity_at else started_at
             last_activity_at = max(last_activity_at, started_at) if last_activity_at else started_at
@@ -437,7 +435,7 @@ async def build_lesson_analytics(
         if point.confidence is not None:
             session_conf_map[point.session_id].append(point.confidence)
     session_summaries = []
-    for session_id, student_id, started_at, ended_at in session_rows:
+    for session_id, row_student_id, started_at, ended_at, full_name, student_code in session_rows:
         duration = None
         if started_at and ended_at:
             delta = (ended_at - started_at).total_seconds()
@@ -447,8 +445,9 @@ async def build_lesson_analytics(
         session_summaries.append(
             {
                 "session_id": session_id,
-                "student_id": student_id,
-                "student_name": student_id,
+                "student_id": row_student_id,
+                "student_name": full_name or student_code or row_student_id,
+                "student_code": student_code,
                 "started_at": started_at,
                 "duration_seconds": duration,
                 "pages_viewed": len(session_page_map.get(session_id, set())),
@@ -475,7 +474,7 @@ async def build_lesson_analytics(
         "pages": pages,
         "sessions": session_summaries,
         "session_ids": session_ids,
-        "pdf_url": f"/teacher/courses/{course_id}/lessons/{lesson_id}/document?document_version={resolved_version}",
+        "pdf_url": f"/courses/teacher/{course_id}/lessons/{lesson_id}/document?document_version={resolved_version}",
     }
 
 

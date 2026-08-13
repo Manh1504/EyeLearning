@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.authz import SESSION_COOKIE_NAME, current_user_from_cookie, normalize_role, token_hash
 from web.database import get_db
-from web.models import AuthSession, CourseEnrollment, User
+from web.models import AuthSession, Course, CourseEnrollment, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 SESSION_TTL_HOURS = int(os.getenv("ELA_SESSION_TTL_HOURS", "12"))
@@ -90,11 +90,20 @@ def enforce_login_rate_limit(request: Request, body: LoginRequest) -> None:
     LOGIN_ATTEMPTS[key] = attempts
 
 
+DEV_BOOTSTRAP_COURSE_ID = "C001"
+
+
 async def ensure_dev_student_enrollment(db: AsyncSession, user: User) -> None:
     result = await db.execute(select(CourseEnrollment).where(CourseEnrollment.student_id == user.user_id).limit(1))
     if result.scalar_one_or_none():
         return
-    db.add(CourseEnrollment(student_id=user.user_id, course_id="C001", enrolled_by=None, status="active"))
+    # Khóa học demo dùng cho tài khoản dev-bootstrap có thể chưa được seed (vd. volume
+    # Postgres được tạo trước khi migration seed C001 tồn tại) — nếu thiếu, bỏ qua bước
+    # ghi danh thay vì để INSERT vi phạm khóa ngoại làm sập cả luồng đăng nhập (500).
+    course_exists = await db.scalar(select(Course.course_id).where(Course.course_id == DEV_BOOTSTRAP_COURSE_ID))
+    if not course_exists:
+        return
+    db.add(CourseEnrollment(student_id=user.user_id, course_id=DEV_BOOTSTRAP_COURSE_ID, enrolled_by=None, status="active"))
     await db.flush()
 
 

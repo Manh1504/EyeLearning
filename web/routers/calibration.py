@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 from time import time
 from typing import List, Optional
 
@@ -14,7 +14,6 @@ from web.authz import current_user_from_cookie, ensure_can_read_session_analytic
 from web.models import CalibrationProfile, Session, User
 from web.services.calibration_service import calibration_model_url
 from web.services.calibration_service import CALIBRATION_MODEL_DIR, save_calibration_model
-from web.services.calibration_profile_logic import MODEL_VERSION
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
 
@@ -36,11 +35,10 @@ class CalibrationSubmit(BaseModel):
     device_pixel_ratio: Optional[float] = None
     camera_label: Optional[str] = None
     orientation: Optional[str] = None
-    browser_label: Optional[str] = None
     avg_error_px: Optional[float] = None
     model_x_b64: str
     model_y_b64: str
-    model_format: str = "linear_tan_json_v1"
+    model_format: str = "joblib"
     checkpoints: List[CalibrationCheckpointIn]
 
 
@@ -76,17 +74,10 @@ async def save_calibration(
     session = await ensure_student_owns_session(db, user, body.session_id)
 
     calibration_group_id = f"CALIB_{body.session_id}_{int(time() * 1000)}"
-    existing_default = await db.scalar(
-        select(CalibrationProfile.calibration_id)
-        .where(CalibrationProfile.user_id == session.user_id)
-        .where(CalibrationProfile.status == "active")
-        .where(CalibrationProfile.is_default.is_(True))
-        .limit(1)
-    )
 
     # Model chỉ cần lưu 1 lần (chung cho cả 9 row cùng group) — không encode
     # trùng lặp base64 vào mỗi row, chỉ lưu model_storage_url dùng chung.
-    model_storage_url = save_calibration_model(calibration_group_id, body.model_x_b64, body.model_y_b64, body.model_format)
+    model_storage_url = save_calibration_model(calibration_group_id, body.model_x_b64, body.model_y_b64)
 
     checkpoints_out = []
     for idx, checkpoint in enumerate(body.checkpoints):
@@ -107,7 +98,7 @@ async def save_calibration(
             model_storage_url=model_storage_url,
             model_format=body.model_format,
             profile_name=body.profile_name or f"Hồ sơ căn chỉnh {datetime.now().strftime('%d/%m %H:%M')}",
-            model_version=MODEL_VERSION,
+            model_version="svr:v1",
             environment_json={
                 "viewport_w": body.viewport_w,
                 "viewport_h": body.viewport_h,
@@ -115,12 +106,8 @@ async def save_calibration(
                 "device_pixel_ratio": body.device_pixel_ratio or 1,
                 "camera_label": body.camera_label,
                 "orientation": body.orientation,
-                "browser_label": body.browser_label,
             },
             artifact_status="available",
-            is_default=not bool(existing_default),
-            last_used_at=datetime.now(timezone.utc),
-            browser_label=body.browser_label,
         )
         db.add(profile)
         checkpoints_out.append(profile)
