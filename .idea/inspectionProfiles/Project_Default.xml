@@ -1,0 +1,55 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="av" />
+          <option value="click" />
+          <option value="glfw" />
+          <option value="msgpack" />
+          <option value="numexpr" />
+          <option value="numpy" />
+          <option value="opencv-python" />
+          <option value="packaging" />
+          <option value="psutil" />
+          <option value="pyopengl" />
+          <option value="pyzmq" />
+          <option value="rich" />
+          <option value="scikit-learn" />
+          <option value="scipy" />
+          <option value="sounddevice" />
+          <option value="zeromq-pyre" />
+          <option value="ndsi" />
+          <option value="pupil-apriltags" />
+          <option value="pupil-detectors" />
+          <option value="pupil-labs-uvc" />
+          <option value="pye3d" />
+          <option value="pyglui" />
+          <option value="Flask_WTF" />
+          <option value="pandas" />
+          <option value="six" />
+          <option value="tensorflow" />
+          <option value="WTForms_Components" />
+          <option value="stripe" />
+          <option value="deepface" />
+          <option value="Werkzeug" />
+          <option value="opencv_contrib_python" />
+          <option value="WTForms" />
+          <option value="Flask_MySQLdb" />
+          <option value="Flask" />
+          <option value="Flask_Mail" />
+          <option value="matplotlib" />
+          <option value="Flask_Cors" />
+          <option value="wget" />
+          <option value="python_docx" />
+          <option value="nltk" />
+          <option value="coolname" />
+          <option value="object_detection" />
+          <option value="Pillow" />
+          <option value="pickle-mixin" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

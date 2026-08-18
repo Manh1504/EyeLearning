@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="5a410d18-b5b4-4a51-97af-185d5d2dee99" name="Changes" comment="update gan cuoi">
+      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="HTML File" />
+        <option value="Python Script" />
+        <option value="Dockerfile" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="ROOT_SYNC" value="SYNC" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;Manh1504&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/Manh1504/EyeLearning&quot;,
+    &quot;accountId&quot;: &quot;42c98ff8-d80f-4ef9-9599-1c4b92fa9009&quot;
+  }
+}</component>
+  <component name="PackageJsonUpdateNotifier">
+    <dismissed value="$PROJECT_DIR$/frontend/package.json" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4
+}</component>
+  <component name="ProjectId" id="3FZm1VkQ3w28L8uroAE7fT96fUw" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;DefaultHtmlFileTemplate&quot;: &quot;HTML File&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.python -m uvicorn web.main:app --host 127.0.0.1 --port 8000 --reload.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/ADMIN/PycharmProjects/EyeLearning/Gaze-Estimation&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;reference.idesettings.debugger.python&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;C:\\Users\\ADMIN\\PycharmProjects\\EyeLearning\\frontend\\node_modules\\typescript\\lib&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\Gaze-Estimation" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\frontend" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\Gaze-Estimation\weights" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\web" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\Gaze-Estimation" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\web" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\frontend" />
+      <recent name="C:\Users\ADMIN\PycharmProjects\EyeLearning\web\routers" />
+    </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="python -m uvicorn web.main:app --host 127.0.0.1 --port 8000 --reload" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <module name="EyeLearning" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="uvicorn" />
+      <option name="PARAMETERS" value="web.main:app --host 127.0.0.1 --port 8000 --reload" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="true" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-b598e85cdad2-JavaScript-PY-252.25557.178" />
+        <option value="bundled-python-sdk-ce6832f46686-7b97d883f26b-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.25557.178" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="5a410d18-b5b4-4a51-97af-185d5d2dee99" name="Changes" comment="" />
+      <created>1782290750307</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1782290750307</updated>
+      <workItem from="1785075387553" duration="33000" />
+      <workItem from="1786371240337" duration="4523000" />
+      <workItem from="1786433380288" duration="642000" />
+      <workItem from="1786542697079" duration="4971000" />
+      <workItem from="1786590872670" duration="37000" />
+      <workItem from="1786611879788" duration="788000" />
+      <workItem from="1786624892495" duration="660000" />
+      <workItem from="1786715336740" duration="60000" />
+      <workItem from="1786890755214" duration="2512000" />
+      <workItem from="1786957118522" duration="1528000" />
+      <workItem from="1786958862168" duration="5092000" />
+      <workItem from="1786970780087" duration="5843000" />
+      <workItem from="1787034159526" duration="4205000" />
+      <workItem from="1787041135801" duration="907000" />
+      <workItem from="1787048877152" duration="1829000" />
+    </task>
+    <task id="LOCAL-00001" summary="creat web back-end">
+      <option name="closed" value="true" />
+      <created>1782465085866</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1782465085866</updated>
+    </task>
+    <task id="LOCAL-00002" summary="update connect AI service">
+      <option name="closed" value="true" />
+      <created>1782633959646</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1782633959646</updated>
+    </task>
+    <task id="LOCAL-00003" summary="update .git">
+      <option name="closed" value="true" />
+      <created>1782634699230</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1782634699230</updated>
+    </task>
+    <task id="LOCAL-00004" summary="update ....">
+      <option name="closed" value="true" />
+      <created>1782634768007</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1782634768007</updated>
+    </task>
+    <task id="LOCAL-00005" summary="update ....">
+      <option name="closed" value="true" />
+      <created>1782635032175</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1782635032175</updated>
+    </task>
+    <task id="LOCAL-00006" summary="update ....">
+      <option name="closed" value="true" />
+      <created>1782635662192</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1782635662192</updated>
+    </task>
+    <task id="LOCAL-00007" summary="update ....">
+      <option name="closed" value="true" />
+      <created>1782635979549</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1782635979549</updated>
+    </task>
+    <task id="LOCAL-00008" summary="fix viewpoint and connection issues for watching&#10;lectures, no viewing results yet">
+      <option name="closed" value="true" />
+      <created>1782663682737</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1782663682737</updated>
+    </task>
+    <task id="LOCAL-00009" summary="update nhieu quaaaaa">
+      <option name="closed" value="true" />
+      <created>1785080458461</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1785080458461</updated>
+    </task>
+    <task id="LOCAL-00010" summary="update truoc gio G">
+      <option name="closed" value="true" />
+      <created>1786625476719</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1786625476719</updated>
+    </task>
+    <task id="LOCAL-00011" summary="update gan cuoi">
+      <option name="closed" value="true" />
+      <created>1787049104619</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1787049104619</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="main" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <ignored-roots>
+      <path value="$PROJECT_DIR$/Gaze-Estimation" />
+    </ignored-roots>
+    <MESSAGE value="creat web back-end" />
+    <MESSAGE value="update connect AI service" />
+    <MESSAGE value="update .git" />
+    <MESSAGE value="update ...." />
+    <MESSAGE value="fix viewpoint and connection issues for watching&#10;lectures, no viewing results yet" />
+    <MESSAGE value="update nhieu quaaaaa" />
+    <MESSAGE value="update truoc gio G" />
+    <MESSAGE value="update gan cuoi" />
+    <option name="LAST_COMMIT_MESSAGE" value="update gan cuoi" />
+  </component>
+</project>

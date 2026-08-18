@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GazeLearn - Nền Tảng Học Trực Tuyến Tương Tác</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --accent-green: #10b981;
+      --accent-purple: #8b5cf6;
+      --accent-amber: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Header & Navigation */
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 5%;
+    }
+
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 1rem;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .btn-outline {
+      border-color: var(--border);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .btn-outline:hover {
+      background: #f1f5f9;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      padding: 4rem 1rem 2rem;
+      max-width: 850px;
+      margin: 0 auto;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      background: #dbeafe;
+      color: var(--primary);
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+
+    .hero h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Role Tabs */
+    .tabs-container {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 2.5rem;
+      padding: 0 1rem;
+    }
+
+    .tab-btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    }
+
+    /* Dynamic Role View */
+    .role-view {
+      max-width: 1000px;
+      margin: 0 auto 4rem;
+      padding: 0 1.5rem;
+      display: none;
+    }
+
+    .role-view.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .feature-box {
+      padding: 1.25rem;
+      border-radius: 8px;
+      background: var(--bg);
+      border-left: 4px solid var(--primary);
+    }
+
+    .feature-box h3 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-box p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .cta-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 640px) {
+      .hero h1 { font-size: 1.8rem; }
+      .cta-banner { flex-direction: column; gap: 1rem; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <span>👁️</span> GazeLearn
+    </div>
+    <div class="nav-actions">
+      <button class="btn btn-outline">Đăng nhập</button>
+      <button class="btn btn-primary">Bắt đầu ngay</button>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <span class="badge">Công nghệ Eye-Tracking Thế hệ Mới</span>
+    <h1>Nền Tảng Học Tập Với Slide Tích Hợp Nhận Diện Ánh Mắt</h1>
+    <p>Tối ưu hóa khả năng tập trung của sinh viên và cung cấp bản đồ nhiệt tương tác (Heatmap) chi tiết cho giảng viên.</p>
+
+    <!-- Role Switcher Tabs -->
+    <div class="tabs-container">
+      <button class="tab-btn active" onclick="switchRole('student')">👨‍🎓 Sinh viên</button>
+      <button class="tab-btn" onclick="switchRole('teacher')">👩‍🏫 Giáo viên</button>
+      <button class="tab-btn" onclick="switchRole('admin')">🛡️ Quản trị viên</button>
+    </div>
+  </section>
+
+  <!-- Student Role View -->
+  <div id="student-view" class="role-view active">
+    <div class="card">
+      <h2>Dành cho Sinh viên: Học tập trực quan, tự động hiệu chuẩn</h2>
+      <p style="color: var(--text-muted); margin-top: 0.25rem;">Trải nghiệm học slide mượt mà cùng quy trình chuẩn hóa điểm nhìn nhanh gọn.</p>
+      
+      <div class="grid-3">
+        <div class="feature-box">
+          <h3>1. Hiệu chuẩn 9 điểm (Calibration)</h3>
+          <p>Chỉ cần 15 giây nhìn theo các điểm trên màn hình để hệ thống tự động nhận dạng webcam.</p>
+        </div>
+        <div class="feature-box">
+          <h3>2. Học tập không gián đoạn</h3>
+          <p>Theo dõi slide bài giảng mượt mà, camera chạy nền xử lý hoàn toàn riêng tư.</p>
+        </div>
+        <div class="feature-box">
+          <h3>3. Tiến độ & Ghi chú</h3>
+          <p>Tự động ghi nhớ trang slide đang học, đánh dấu các nội dung quan trọng.</p>
+        </div>
+      </div>
+
+      <div class="cta-banner">
+        <div>
+          <strong>Sẵn sàng tham gia lớp học?</strong>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">Không cần cài đặt thêm phần mềm bên ngoài.</p>
+        </div>
+        <button class="btn btn-primary">Vào Học Với Slide</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Teacher Role View -->
+  <div id="teacher-view" class="role-view">
+    <div class="card">
+      <h2>Dành cho Giáo viên: Quản lý khóa học & Phân tích Gaze</h2>
+      <p style="color: var(--text-muted); margin-top: 0.25rem;">Theo dõi mức độ tương tác của sinh viên trên từng trang slide bài giảng.</p>
+      
+      <div class="grid-3">
+        <div class="feature-box" style="border-left-color: var(--accent-purple);">
+          <h3>1. Tải lên & Tạo khóa học</h3>
+          <p>Upload slide định dạng PDF/PPTX, phân chia chương mục và gán bài học dễ dàng.</p>
+        </div>
+        <div class="feature-box" style="border-left-color: var(--accent-purple);">
+          <h3>2. Bản đồ nhiệt (Gaze Heatmap)</h3>
+          <p>Xem trực quan các vùng trên slide mà sinh viên tập trung đọc hoặc bỏ qua nhiều nhất.</p>
+        </div>
+        <div class="feature-box" style="border-left-color: var(--accent-purple);">
+          <h3>3. Attention Timeline</h3>
+          <p>Đo lường thời gian tập trung của từng học sinh để cải thiện nội dung giảng dạy.</p>
+        </div>
+      </div>
+
+      <div class="cta-banner">
+        <div>
+          <strong>Bắt đầu tạo bài giảng ngay hôm nay</strong>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">Bảo mật tuyệt đối dữ liệu phân tích chỉ riêng bạn xem được.</p>
+        </div>
+        <button class="btn btn-primary" style="background: var(--accent-purple);">Tạo Khóa Học Mới</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Role View -->
+  <div id="admin-view" class="role-view">
+    <div class="card">
+      <h2>Dành cho Quản trị viên: Quản lý hệ thống tối giản</h2>
+      <p style="color: var(--text-muted); margin-top: 0.25rem;">Kiểm soát tài khoản, phân quyền và giám sát hoạt động nền tảng.</p>
+      
+      <div class="grid-3">
+        <div class="feature-box" style="border-left-color: var(--accent-amber);">
+          <h3>1. Quản lý người dùng</h3>
+          <p>Duyệt tài khoản giáo viên, quản lý danh sách sinh viên và cấp quyền truy cập.</p>
+        </div>
+        <div class="feature-box" style="border-left-color: var(--accent-amber);">
+          <h3>2. Thống kê hệ thống</h3>
+          <p>Xem tổng số khóa học đang hoạt động, lượng truy cập và tài nguyên sử dụng.</p>
+        </div>
+        <div class="feature-box" style="border-left-color: var(--accent-amber);">
+          <h3>3. Cấu hình & Giám sát</h3>
+          <p>Thiết lập các thông số cơ bản cho hệ thống và lưu trữ log bảo mật.</p>
+        </div>
+      </div>
+
+      <div class="cta-banner">
+        <div>
+          <strong>Cổng đăng nhập quản trị</strong>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">Chỉ dành cho các tài khoản được ủy quyền.</p>
+        </div>
+        <button class="btn btn-primary" style="background: var(--accent-amber); color: #000;">Truy Cập Admin Portal</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchRole(role) {
+      // Ẩn tất cả các view
+      document.querySelectorAll('.role-view').forEach(view => {
+        view.classList.remove('active');
+      });
+
+      // Bỏ active tab
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+
+      // Kích hoạt view và tab tương ứng
+      const targetView = document.getElementById(`${role}-view`);
+      if (targetView) {
+        targetView.classList.add('active');
+      }
+
+      // Đánh dấu nút tab đang bấm
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>
