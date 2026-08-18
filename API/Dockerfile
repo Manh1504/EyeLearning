@@ -5,9 +5,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 
-# torch/opencv/mediapipe/ultralytics cần một số thư viện hệ thống
+# torch/opencv/mediapipe/unigaze cần một số thư viện hệ thống
+# (mediapipe/unigaze dlopen libEGL/libGLES ngay cả khi dùng delegate CPU)
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     libgl1 \
+    libegl1 \
+    libgles2 \
+    libgles1 \
     libglib2.0-0 \
     libgomp1 \
     curl \

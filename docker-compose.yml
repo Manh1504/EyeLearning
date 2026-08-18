@@ -28,10 +28,10 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/eyetracking
-      AI_HTTP_URL: http://api:8000
-      AI_WS_URL: ws://api:8000/infer
+      AI_HTTP_URL: http://host.docker.internal:9000
+      AI_WS_URL: ws://host.docker.internal:9000/infer
       JWT_SECRET: dev-secret-change-me-please-0123456789abcdef
-      CORS_ORIGINS: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000, https://learning-system-8sr2bcxcg-le-duc-manh.vercel.app
     ports:
       - "8001:8001"
 

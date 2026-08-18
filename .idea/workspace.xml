@@ -5,8 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5a410d18-b5b4-4a51-97af-185d5d2dee99" name="Changes" comment="update gan cuoi">
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/API/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/API/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/backend/.env.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -140,7 +142,7 @@
       <workItem from="1786970780087" duration="5843000" />
       <workItem from="1787034159526" duration="4205000" />
       <workItem from="1787041135801" duration="907000" />
-      <workItem from="1787048877152" duration="1829000" />
+      <workItem from="1787048877152" duration="3830000" />
     </task>
     <task id="LOCAL-00001" summary="creat web back-end">
       <option name="closed" value="true" />
