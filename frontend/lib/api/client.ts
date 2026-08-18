@@ -1,12 +1,14 @@
 // lib/api/client.ts — Fetch wrapper cho backend.
-// Hiện tại chưa dùng đến (các hàm lib/api/* trả mock), nhưng đây là nơi
-// duy nhất cần sửa khi nối FastAPI:
-//   1. Đặt NEXT_PUBLIC_API_URL trong .env.local (mặc định http://localhost:8001)
-//   2. Gắn Authorization header sau khi có auth (token từ login)
-//   3. Xử lý lỗi tập trung tại đây
+//   - Đặt NEXT_PUBLIC_API_URL trong .env.local (mặc định http://localhost:8001)
+//   - Tự gắn Authorization header từ localStorage (khóa 'auth_token')
+//   - Khi access token hết hạn (401) → tự refresh bằng refresh token rồi retry 1 lần
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001';
+
+const TOKEN_KEY = 'auth_token';
+const REFRESH_KEY = 'refresh_token';
+const USER_KEY = 'auth_user';
 
 export class ApiError extends Error {
   constructor(
@@ -35,19 +37,73 @@ function buildUrl(path: string, params?: ApiRequestOptions['params']) {
   return url.toString();
 }
 
+function getToken(): string | null {
+  return globalThis.localStorage?.getItem(TOKEN_KEY) ?? null;
+}
+
+function clearAuthStorage(): void {
+  for (const key of [TOKEN_KEY, REFRESH_KEY, USER_KEY, 'gaze_params', 'gaze_calibrated_at']) {
+    globalThis.localStorage?.removeItem(key);
+  }
+}
+
+// POST /api/auth/refresh — trả TokenPair (accessToken, refreshToken, user)
+async function tryRefresh(): Promise<boolean> {
+  const refreshToken = globalThis.localStorage?.getItem(REFRESH_KEY) ?? null;
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    globalThis.localStorage?.setItem(TOKEN_KEY, data.accessToken);
+    globalThis.localStorage?.setItem(REFRESH_KEY, data.refreshToken);
+    globalThis.localStorage?.setItem(USER_KEY, JSON.stringify(data.user));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Dùng chung một lần refresh khi nhiều request cùng 401 để tránh refresh chồng nhau.
+let inFlightRefresh: Promise<boolean> | null = null;
+function refreshAccessToken(): Promise<boolean> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = tryRefresh().finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
+}
+
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params, signal } = options;
-  const res = await fetch(buildUrl(path, params), {
-    method,
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(globalThis.localStorage?.getItem('auth_token')
-        ? { Authorization: `Bearer ${globalThis.localStorage.getItem('auth_token')}` }
-        : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+
+  const doFetch = (): Promise<Response> =>
+    fetch(buildUrl(path, params), {
+      method,
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+
+  let res = await doFetch();
+
+  // Access token hết hạn → refresh 1 lần rồi retry.
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      res = await doFetch();
+    } else {
+      clearAuthStorage();
+    }
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
