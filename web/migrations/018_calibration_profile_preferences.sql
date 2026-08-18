@@ -1,8 +1,0 @@
-BEGIN;
-
-ALTER TABLE calibration_profiles
-    ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false,
-    ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS browser_label TEXT;
-
-COMMIT;

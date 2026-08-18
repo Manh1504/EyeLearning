@@ -1,69 +1,39 @@
 services:
-  eyelearn_postgres:
-    image: postgres:16-alpine
-    container_name: eyelearn_postgres
+  postgres:
+    image: postgres:16
+    container_name: eyetracking-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: eyelearn_user
-      POSTGRES_PASSWORD: eyelearn_password
-      POSTGRES_DB: eyelearn
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eyetracking
+      TZ: UTC
     ports:
-      - "5433:5432"
+      - "5435:5432"
     volumes:
-      - eyelearn_pgdata:/var/lib/postgresql/data
-      # Migrations chạy tự động (theo thứ tự tên file 001_, 002_...) khi volume data rỗng lần đầu.
-      - ./web/migrations:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eyelearn_user -d eyelearn"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eyetracking"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 10
-    networks:
-      - eyelearning_default
 
-  web:
-    build: ./web
-    container_name: eyelearn_web
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://eyelearn_user:eyelearn_password@eyelearn_postgres:5432/eyelearn
-      # Cho browser qua /client-config.
-      AI_HTTP_URL: ${AI_HTTP_URL:-http://127.0.0.1:9000}
-      AI_WS_URL: ${AI_WS_URL:-ws://127.0.0.1:9000/inference}
-      # Cho server-side call từ container web sang AI service publish trên host.
-      AI_BACKEND_HTTP_URL: ${AI_BACKEND_HTTP_URL:-http://host.docker.internal:9000}
-      ENABLE_DEV_TOOLS: ${ENABLE_DEV_TOOLS:-false}
-      ENABLE_MOUSE_SIMULATION: ${ENABLE_MOUSE_SIMULATION:-false}
-      # Origin của frontend container (service "frontend" bên dưới, publish ra host port 8080).
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-    volumes:
-      - ./web:/app/web
-      - ./data:/app/data
-      - ./.env:/app/.env:ro
+  backend:
+    build: ./backend
+    container_name: eyetracking-backend
+    restart: unless-stopped
     depends_on:
-      eyelearn_postgres:
+      postgres:
         condition: service_healthy
-    networks:
-      - eyelearning_default
-
-  frontend:
-    build: ./frontend
-    container_name: eyelearn_frontend
-    ports:
-      - "9080:80"
     environment:
-      # Tên service backend trong network nội bộ — nginx reverse-proxy các path API sang đây.
-      API_UPSTREAM: web:8000
-      # Để trống: browser gọi API cùng-origin qua nginx proxy ở trên (khuyến nghị).
-      RUNTIME_API_BASE: ""
-    depends_on:
-      - web
-    networks:
-      - eyelearning_default
-
-networks:
-  eyelearning_default:
-    name: eyelearning_default
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/eyetracking
+      AI_HTTP_URL: http://api:8000
+      AI_WS_URL: ws://api:8000/infer
+      JWT_SECRET: dev-secret-change-me-please-0123456789abcdef
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8001:8001"
 
 volumes:
-  eyelearn_pgdata:
+  pgdata:
