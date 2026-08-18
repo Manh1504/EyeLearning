@@ -1,4 +1,7 @@
 .vscode/
 API/weights/
+API/my_database.db
+__pycache__/
+*.pyc
 .env
 backend/.venv
