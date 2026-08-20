@@ -17,7 +17,8 @@ class LearningSessionOut(CamelModel):
     enrollment_id: str
     lesson_id: str
     device_id: str
-    calibration_params: list[float] | None = None
+    # Đã có model calibration (.ubj) cho (user, device) → có thể stream gaze thật.
+    calibrated: bool = False
     status: str
     tracking_consent: bool
 

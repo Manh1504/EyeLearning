@@ -11,13 +11,14 @@ trung) cho giáo viên.
 │  frontend  │ ───────────► │  backend   │ ───────► │  postgres  │
 │  Next.js   │              │  FastAPI   │          │  (5435)    │
 │  (:3000)   │              │  (:8001)   │          └────────────┘
-└────────────┘              └─────┬──────┘
-      │                           │ proxy /calibrate/*, WS /infer
-      │ calibration (multipart)   ▼
-      └──────────────────► ┌────────────┐
-                           │  API (ML)  │  mediapipe + UniGaze gaze estimation
-                           │  (:8000)   │  calibration 16-25 điểm → 6 tham số kappa
-                           └────────────┘
+└─────┬──────┘              └─────┬──────┘
+      │  WS /infer                 │ calibration (multipart: model .ubj)
+      ▼                           ▼
+┌────────────┐              lưu model .ubj active theo (user, device)
+│  API (ML)  │
+│  (:8000)   │  mediapipe + UniGaze gaze estimation
+│            │  calibration 16-25 điểm → train model → .ubj
+└────────────┘
 ```
 
 | Thư mục | Vai trò |
@@ -37,8 +38,8 @@ docker compose up -d              # postgres (:5435) + backend (:8001)
 - Postgres: `localhost:5435` (user/pass/db: `postgres/postgres/eyetracking`)
 
 Service ML (`API/`, cần GPU) đang được comment trong `docker-compose.yml`; bật lên
-khi có NVIDIA runtime. Backend proxy `/calibrate/*` và WS `/infer` sang service này —
-khi nó tắt, các endpoint proxy trả `ai_service_unavailable` và frontend tự fallback mock.
+khi có NVIDIA runtime. Frontend kết nối trực tiếp WS `/infer` của service này —
+khi nó tắt, frontend tự fallback mock (backend chỉ dùng `AI_HTTP_URL` để probe `/ai/health`).
 
 ### Frontend
 
@@ -57,9 +58,12 @@ Frontend gọi backend qua `NEXT_PUBLIC_API_URL` (mặc định `http://localhos
 cd backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-copy .env.example .env
 .venv\Scripts\python -m uvicorn app.main:app --port 8001 --reload
 ```
+
+> **Một file env duy nhất**: mọi biến (DB, JWT, CORS, AI service, Postgres) đặt ở
+> `.env` gốc repo — tạo từ `.env.example`. `docker-compose.yml` và
+> `backend/app/core/config.py` đều đọc từ file này; không còn giá trị mẫu nhúng.
 
 ## Tài khoản mẫu (mật khẩu: `Password123!`)
 
@@ -71,11 +75,17 @@ copy .env.example .env
 
 ## Luồng dữ liệu chính
 
-1. **Calibration**: học viên nhìn 16-25 điểm trên màn hình, webcam gửi ảnh về
-   `POST /calibrate/point` → `POST /calibrate/fit` trả 6 tham số kappa → backend lưu
-   vào `calibration_params` (active duy nhất mỗi user+device).
-2. **Học bài**: frontend mở phiên (`POST /api/learning-sessions`), nhận gaze từ
-   WebSocket `/infer` (đã proxy), gửi batch về `POST /api/lessons/{id}/gaze-samples`
+1. **Calibration**: học viên nhìn lần lượt 16 điểm trên màn hình, mỗi điểm bấm để
+   webcam gửi ảnh + tọa độ về `POST /calibrate/point` của ML service → server trả
+   1 mẫu `[pitch,yaw,rvec(3),tvec(3),x,y]`; frontend tích lũy đủ 16 mẫu rồi gọi
+   `POST /calibrate/fit` → nhận 6 tham số `[a1,a2,b1,a3,a4,b2]` → lưu lên
+   `POST /api/calibrations` (JSON) làm bản active duy nhất cho (user, device).
+   Lúc mở phiên mới, frontend tải 6 tham số đó qua
+   `GET /api/calibrations/active/params` và gửi vào message cấu hình của WS `/infer`
+   để stream mà không cần calibrate lại.
+2. **Học bài**: frontend mở phiên (`POST /api/learning-sessions`, response có
+   `calibrated` — đã có params hiệu chỉnh sẵn sàng chưa), nhận gaze từ WebSocket `/infer` (trực
+   tiếp từ ML service), gửi batch về `POST /api/lessons/{id}/gaze-samples`
    — backend clamp [0,1], downsample ~4Hz, ghi vào `gaze_events` (partition theo tháng)
    và cập nhật `gaze_slide_stats`.
 3. **Analytics**: giáo viên xem heatmap từng slide (`GET /teacher/lessons/{id}/heatmap`)

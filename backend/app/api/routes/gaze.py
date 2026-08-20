@@ -19,6 +19,7 @@ from app.schemas.gaze import (
     LearningSessionEndIn,
     LearningSessionOut,
 )
+from app.services import analytics
 
 router = APIRouter(tags=["gaze"])
 
@@ -56,7 +57,7 @@ async def _upsert_device(
     return device
 
 
-async def _active_params(
+async def _active_param(
     db: AsyncSession, user_id: str, device_id: str
 ) -> CalibrationParam | None:
     stmt = select(CalibrationParam).where(
@@ -87,7 +88,7 @@ async def create_learning_session(
         screen_width_px=body.screen_width_px,
         screen_height_px=body.screen_height_px,
     )
-    params = await _active_params(db, user.id, device.id)
+    params = await _active_param(db, user.id, device.id)
     session = LearningSession(
         enrollment_id=enrollment.id,
         lesson_id=lesson.id,
@@ -103,7 +104,7 @@ async def create_learning_session(
         enrollment_id=session.enrollment_id,
         lesson_id=session.lesson_id,
         device_id=session.device_id,
-        calibration_params=params.params_float if params else None,
+        calibrated=bool(params and params.has_params),
         status=session.status,
         tracking_consent=session.tracking_consent,
     )
@@ -125,16 +126,12 @@ async def end_learning_session(
     session.status = body.status
     session.ended_at = datetime.now(timezone.utc)
     await db.commit()
-    params = None
-    if session.calibration_param_id:
-        p = await db.get(CalibrationParam, session.calibration_param_id)
-        params = p.params_float if p else None
     return LearningSessionOut(
         id=session.id,
         enrollment_id=session.enrollment_id,
         lesson_id=session.lesson_id,
         device_id=session.device_id,
-        calibration_params=params,
+        calibrated=session.calibration_param_id is not None,
         status=session.status,
         tracking_consent=session.tracking_consent,
     )
@@ -253,6 +250,11 @@ async def post_gaze_samples(
         kept_ts: list[float] = []
         last_kept = float("-inf")
         for s in bucket:
+            # Chỉ ghi gaze_events cho điểm hợp lệ trong [0,1]; sample "ngoài màn
+            # hình" (AI báo no_face → -1,-1) vẫn đếm vào total/on_slide để tỷ lệ
+            # on_slide phản ánh đúng, nhưng không thêm chấm làm nhiễu heatmap.
+            if not (0.0 <= s.x <= 1.0 and 0.0 <= s.y <= 1.0):
+                continue
             if s.ts - last_kept >= min_interval_ms:
                 last_kept = s.ts
                 kept_ts.append(s.ts)
@@ -261,8 +263,8 @@ async def post_gaze_samples(
                         learning_session_id=session.id,
                         lesson_content_id=content_id,
                         event_time=_ts_to_datetime(s.ts),
-                        gaze_x=min(max(s.x, 0.0), 1.0),
-                        gaze_y=min(max(s.y, 0.0), 1.0),
+                        gaze_x=s.x,
+                        gaze_y=s.y,
                     )
                 )
         if kept_ts:
@@ -294,4 +296,16 @@ async def post_gaze_samples(
         await db.execute(stmt)
 
     await db.commit()
+
+    # Tự cập nhật heatmap_aggregates + engagement_scores GẦN THỜI GIAN THỰC để
+    # dashboard giáo viên thấy số mới ngay, không cần bấm recompute thủ công.
+    if session and session.tracking_consent and raw_counts:
+        await analytics.refresh_aggregates(
+            db,
+            lesson_id,
+            content_ids=sorted(raw_counts.keys()),
+            enrollment_id=session.enrollment_id,
+        )
+        await db.commit()
+
     return GazeBatchOut(ok=True, inserted=len(events))

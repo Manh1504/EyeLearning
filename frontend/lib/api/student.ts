@@ -20,7 +20,7 @@ export interface LearningSession {
   enrollmentId: string;
   lessonId: string;
   deviceId: string;
-  calibrationParams: number[] | null;
+  calibrated: boolean;
   status: string;
   trackingConsent: boolean;
 }

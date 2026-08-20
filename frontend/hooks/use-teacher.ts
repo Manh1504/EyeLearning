@@ -19,6 +19,7 @@ export function useCourseTree(courseId: string) {
   return useQuery({
     queryKey: ['teacher', 'course-tree', courseId],
     queryFn: () => fetchCourseTree(courseId),
+    enabled: Boolean(courseId),
   });
 }
 
@@ -26,6 +27,7 @@ export function useCourseStudents(courseId: string) {
   return useQuery({
     queryKey: ['teacher', 'course-students', courseId],
     queryFn: () => fetchCourseStudents(courseId),
+    enabled: Boolean(courseId),
   });
 }
 
@@ -33,5 +35,7 @@ export function useHeatmap(lessonId: string, slideCount: number, scope: 'class' 
   return useQuery({
     queryKey: ['teacher', 'heatmap', lessonId, scope],
     queryFn: () => fetchHeatmap(lessonId, slideCount, scope),
+    enabled: Boolean(lessonId),
+    staleTime: 30_000,
   });
 }

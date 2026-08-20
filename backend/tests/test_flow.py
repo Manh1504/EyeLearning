@@ -153,18 +153,24 @@ def test_calibration_flow(client):
     asyncio.run(make_user("sv2@t.vn", "student"))
     student = login(client, "sv2@t.vn")
 
-    r = client.post(
-        "/api/calibrations",
-        headers=auth(student),
-        json={
-            "deviceFingerprint": "fp-1",
-            "numPoints": 16,
-            "params": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
-            "mappingModelVersion": "v1",
-        },
-    )
+    params_v1 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    params_v2 = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+
+    def post_params(version: str, params: list[float]):
+        return client.post(
+            "/api/calibrations",
+            headers=auth(student),
+            json={
+                "deviceFingerprint": "fp-1",
+                "numPoints": 16,
+                "params": params,
+                "mappingModelVersion": version,
+            },
+        )
+
+    r = post_params("v1", params_v1)
     assert r.status_code == 201, r.text
-    assert r.json()["params"] == [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    assert r.json()["mappingModelVersion"] == "v1"
 
     r = client.get(
         "/api/calibrations/active",
@@ -172,18 +178,18 @@ def test_calibration_flow(client):
         params={"deviceFingerprint": "fp-1"},
     )
     assert r.status_code == 200
-    assert r.json()["params"] == [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+    assert r.json()["calibrated"] is True
+    assert r.json()["mappingModelVersion"] == "v1"
 
-    r = client.post(
-        "/api/calibrations",
+    r = client.get(
+        "/api/calibrations/active/params",
         headers=auth(student),
-        json={
-            "deviceFingerprint": "fp-1",
-            "numPoints": 16,
-            "params": [1, 2, 3, 4, 5, 6],
-            "mappingModelVersion": "v2",
-        },
+        params={"deviceFingerprint": "fp-1"},
     )
+    assert r.status_code == 200
+    assert r.json()["params"] == params_v1
+
+    r = post_params("v2", params_v2)
     assert r.status_code == 201
 
     r = client.get(
@@ -191,7 +197,25 @@ def test_calibration_flow(client):
         headers=auth(student),
         params={"deviceFingerprint": "fp-1"},
     )
-    assert r.json()["params"] == [1, 2, 3, 4, 5, 6]
+    assert r.json()["mappingModelVersion"] == "v2"
+
+    r = client.get(
+        "/api/calibrations/active/params",
+        headers=auth(student),
+        params={"deviceFingerprint": "fp-1"},
+    )
+    assert r.json()["params"] == params_v2
+
+    r = client.post(
+        "/api/calibrations",
+        headers=auth(student),
+        json={
+            "deviceFingerprint": "fp-1",
+            "numPoints": 16,
+            "params": [0.1, 0.2],
+        },
+    )
+    assert r.status_code == 422
 
     r = client.get(
         "/api/calibrations/active",
@@ -227,3 +251,63 @@ def test_teacher_cannot_touch_foreign_course(client):
         f"/teacher/courses/{course_id}", headers=auth(gv2), json={"title": "Hack"}
     )
     assert r.status_code == 403
+
+
+def _make_pdf_bytes(pages: int = 3) -> bytes:
+    import pymupdf
+
+    doc = pymupdf.open()
+    for i in range(pages):
+        page = doc.new_page(width=400, height=300)
+        page.insert_text((72, 150), f"Slide {i + 1}", fontsize=28)
+    return doc.tobytes()
+
+
+def test_teacher_upload_pdf_slides(client):
+    teacher, _, course_id, lesson_id, _ = _setup_course(client)
+
+    r = client.post(
+        f"/teacher/lessons/{lesson_id}/slides/upload",
+        headers=auth(teacher),
+        files={"pdf": ("bai01.pdf", _make_pdf_bytes(3), "application/pdf")},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["slides"] == 3
+
+    # Sinh viên xem nội dung: 3 slide, image_url trỏ vào /media.
+    asyncio.run(make_user("sv-upload@t.vn", "student"))
+    student = login(client, "sv-upload@t.vn")
+    client.post(f"/api/courses/{course_id}/enroll", headers=auth(student))
+    r = client.get(f"/api/lessons/{lesson_id}/contents", headers=auth(student))
+    assert r.status_code == 200, r.text
+    slides = r.json()
+    assert len(slides) == 3
+    assert slides[0]["imageUrl"].startswith("/media/lessons/")
+
+    # Upload lại PDF khác thay thế: 2 slide.
+    r = client.post(
+        f"/teacher/lessons/{lesson_id}/slides/upload",
+        headers=auth(teacher),
+        files={"pdf": ("bai01-v2.pdf", _make_pdf_bytes(2), "application/pdf")},
+    )
+    assert r.status_code == 201
+    r = client.get(f"/api/lessons/{lesson_id}/contents", headers=auth(student))
+    assert len(r.json()) == 2
+
+    # File không đúng PDF → 400.
+    r = client.post(
+        f"/teacher/lessons/{lesson_id}/slides/upload",
+        headers=auth(teacher),
+        files={"pdf": ("fake.pdf", b"not a pdf", "application/pdf")},
+    )
+    assert r.status_code == 400
+
+    # Xóa bài → file media được dọn.
+    from pathlib import Path
+    from app.core.config import settings
+
+    lesson_dir = settings.media_path / "lessons" / lesson_id
+    assert lesson_dir.exists()
+    r = client.delete(f"/teacher/lessons/{lesson_id}", headers=auth(teacher))
+    assert r.status_code == 200
+    assert not lesson_dir.exists()

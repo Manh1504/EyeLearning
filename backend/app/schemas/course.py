@@ -35,6 +35,38 @@ class SlideCreateIn(CamelModel):
     title: str | None = None
 
 
+class StudentsAddIn(CamelModel):
+    student_ids: list[str]
+
+
+class TeacherAssignIn(CamelModel):
+    teacher_ids: list[str]
+
+
+class TeacherDirectoryOut(CamelModel):
+    id: str
+    name: str
+    code: str
+    email: str | None = None
+    department: str | None = None
+
+
+class CourseTeacherOut(CamelModel):
+    teacher_id: str
+    name: str
+    code: str
+    email: str | None = None
+    is_owner: bool = False
+
+
+class StudentDirectoryOut(CamelModel):
+    id: str
+    name: str
+    code: str
+    email: str | None = None
+    color: str
+
+
 class LessonNodeOut(CamelModel):
     id: str
     title: str
@@ -61,6 +93,7 @@ class TeacherCourseOut(CamelModel):
     attention: float | None = None
     sessions: int
     updated_at: datetime
+    is_owner: bool = True
 
 
 class LessonItemOut(CamelModel):

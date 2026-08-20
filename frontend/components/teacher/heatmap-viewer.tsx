@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // components/teacher/heatmap-viewer.tsx — Document heatmap viewer.
 // Data: useHeatmap → lib/api/teacher.ts (mock hiện tại, sẽ là GET /teacher/lessons/{id}/heatmap?student_id=&content_id=)
@@ -11,6 +11,8 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { useCourseStudents, useCourseTree, useHeatmap } from '@/hooks/use-teacher';
+import { useLessonSlides } from '@/hooks/use-student';
+import { API_BASE_URL } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 
 type Scope = 'class' | string;
@@ -26,6 +28,32 @@ function formatDuration(seconds: number) {
   return mins > 0 ? `${mins}m${String(secs).padStart(2, '0')}s` : `${secs}s`;
 }
 
+const HEAT_STOPS: Array<[number, [number, number, number]]> = [
+  [0.0, [30, 60, 200]],
+  [0.25, [60, 180, 250]],
+  [0.5, [80, 215, 120]],
+  [0.75, [250, 210, 60]],
+  [1.0, [235, 70, 50]],
+];
+
+function heatColor(t: number): [number, number, number] {
+  if (t <= 0) return HEAT_STOPS[0][1];
+  if (t >= 1) return HEAT_STOPS[HEAT_STOPS.length - 1][1];
+  for (let i = 1; i < HEAT_STOPS.length; i++) {
+    if (t <= HEAT_STOPS[i][0]) {
+      const [t0, c0] = HEAT_STOPS[i - 1];
+      const [t1, c1] = HEAT_STOPS[i];
+      const u = (t - t0) / (t1 - t0);
+      return [
+        Math.round(c0[0] + (c1[0] - c0[0]) * u),
+        Math.round(c0[1] + (c1[1] - c0[1]) * u),
+        Math.round(c0[2] + (c1[2] - c0[2]) * u),
+      ];
+    }
+  }
+  return HEAT_STOPS[HEAT_STOPS.length - 1][1];
+}
+
 export default function HeatmapViewer() {
   const routeParams = useParams();
   const searchParams = useSearchParams();
@@ -38,6 +66,7 @@ export default function HeatmapViewer() {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [imgFailed, setImgFailed] = useState(false);
 
   const { data: modules = [] } = useCourseTree(courseId);
   const { data: students = [] } = useCourseStudents(courseId);
@@ -53,8 +82,18 @@ export default function HeatmapViewer() {
   const noConsent = student !== null && student.attention === null;
 
   const { data: stats = [] } = useHeatmap(lesson.id, lesson.slides, scope === 'class' ? 'class' : scope);
-  const pageCount = stats.length || lesson.slides || 1;
+  const { data: slides = [] } = useLessonSlides(lesson.id);
+  const pageCount = stats.length || slides.length || lesson.slides || 1;
   const activePageIdx = Math.min(pageCount - 1, Math.max(0, pageIdx));
+  const slideImageRaw = slides[activePageIdx]?.imageUrl ?? null;
+  // Ảnh media dạng đường dẫn tương đối (/media/…) → trỏ thẳng backend,
+  // tránh phụ thuộc proxy + vấn đề ảnh không hiện khi đổi route.
+  const slideImageUrl = useMemo(() => {
+    if (!slideImageRaw) return null;
+    if (/^https?:\/\//.test(slideImageRaw)) return slideImageRaw;
+    if (slideImageRaw.startsWith('/media/')) return `${API_BASE_URL}${slideImageRaw}`;
+    return slideImageRaw;
+  }, [slideImageRaw]);
   const current = useMemo(
     () =>
       stats[activePageIdx] ?? stats[0] ?? {
@@ -115,7 +154,7 @@ export default function HeatmapViewer() {
     const stage = stageRef.current;
     if (!canvas || !stage) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const width = stage.clientWidth;
@@ -131,46 +170,79 @@ export default function HeatmapViewer() {
 
     if (noConsent || !showHeatmap) return;
 
-    for (const hotspot of current.hotspots) {
-      const cx = hotspot.x * width;
-      const cy = hotspot.y * height;
-      const radius = hotspot.r * Math.min(width, height);
-      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-      gradient.addColorStop(0, `rgba(255,255,255,${hotspot.w})`);
-      gradient.addColorStop(0.5, `rgba(255,255,255,${hotspot.w * 0.35})`);
+    const points = current.points ?? [];
+    const hotspots = current.hotspots ?? [];
+
+    // Vẽ "mật độ" ở bản nhỏ, chồng gaussian mềm bằng composite 'lighter',
+    // rồi phóng to + tô màu — tạo heatmap liên tục kiểu chuẩn.
+    const SCALE = 6;
+    const dw = Math.max(12, Math.round(width / SCALE));
+    const dh = Math.max(12, Math.round(height / SCALE));
+    const density = document.createElement('canvas');
+    density.width = dw;
+    density.height = dh;
+    const dctx = density.getContext('2d');
+    if (!dctx) return;
+    dctx.globalCompositeOperation = 'lighter';
+
+    const pointR = Math.max(5, dw * 0.085);
+    for (const [x, y] of points) {
+      const cx = x * dw;
+      const cy = y * dh;
+      const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, pointR);
+      gradient.addColorStop(0, 'rgba(255,255,255,0.55)');
+      gradient.addColorStop(0.4, 'rgba(255,255,255,0.22)');
+      gradient.addColorStop(0.75, 'rgba(255,255,255,0.08)');
       gradient.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fill();
+      dctx.fillStyle = gradient;
+      dctx.beginPath();
+      dctx.arc(cx, cy, pointR, 0, Math.PI * 2);
+      dctx.fill();
     }
+
+    for (const hotspot of hotspots) {
+      const cx = hotspot.x * dw;
+      const cy = hotspot.y * dh;
+      const radius = Math.max(pointR * 2.5, hotspot.r * dw * 2.4);
+      const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      gradient.addColorStop(0, `rgba(255,255,255,${Math.min(1, hotspot.w * 1.2 + 0.25)})`);
+      gradient.addColorStop(0.45, `rgba(255,255,255,${Math.min(0.65, hotspot.w * 0.6)})`);
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      dctx.fillStyle = gradient;
+      dctx.beginPath();
+      dctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      dctx.fill();
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(density, 0, 0, dw, dh, 0, 0, width, height);
 
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = img.data;
+
+    let maxAlpha = 0;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] > maxAlpha) maxAlpha = data[i];
+    }
+    if (maxAlpha < 1) return;
+    const gain = 2.6 / maxAlpha;
+
     for (let i = 0; i < data.length; i += 4) {
-      const alpha = data[i + 3] / 255;
-      if (alpha < 0.03) {
+      const a = data[i + 3] / 255;
+      if (a < 0.03) {
         data[i + 3] = 0;
         continue;
       }
 
-      const t = Math.min(1, alpha * 1.6);
-      if (t < 0.33) {
-        data[i] = 0;
-        data[i + 1] = Math.round(120 + t * 3 * 135);
-        data[i + 2] = Math.round(255 - t * 3 * 100);
-      } else if (t < 0.66) {
-        const u = (t - 0.33) * 3;
-        data[i] = Math.round(u * 255);
-        data[i + 1] = 255;
-        data[i + 2] = Math.round(155 - u * 155);
-      } else {
-        const u = (t - 0.66) * 3;
-        data[i] = 255;
-        data[i + 1] = Math.round(255 - u * 200);
-        data[i + 2] = 0;
-      }
-      data[i + 3] = Math.round(t * 255);
+      // Đường cong mờ dần + sàn alpha → vùng quan sát nhiều đỏ đậm,
+      // vùng thưa vẫn còn nhìn thấy rõ.
+      const t = Math.min(1, Math.pow(a * gain * 1.6, 0.55));
+      const [r, g, b] = heatColor(t);
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = Math.round(50 + t * 205);
     }
 
     ctx.putImageData(img, 0, 0);
@@ -439,7 +511,23 @@ export default function HeatmapViewer() {
                     aspectRatio: PAGE_ASPECT_RATIO,
                   }}
                 >
-                  <MockDocument page={activePageIdx} pageCount={pageCount} lessonTitle={lesson.title} />
+                  {slideImageUrl && !imgFailed ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={slideImageUrl}
+                      src={slideImageUrl}
+                      alt={slides[activePageIdx]?.title ?? `Trang ${activePageIdx + 1}`}
+                      onLoad={() => setImgFailed(false)}
+                      onError={() => setImgFailed(true)}
+                      className="absolute inset-0 h-full w-full bg-white object-contain"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white px-[8%] text-center">
+                      <Icon name="ri-image-line" data-icon="inline-start" className="mb-2 text-3xl text-slate-200" />
+                      <p className="text-sm font-semibold leading-6 text-slate-800">{lesson.title}</p>
+                      <p className="mt-1 text-xs text-slate-400">Trang {activePageIdx + 1}</p>
+                    </div>
+                  )}
                   <canvas
                     ref={canvasRef}
                     className="pointer-events-none absolute inset-0 h-full w-full mix-blend-multiply"
@@ -466,124 +554,6 @@ export default function HeatmapViewer() {
             </div>
           )}
         </main>
-      </div>
-    </div>
-  );
-}
-
-// Mock only — production should render actual PDF page/image.
-function MockDocument({
-  page,
-  pageCount,
-  lessonTitle,
-}: {
-  page: number;
-  pageCount: number;
-  lessonTitle: string;
-}) {
-  const variant = page % 3;
-
-  return (
-    <div className="flex h-full flex-col bg-white px-[8%] py-[9%] text-slate-900">
-      <header className="border-b border-slate-200 pb-[4%]">
-        <p className="text-[2.2%] font-medium uppercase tracking-wide text-slate-400">GazeEdu Learning Material</p>
-        <h2 className="mt-[2%] text-[4.6%] font-semibold leading-tight text-slate-900">{lessonTitle}</h2>
-      </header>
-
-      <main className="min-h-0 flex-1 py-[6%]">
-        {variant === 0 && <TextPage />}
-        {variant === 1 && <FigurePage />}
-        {variant === 2 && <TablePage />}
-      </main>
-
-      <footer className="flex items-center justify-between border-t border-slate-200 pt-[3%] text-[2.2%] text-slate-400">
-        <span>Tài liệu học tập</span>
-        <span>
-          Trang {page + 1} / {pageCount}
-        </span>
-      </footer>
-    </div>
-  );
-}
-
-function TextPage() {
-  return (
-    <div className="space-y-[5%]">
-      <div className="h-[2.4%] w-2/3 rounded-sm bg-slate-800" />
-      <div className="space-y-[2.2%]">
-        {[92, 86, 96, 74, 89].map((width) => (
-          <div key={width} className="h-[1.6%] rounded-sm bg-slate-200" style={{ width: `${width}%` }} />
-        ))}
-      </div>
-      <div className="space-y-[2.2%] pt-[2%]">
-        {[78, 94, 88, 66].map((width) => (
-          <div key={width} className="h-[1.6%] rounded-sm bg-slate-200" style={{ width: `${width}%` }} />
-        ))}
-      </div>
-      <div className="mt-[8%] rounded-md border border-slate-200 p-[4%]">
-        <div className="h-[1.8%] w-1/3 rounded-sm bg-slate-300" />
-        <div className="mt-[5%] grid grid-cols-2 gap-[4%]">
-          <div className="h-[18%] rounded-sm bg-slate-100" />
-          <div className="space-y-[8%]">
-            {[84, 72, 90].map((width) => (
-              <div key={width} className="h-[6%] rounded-sm bg-slate-200" style={{ width: `${width}%` }} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FigurePage() {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="h-[2.4%] w-3/5 rounded-sm bg-slate-800" />
-      <div className="mt-[5%] rounded-md border border-slate-200 p-[5%]">
-        <div className="grid h-[36%] grid-cols-3 items-end gap-[5%] border-b border-l border-slate-200 px-[4%] pb-[4%]">
-          {[58, 86, 42].map((height) => (
-            <div key={height} className="rounded-t-sm bg-cyan-100" style={{ height: `${height}%` }} />
-          ))}
-        </div>
-        <div className="mt-[5%] space-y-[2.5%]">
-          {[88, 72, 95].map((width) => (
-            <div key={width} className="h-[1.6%] rounded-sm bg-slate-200" style={{ width: `${width}%` }} />
-          ))}
-        </div>
-      </div>
-      <div className="mt-[6%] space-y-[2.2%]">
-        {[96, 82, 90, 68, 76].map((width) => (
-          <div key={width} className="h-[1.6%] rounded-sm bg-slate-200" style={{ width: `${width}%` }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TablePage() {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="h-[2.4%] w-1/2 rounded-sm bg-slate-800" />
-      <div className="mt-[5%] overflow-hidden rounded-md border border-slate-200">
-        <div className="grid grid-cols-3 bg-slate-100">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="h-8 border-r border-slate-200 last:border-r-0" />
-          ))}
-        </div>
-        {[1, 2, 3, 4, 5].map((row) => (
-          <div key={row} className="grid grid-cols-3 border-t border-slate-200">
-            {[78, 64, 86].map((width, idx) => (
-              <div key={`${row}-${idx}`} className="border-r border-slate-200 p-[5%] last:border-r-0">
-                <div className="h-2 rounded-sm bg-slate-200" style={{ width: `${Math.max(28, width - row * 5)}%` }} />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-      <div className="mt-[6%] space-y-[2.2%]">
-        {[92, 88, 74, 96].map((width) => (
-          <div key={width} className="h-[1.6%] rounded-sm bg-slate-200" style={{ width: `${width}%` }} />
-        ))}
       </div>
     </div>
   );

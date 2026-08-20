@@ -16,7 +16,10 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useCourseOutline } from '@/hooks/use-student';
-import { submitCalibrationPoint } from '@/lib/api/calibration';
+import {
+  fetchActiveCalibration,
+  registerCalibrationPoint,
+} from '@/lib/api/calibration';
 import { cn } from '@/lib/utils';
 
 type CameraState = 'idle' | 'checking' | 'ready' | 'error';
@@ -94,13 +97,15 @@ export default function PreLearningCheck() {
   const [calibratedAt, setCalibratedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    const paramsRaw = window.localStorage.getItem('gaze_params');
-    const calibratedAtRaw = window.localStorage.getItem('gaze_calibrated_at');
-
-    setIsCalibrated(Boolean(paramsRaw));
-    setCalibratedAt(calibratedAtRaw);
+    let cancelled = false;
+    fetchActiveCalibration().then((active) => {
+      if (cancelled) return;
+      setIsCalibrated(Boolean(active?.calibrated));
+      setCalibratedAt(active?.calibratedAt ?? null);
+    });
 
     return () => {
+      cancelled = true;
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -215,8 +220,9 @@ export default function PreLearningCheck() {
       }
 
       // Tái sử dụng pipeline hiện có để xác nhận khuôn mặt có thể được xử lý.
-      // Sample trả về chỉ dùng để kiểm tra, không lưu vào calibration.
-      const result = await submitCalibrationPoint(frame, 0.5, 0.5);
+      // Mẫu trả về chỉ dùng để kiểm tra, không lưu vào calibration (server không
+      // giữ mẫu ở /calibrate/point — client tự gom).
+      const result = await registerCalibrationPoint(frame, 0.5, 0.5);
 
       if (result.ok) {
         setFaceState('ready');
@@ -231,7 +237,7 @@ export default function PreLearningCheck() {
 
       setFaceState('error');
       setError(
-        result.error === 'pipeline_not_ready'
+        result.error === 'invalid_image' || result.error === 'network_error'
           ? 'Dịch vụ ước lượng điểm nhìn chưa sẵn sàng. Hãy thử lại sau.'
           : 'Chưa thể kiểm tra khuôn mặt. Hãy thử lại.',
       );

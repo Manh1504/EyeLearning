@@ -1,11 +1,13 @@
 import asyncio
 import os
+import tempfile
 
 os.environ["TESTING"] = "1"
 os.environ.setdefault(
     "DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5435/eyetracking_test",
 )
+os.environ["MEDIA_DIR"] = os.path.join(tempfile.gettempdir(), "eyelearning-test-media")
 
 import pytest
 from fastapi.testclient import TestClient

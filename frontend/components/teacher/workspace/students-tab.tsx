@@ -3,33 +3,22 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Icon } from '@/components/ui/icon';
 import { Card, ConfirmDialog, EmptyState, PrimaryBtn } from './workspace-ui';
 import { useCourseStudents, useCourseTree } from '@/hooks/use-teacher';
+import {
+  addCourseStudents,
+  fetchStudentDirectory,
+  removeCourseStudent,
+  type StudentDirectoryEntry,
+} from '@/lib/api/teacher';
 import { ENROLL_LABEL } from '@/lib/mock/teacher';
 import type { EnrollStatus, StudentRow } from '@/lib/types/domain';
 
-interface DirectoryStudent {
-  id: string;
-  name: string;
-  code: string;
-  color: string;
-}
-
 type StatusFilter = 'all' | EnrollStatus;
 type SortMode = 'recent' | 'progress' | 'name';
-
-const STUDENT_DIRECTORY: DirectoryStudent[] = [
-  { id: 'd1', name: 'Nguyễn Văn An', code: 'SV2024201', color: 'from-cyan-500 to-sky-500' },
-  { id: 'd2', name: 'Trần Bảo Ngọc', code: 'SV2024202', color: 'from-rose-500 to-red-500' },
-  { id: 'd3', name: 'Lê Minh Tuấn', code: 'SV2024203', color: 'from-amber-500 to-yellow-500' },
-  { id: 'd4', name: 'Phạm Thu Trang', code: 'SV2024204', color: 'from-violet-500 to-fuchsia-500' },
-  { id: 'd5', name: 'Hoàng Đức Anh', code: 'SV2024205', color: 'from-emerald-500 to-lime-500' },
-  { id: 'd6', name: 'Võ Thị Kim Chi', code: 'SV2024206', color: 'from-blue-500 to-indigo-500' },
-  { id: 'd7', name: 'Đinh Công Thành', code: 'SV2024207', color: 'from-teal-500 to-green-500' },
-  { id: 'd8', name: 'Tạ Hồng Nhung', code: 'SV2024208', color: 'from-pink-500 to-rose-500' },
-];
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -119,12 +108,25 @@ function StudentActions({
   );
 }
 
-export function StudentsTab({ isNew }: { isNew: boolean }) {
+export function StudentsTab({
+  isNew,
+  embed = false,
+  canManage = true,
+}: {
+  isNew: boolean;
+  embed?: boolean;
+  canManage?: boolean;
+}) {
   const params = useParams();
   const courseId = String(params?.courseId ?? 'c1');
+  const queryClient = useQueryClient();
 
   const { data: studentsData = [] } = useCourseStudents(isNew ? '' : courseId);
   const { data: tree = [] } = useCourseTree(isNew ? '' : courseId);
+  const { data: directory = [] } = useQuery({
+    queryKey: ['teacher', 'student-directory'],
+    queryFn: () => fetchStudentDirectory(),
+  });
 
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -136,6 +138,7 @@ export function StudentsTab({ isNew }: { isNew: boolean }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addQuery, setAddQuery] = useState('');
   const [justAdded, setJustAdded] = useState<string[]>([]);
+  const [addError, setAddError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   // Hiện thực danh sách học viên từ backend một lần khi tải xong.
@@ -174,58 +177,116 @@ export function StudentsTab({ isNew }: { isNew: boolean }) {
     tree.flatMap((module) => module.lessons).find((lesson) => lesson.id === id)?.title ?? id;
 
   const enrolledIds = new Set(students.map((student) => student.id));
-  const candidates = STUDENT_DIRECTORY.filter((candidate) => {
+  const candidates = directory.filter((candidate) => {
     if (enrolledIds.has(candidate.id) && !justAdded.includes(candidate.id)) return false;
     const q = addQuery.trim().toLowerCase();
-    return !q || candidate.name.toLowerCase().includes(q) || candidate.code.toLowerCase().includes(q);
+    return (
+      !q ||
+      candidate.name.toLowerCase().includes(q) ||
+      candidate.code.toLowerCase().includes(q)
+    );
   });
 
-  const addStudent = (candidate: DirectoryStudent) => {
+  const addStudent = async (candidate: StudentDirectoryEntry) => {
     if (enrolledIds.has(candidate.id)) return;
-
-    setStudents((prev) => [
-      ...prev,
-      {
-        id: candidate.id,
-        name: candidate.name,
-        code: candidate.code,
-        color: candidate.color,
-        progress: 0,
-        attention: null,
-        lastActive: 'Vừa thêm',
-        status: 'active',
-        lessons: [],
-      },
-    ]);
-    setJustAdded((prev) => [...prev, candidate.id]);
+    setAddError(null);
+    try {
+      if (!isNew) {
+        await addCourseStudents(courseId, [candidate.id]);
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'course-students', courseId] });
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'courses'] });
+      }
+      setStudents((prev) => [
+        ...prev,
+        {
+          id: candidate.id,
+          name: candidate.name,
+          code: candidate.code,
+          color: candidate.color,
+          progress: 0,
+          attention: null,
+          lastActive: 'Vừa thêm',
+          status: 'active',
+          lessons: [],
+        },
+      ]);
+      setJustAdded((prev) => [...prev, candidate.id]);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : 'Không thêm được học viên');
+    }
   };
 
-  // Prod: UPDATE enrollments SET status = 'dropped' (soft-remove, giữ lịch sử)
-  const removeStudent = (id: string) => {
+  // Xóa mềm: enrollments.status = 'dropped' (giữ lịch sử học)
+  const removeStudent = async (id: string) => {
     setStudents((prev) => prev.filter((student) => student.id !== id));
     if (openId === id) setOpenId(null);
+    if (isNew) return;
+    try {
+      await removeCourseStudent(courseId, id);
+      queryClient.invalidateQueries({ queryKey: ['teacher', 'course-students', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['teacher', 'courses'] });
+    } catch {
+      setAddError('Không gỡ được học viên khỏi khóa học');
+    }
   };
 
   return (
-    <div className="mx-auto max-w-6xl">
-      {/* Page header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Học viên</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {students.length === 0
-              ? 'Chưa có học viên nào trong khóa học.'
-              : `${activeCount} đang học · ${completedCount} hoàn thành`}
-          </p>
+    <div className={embed ? '' : 'mx-auto max-w-6xl'}>
+      {!embed && (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Học viên</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {students.length === 0
+                ? 'Chưa có học viên nào trong khóa học.'
+                : `${activeCount} đang học · ${completedCount} hoàn thành`}
+            </p>
+          </div>
+
+          {canManage && (
+            <PrimaryBtn onClick={() => setShowAdd(true)} className="flex items-center justify-center gap-2">
+              <Icon name="ri-user-add-line" className="text-base" />
+              Thêm học viên
+            </PrimaryBtn>
+          )}
         </div>
+      )}
 
-        <PrimaryBtn onClick={() => setShowAdd(true)} className="flex items-center justify-center gap-2">
-          <Icon name="ri-user-add-line" className="text-base" />
-          Thêm học viên
-        </PrimaryBtn>
-      </div>
+      {addError && (
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <Icon name="ri-error-warning-line" className="text-base" />
+          <span className="flex-1">{addError}</span>
+          <button
+            type="button"
+            onClick={() => setAddError(null)}
+            className="rounded-md p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-600"
+            aria-label="Đóng thông báo lỗi"
+          >
+            <Icon name="ri-close-line" className="text-sm" />
+          </button>
+        </div>
+      )}
 
-      <Card className="mt-5 overflow-visible">
+      <Card className={embed ? 'overflow-visible border-0 shadow-none' : 'mt-5 overflow-visible'}>
+        {embed && (
+          <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-5">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Học viên</h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {students.length === 0
+                  ? 'Chưa có học viên nào trong khóa học.'
+                  : `${activeCount} đang học · ${completedCount} hoàn thành`}
+              </p>
+            </div>
+            {canManage && (
+            <PrimaryBtn onClick={() => setShowAdd(true)} className="flex items-center justify-center gap-2">
+              <Icon name="ri-user-add-line" className="text-base" />
+              Thêm học viên
+            </PrimaryBtn>
+          )}
+        </div>
+      )}
+
         {students.length === 0 ? (
           <EmptyState
             className="py-16"
@@ -233,10 +294,12 @@ export function StudentsTab({ isNew }: { isNew: boolean }) {
             title="Chưa có học viên"
             desc="Thêm học viên vào khóa học để bắt đầu theo dõi tiến độ."
           >
-            <PrimaryBtn onClick={() => setShowAdd(true)} className="mt-4 flex items-center gap-2">
-              <Icon name="ri-user-add-line" />
-              Thêm học viên
-            </PrimaryBtn>
+            {canManage && (
+              <PrimaryBtn onClick={() => setShowAdd(true)} className="mt-4 flex items-center gap-2">
+                <Icon name="ri-user-add-line" />
+                Thêm học viên
+              </PrimaryBtn>
+            )}
           </EmptyState>
         ) : (
           <>

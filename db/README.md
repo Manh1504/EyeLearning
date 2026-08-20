@@ -17,7 +17,9 @@ db/
 └── migrations/
     ├── 001_init.sql              # toàn bộ schema: bảng, khóa, CHECK, index
     ├── 002_seed.sql              # seed lookup + 3 tài khoản mẫu
-    └── 003_gaze_partitions.sql   # default partition + 12 tháng đầu + function bảo trì
+    ├── 003_gaze_partitions.sql   # default partition + 12 tháng đầu + function bảo trì
+    ├── 004_analytics.sql         # heatmap_aggregates, aoi_dwell_stats, engagement_scores
+    └── 005_calibration_model.sql # calibration_params: lưu model .ubj + mae/mapping version
 ```
 
 ## Có 2 cách cài database
@@ -25,7 +27,7 @@ db/
 1. **Docker (`docker-compose.yml`)** — nhanh, sạch, khuyến nghị cho dev.
 2. **PostgreSQL native (psql)** — khi đã có Postgres cài trực tiếp trên máy.
 
-Migrate (001, 002, 003) sẽ tự chạy đúng thứ tự trong cả 2 cách. Cả 3 file đều
+Migrate (001→005) sẽ tự chạy đúng thứ tự trong cả 2 cách. Cả 5 file đều
 **idempotent** — chạy lại an toàn.
 
 ---

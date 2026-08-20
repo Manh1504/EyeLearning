@@ -19,6 +19,7 @@ export interface TeacherCourse {
   attention: number | null;  // điểm tập trung TB; null = chưa đủ dữ liệu gaze
   sessions: number;          // count(learning_sessions)
   updatedAt: string;
+  isOwner?: boolean;          // admin hoặc chủ khóa học (quyền quản lý); false = GV được phân công
 }
 
 export interface LessonNode {
@@ -61,6 +62,7 @@ export interface SlideStat {
   fixations: number;
   viewSec: number;           // thời gian xem TB (giây)
   hotspots: Hotspot[];
+  points?: [number, number][]; // gaze thô (chuẩn hóa [0,1]), dùng để vẽ scatter khi thiếu hotspot
 }
 
 // ---- Dashboard mở rộng (teacher) ----

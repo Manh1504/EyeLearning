@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWTError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
@@ -46,3 +47,28 @@ def require_roles(*roles: str):
         return user
 
     return checker
+
+
+async def can_manage_course(db: AsyncSession, course, user: User) -> bool:
+    """True nếu user là admin (toàn quyền) hoặc chủ khóa học (teacher_id):
+    được tạo/sửa/xóa khóa học, chương, bài học, thêm học viên, chạy lại analytics."""
+    if "admin" in user.role_codes:
+        return True
+    return getattr(course, "teacher_id", None) == user.id
+
+
+async def can_access_course(db: AsyncSession, course, user: User) -> bool:
+    """True nếu user là admin, chủ khóa học, hoặc giáo viên được admin phân công.
+    Phân công cho quyền XEM nội dung/thống kê, thêm slide, và gỡ học viên."""
+    if await can_manage_course(db, course, user):
+        return True
+    if "teacher" not in user.role_codes:
+        return False
+
+    from app.models.course import CourseTeacher
+
+    stmt = select(CourseTeacher.course_id).where(
+        CourseTeacher.course_id == course.id,
+        CourseTeacher.teacher_id == user.id,
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None

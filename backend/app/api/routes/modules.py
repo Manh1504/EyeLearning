@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import can_manage_course, require_roles
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, Module
@@ -28,7 +28,7 @@ async def _get_course_owned(db: AsyncSession, course_id: str, user: User) -> Cou
     course = await db.get(Course, course_id)
     if course is None or course.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khóa học")
-    if course.teacher_id != user.id and "admin" not in user.role_codes:
+    if not await can_manage_course(db, course, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
     return course
 

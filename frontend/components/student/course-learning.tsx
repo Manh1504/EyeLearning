@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
@@ -14,6 +14,7 @@ import {
 } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
+import { useGazeTracker } from '@/hooks/use-gaze-tracker';
 import { useCourseOutline, useLessonSlides, useMyEnrollments } from '@/hooks/use-student';
 import {
   createLearningSession,
@@ -21,7 +22,26 @@ import {
   patchLessonProgress,
   postGazeSamples,
 } from '@/lib/api/student';
-import type { Slide } from '@/lib/types/domain';
+
+const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">` +
+      `<rect width="100%" height="100%" fill="#e2e8f0"/>` +
+      `<g fill="#94a3b8"><circle cx="400" cy="170" r="64"/>` +
+      `<line x1="300" y1="265" x2="500" y2="265" stroke="#94a3b8" stroke-width="16" stroke-linecap="round"/>` +
+      `<line x1="320" y1="300" x2="480" y2="300" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>` +
+      `<line x1="320" y1="330" x2="480" y2="330" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>` +
+      `</g></svg>`,
+  );
+
+function isUnresolvableImageUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url, window.location.origin).hostname;
+    return hostname === '' || !hostname.includes('.');
+  } catch {
+    return true;
+  }
+}
 
 export default function CourseLearningPage() {
   const params = useParams();
@@ -34,6 +54,10 @@ export default function CourseLearningPage() {
 
   const [activeLessonId, setActiveLessonId] = useState(requestedLessonId ?? '');
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [gazePoint, setGazePoint] = useState<{ x: number; y: number } | null>(null);
+  // Có model calibration trên backend cho (user, device) chưa → tracker quyết
+  // định stream thật hay mô phỏng.
+  const [gazeCalibrated, setGazeCalibrated] = useState(false);
   const [desktopOutlineOpen, setDesktopOutlineOpen] = useState(true);
   const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
@@ -45,29 +69,28 @@ export default function CourseLearningPage() {
     [course],
   );
 
-  useEffect(() => {
-    if (!course || allLessons.length === 0) return;
+  const requestedIsValid =
+    !!requestedLessonId && allLessons.some((lesson) => lesson.id === requestedLessonId);
+  const activeLessonIsValid = allLessons.some((lesson) => lesson.id === activeLessonId);
+  const resolvedLessonId =
+    allLessons.length === 0
+      ? activeLessonId
+      : requestedIsValid
+        ? (requestedLessonId as string)
+        : activeLessonIsValid
+          ? activeLessonId
+          : allLessons[0].id;
 
-    const requestedIsValid =
-      requestedLessonId && allLessons.some((lesson) => lesson.id === requestedLessonId);
-    const currentIsValid = allLessons.some((lesson) => lesson.id === activeLessonId);
-
-    const nextLessonId = requestedIsValid
-      ? requestedLessonId
-      : currentIsValid
-        ? activeLessonId
-        : allLessons[0].id;
-
-    setActiveLessonId(nextLessonId);
-
-    const mod = course.modules.find((item) =>
-      item.lessons.some((lesson) => lesson.id === nextLessonId),
-    );
-
-    if (mod) {
-      setOpenModules((prev) => ({ ...prev, [mod.id]: true }));
-    }
-  }, [course, allLessons, requestedLessonId, activeLessonId]);
+  // Render-phase adjust: tự chọn bài khi outline tải xong mà chưa có bài hợp lệ.
+  if (course && allLessons.length > 0 && resolvedLessonId !== activeLessonId) {
+    setActiveLessonId(resolvedLessonId);
+  }
+  const resolvedModuleId = course?.modules.find((module) =>
+    module.lessons.some((lesson) => lesson.id === resolvedLessonId),
+  )?.id;
+  if (resolvedModuleId && !openModules[resolvedModuleId]) {
+    setOpenModules((prev) => ({ ...prev, [resolvedModuleId]: true }));
+  }
 
   const activeModule =
     course?.modules.find((module) =>
@@ -80,7 +103,13 @@ export default function CourseLearningPage() {
 
   const { data: slides = [] } = useLessonSlides(activeLessonId, activeLesson);
   const total = slides.length;
+  // Đổi bài có ít slide hơn → quay về slide đầu (render-phase adjust).
+  if (total > 0 && currentSlide > total - 1) setCurrentSlide(0);
   const currentContent = slides[currentSlide];
+  const slideImageUrl =
+    currentContent?.imageUrl && !isUnresolvableImageUrl(currentContent.imageUrl)
+      ? currentContent.imageUrl
+      : null;
 
   const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
   const courseProgress = allLessons.length
@@ -89,11 +118,6 @@ export default function CourseLearningPage() {
 
   const flatLessonIndex = allLessons.findIndex((lesson) => lesson.id === activeLessonId);
   const nextLesson = allLessons[flatLessonIndex + 1];
-
-  useEffect(() => {
-    if (total === 0) return;
-    if (currentSlide > total - 1) setCurrentSlide(0);
-  }, [total, currentSlide]);
 
   // Mở phiên học cho bài đang xem để backend ghi gaze (cần tracking_consent=true).
   useEffect(() => {
@@ -112,6 +136,7 @@ export default function CourseLearningPage() {
       .then((session) => {
         if (!cancelled) {
           setLearningSessionIds((prev) => ({ ...prev, [activeLessonId]: session.id }));
+          setGazeCalibrated(session.calibrated);
         }
       })
       .catch(() => {});
@@ -123,32 +148,26 @@ export default function CourseLearningPage() {
 
   // Gaze stream: thu thầm, tuyệt đối không render con trỏ gaze lên nội dung.
   const learningSessionId = learningSessionIds[activeLessonId];
-  useEffect(() => {
-    if (!activeLessonId || total === 0 || !learningSessionId) return;
 
-    const timer = window.setInterval(() => {
-      const slide: Slide | undefined = slides[currentSlide];
-      if (!slide) return;
+  const { stream: gazeStream, source: gazeSource } = useGazeTracker({
+    enabled: Boolean(activeLessonId && total > 0),
+    calibrated: gazeCalibrated,
+    onPoint: useCallback(
+      (x: number, y: number) => {
+        setGazePoint({ x, y });
 
-      const x = 0.12 + Math.random() * 0.76;
-      const y = 0.14 + Math.random() * 0.68;
+        const slide = slides[currentSlide];
+        if (!slide || !learningSessionId) return;
 
-      postGazeSamples(
-        activeLessonId,
-        [
-          {
-            lessonContentId: slide.id,
-            x,
-            y,
-            ts: Date.now(),
-          },
-        ],
-        learningSessionId,
-      ).catch(() => {});
-    }, 1800);
-
-    return () => window.clearInterval(timer);
-  }, [activeLessonId, currentSlide, slides, total, learningSessionId]);
+        postGazeSamples(
+          activeLessonId,
+          [{ lessonContentId: slide.id, x, y, ts: Date.now() }],
+          learningSessionId,
+        ).catch(() => {});
+      },
+      [activeLessonId, currentSlide, slides, learningSessionId],
+    ),
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -311,6 +330,18 @@ export default function CourseLearningPage() {
     </>
   );
 
+  // Điểm nhìn chiếu theo KHÔNG GIAN TOÀN MÀN HÌNH — AI trả x/y chuẩn hóa theo
+  // viewport (calibration phủ full màn hình) nên không nên ràng vào vùng reader.
+  const gazeDot =
+    gazePoint && gazePoint.x >= 0 && gazePoint.x <= 1 && gazePoint.y >= 0 && gazePoint.y <= 1 ? (
+      <div className="pointer-events-none fixed inset-0 z-30">
+        <span
+          className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-rose-500 shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
+          style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%` }}
+        />
+      </div>
+    ) : null;
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-foreground">
       {/* App header */}
@@ -330,10 +361,22 @@ export default function CourseLearningPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 md:ml-0">
-          <div className="hidden items-center gap-1.5 pr-2 text-xs text-muted-foreground sm:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            Theo dõi điểm nhìn
-          </div>
+          {gazeSource === 'real' ? (
+            <div className="hidden items-center gap-1.5 pr-2 text-xs text-emerald-600 sm:flex">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              Đang theo dõi điểm nhìn
+            </div>
+          ) : gazeSource === 'simulated' ? (
+            <div className="hidden items-center gap-1.5 pr-2 text-xs text-amber-600 sm:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Điểm nhìn mô phỏng
+            </div>
+          ) : (
+            <div className="hidden items-center gap-1.5 pr-2 text-xs text-muted-foreground sm:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+              Theo dõi điểm nhìn
+            </div>
+          )}
 
           <Button
             variant="ghost"
@@ -423,14 +466,22 @@ export default function CourseLearningPage() {
           {/* Reader — luôn nằm gọn trong phần viewport còn lại.
               Ảnh trang PDF giữ nguyên aspect ratio gốc, không bị ép thành 16:9. */}
           <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-5 sm:py-4 lg:px-6">
-            <div className="mx-auto flex h-full min-h-0 max-w-[1280px] items-center justify-center overflow-hidden">
-              {currentContent?.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={currentContent.imageUrl}
-                  alt={currentContent.title}
-                  className="block h-auto max-h-full w-auto max-w-full bg-white object-contain shadow-sm ring-1 ring-slate-900/10"
-                />
+            <div className="relative mx-auto flex h-full min-h-0 max-w-[1280px] items-center justify-center overflow-hidden">
+              {slideImageUrl ? (
+                <span className="relative inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={slideImageUrl}
+                    alt={currentContent.title}
+                    onError={(event) => {
+                      const img = event.currentTarget;
+                      if (img.dataset.fallback) return;
+                      img.dataset.fallback = '1';
+                      img.src = SLIDE_FALLBACK_IMAGE;
+                    }}
+                    className="block h-auto max-h-full w-auto max-w-full bg-white object-contain shadow-sm ring-1 ring-slate-900/10"
+                  />
+                </span>
               ) : (
                 <div className="relative h-full max-h-full aspect-[210/297] max-w-full overflow-hidden bg-white shadow-sm ring-1 ring-slate-900/10">
                   <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
@@ -448,6 +499,25 @@ export default function CourseLearningPage() {
               )}
             </div>
           </div>
+
+          {gazeStream && gazeSource === 'real' && (
+            <div
+              className="pointer-events-none fixed bottom-20 right-4 z-30 h-28 w-20 overflow-hidden rounded-xl border-2 border-white shadow-lg ring-1 ring-slate-900/10"
+              title="Camera đang theo dõi điểm nhìn"
+            >
+              <video
+                autoPlay
+                playsInline
+                muted
+                ref={(element) => {
+                  if (element && element.srcObject !== gazeStream) {
+                    element.srcObject = gazeStream;
+                  }
+                }}
+                className="h-full w-full scale-x-[-1] object-cover"
+              />
+            </div>
+          )}
 
           {/* Reader controls */}
           <footer className="shrink-0 border-t border-border bg-white px-4 py-2 sm:px-6 lg:px-8">
@@ -499,6 +569,7 @@ export default function CourseLearningPage() {
           </footer>
         </main>
       </div>
+      {gazeDot}
     </div>
   );
 }

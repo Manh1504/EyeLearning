@@ -113,10 +113,6 @@ export function ConfirmDialog({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) setSubmitting(false);
-  }, [open]);
-
-  useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !submitting) onClose();

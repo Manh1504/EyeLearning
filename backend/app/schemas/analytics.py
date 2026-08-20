@@ -14,3 +14,4 @@ class SlideStatOut(CamelModel):
     fixations: int
     view_sec: float
     hotspots: list[HotspotOut]
+    points: list[list[float]]

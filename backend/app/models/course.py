@@ -55,6 +55,30 @@ class Course(Base):
         lazy="selectin",
         cascade="all, delete-orphan",
     )
+    teachers: Mapped[list["CourseTeacher"]] = relationship(
+        back_populates="course",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class CourseTeacher(Base):
+    """Phân công giảng viên cho khóa học (many-to-many do admin quản lý)."""
+
+    __tablename__ = "course_teachers"
+
+    course_id: Mapped[str] = mapped_column(
+        ForeignKey("courses.id", ondelete="CASCADE"), primary_key=True
+    )
+    teacher_id: Mapped[str] = mapped_column(
+        ForeignKey("teacher_profiles.user_id", ondelete="CASCADE"), primary_key=True
+    )
+    assigned_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    course: Mapped[Course] = relationship(back_populates="teachers")
 
 
 class Module(Base):

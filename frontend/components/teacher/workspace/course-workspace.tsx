@@ -11,13 +11,10 @@ import { useTeacherCourses } from '@/hooks/use-teacher';
 import { LEVEL_LABEL, STATUS_LABEL } from '@/lib/mock/teacher';
 import type { TeacherCourse } from '@/lib/types/domain';
 
-type Tab = 'overview' | 'content' | 'students';
-
-const NAV: { key: Tab; label: string; icon: string }[] = [
-  { key: 'overview', label: 'Tổng quan', icon: 'ri-dashboard-line' },
-  { key: 'content', label: 'Nội dung', icon: 'ri-book-open-line' },
-  { key: 'students', label: 'Học viên', icon: 'ri-group-line' },
-];
+// Khóa học được chỉnh sửa trên MỘT trang duy nhất:
+//   Thông tin + nội dung (ContentTab embed) và Học viên (StudentsTab embed).
+// '?tab=overview' vẫn hiển thị bảng tổng quan cho khóa học đã có dữ liệu.
+type View = 'edit' | 'overview';
 
 function statusDot(status: string) {
   if (status === 'published') return 'bg-emerald-500';
@@ -25,12 +22,53 @@ function statusDot(status: string) {
   return 'bg-slate-400';
 }
 
+function SegmentedNav({
+  isNew,
+  courseId,
+  view,
+}: {
+  isNew: boolean;
+  courseId: string;
+  view: View;
+}) {
+  const base = `/teacher/courses/${isNew ? 'c-new' : courseId}`;
+  const queryFor = (key: View) => {
+    const suffix = `?tab=${key}`;
+    return isNew ? `${base}?new=1${key === 'edit' ? '' : suffix}` : `${base}${suffix}`;
+  };
+
+  const items: { key: View; label: string }[] = [
+    { key: 'edit', label: 'Chỉnh sửa' },
+    { key: 'overview', label: 'Tổng quan' },
+  ];
+
+  return (
+    <nav className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+      {items.map((item) => {
+        if (item.key === 'overview' && isNew) return null;
+        const active = view === item.key;
+        return (
+          <Link
+            key={item.key}
+            href={queryFor(item.key)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export default function TeacherCourseWorkspace() {
   const searchParams = useSearchParams();
   const params = useParams();
   const courseId = String(params?.courseId ?? 'c1');
-  const tab = (searchParams.get('tab') as Tab) || 'overview';
   const isNew = searchParams.get('new') === '1';
+  const view: View = searchParams.get('tab') === 'overview' ? 'overview' : 'edit';
 
   const { data: courses = [] } = useTeacherCourses();
   const course: TeacherCourse | undefined = useMemo(() => {
@@ -40,122 +78,65 @@ export default function TeacherCourseWorkspace() {
 
   const displayTitle = isNew ? 'Khóa học mới' : (course?.title ?? 'Khóa học');
   const displayStatus = isNew ? 'draft' : (course?.status ?? 'draft');
-
-  const hrefFor = (key: Tab) =>
-    `/teacher/courses/${isNew ? 'c-new' : courseId}?tab=${key}${isNew ? '&new=1' : ''}`;
+  const canManage = isNew || (course?.isOwner ?? true);
 
   return (
-    <div className="flex min-h-[calc(100dvh-56px)] bg-slate-50">
-      {/* Desktop workspace navigation */}
-      <aside className="sticky top-0 hidden h-[calc(100dvh-56px)] w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="px-5 pb-5 pt-5">
+    <div className="min-h-[calc(100dvh-56px)] bg-slate-50">
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <Link
             href="/teacher/courses"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-900"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Quay lại danh sách khóa học"
           >
-            <Icon name="ri-arrow-left-line" className="text-base" />
-            Khóa học của tôi
+            <Icon name="ri-arrow-left-line" />
           </Link>
 
-          <div className="mt-6">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span className={`h-2 w-2 rounded-full ${statusDot(displayStatus)}`} />
-              <span>{STATUS_LABEL[displayStatus]}</span>
-            </div>
-
-            <h1 className="mt-2 text-[17px] font-semibold leading-6 text-slate-900">
-              {displayTitle}
-            </h1>
-
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              {isNew
-                ? 'Khóa học chưa được xuất bản'
-                : `${LEVEL_LABEL[course?.level ?? 'beginner']} · ${course?.students ?? 0} học viên`}
-            </p>
-          </div>
-        </div>
-
-        <div className="mx-5 border-t border-slate-100" />
-
-        <nav className="mt-3 flex-1 space-y-1 px-3">
-          {NAV.map((item) => {
-            const active = tab === item.key;
-
-            return (
-              <Link
-                key={item.key}
-                href={hrefFor(item.key)}
-                className={`flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition ${
-                  active
-                    ? 'bg-cyan-50 font-semibold text-cyan-700'
-                    : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <Icon
-                  name={item.icon}
-                  className={`text-lg ${active ? 'text-cyan-700' : 'text-slate-400'}`}
-                />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-      </aside>
-
-      <div className="min-w-0 flex-1">
-        {/* Mobile course header */}
-        <div className="sticky top-0 z-30 border-b border-slate-200 bg-white lg:hidden">
-          <div className="flex h-14 items-center gap-3 px-4">
-            <Link
-              href="/teacher/courses"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
-              aria-label="Quay lại danh sách khóa học"
-            >
-              <Icon name="ri-arrow-left-line" />
-            </Link>
-
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {displayTitle}
-              </p>
-              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                <span className={`h-1.5 w-1.5 rounded-full ${statusDot(displayStatus)}`} />
-                {STATUS_LABEL[displayStatus]}
-              </div>
+          <div className="flex min-w-0 flex-[1_1_0] flex-col justify-center">
+            <p className="truncate text-sm font-semibold text-slate-900">{displayTitle}</p>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDot(displayStatus)}`} />
+              {STATUS_LABEL[displayStatus]}
+              {!isNew && (
+                <span className="truncate">
+                  {LEVEL_LABEL[course?.level ?? 'beginner']} · {course?.students ?? 0} học viên
+                </span>
+              )}
             </div>
           </div>
 
-          <nav className="flex h-10 items-end gap-6 overflow-x-auto px-4">
-            {NAV.map((item) => {
-              const active = tab === item.key;
-
-              return (
-                <Link
-                  key={item.key}
-                  href={hrefFor(item.key)}
-                  className={`relative flex h-10 shrink-0 items-center gap-1.5 text-sm font-medium ${
-                    active ? 'text-cyan-700' : 'text-slate-500'
-                  }`}
-                >
-                  {item.label}
-                  {active && (
-                    <span className="absolute inset-x-0 bottom-0 h-0.5 bg-cyan-700" />
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
+          {!isNew && (
+            <SegmentedNav isNew={false} courseId={courseId} view={view} />
+          )}
         </div>
+      </header>
 
-        <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-6xl">
-            {tab === 'overview' && <OverviewTab isNew={isNew} />}
-            {tab === 'content' && <ContentTab isNew={isNew} />}
-            {tab === 'students' && <StudentsTab isNew={isNew} />}
-          </div>
-        </main>
-      </div>
+      <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-6xl space-y-5">
+          {view === 'overview' ? (
+            <OverviewTab isNew={isNew} />
+          ) : (
+            <>
+              <ContentTab isNew={isNew} embed />
+
+              {isNew ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6">
+                  <Icon name="ri-group-line" className="mt-0.5 shrink-0 text-slate-400" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Học viên</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Lưu khóa học trước để có thể thêm học viên ngay trên trang này.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <StudentsTab isNew={false} embed canManage={canManage} />
+              )}
+            </>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

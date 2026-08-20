@@ -13,6 +13,7 @@ from app.models.calibration import CalibrationParam, CalibrationSession, Device
 from app.models.course import (
     Course,
     CourseStatus,
+    CourseTeacher,
     Enrollment,
     Lesson,
     LessonContent,
@@ -30,6 +31,7 @@ __all__ = [
     "CalibrationSession",
     "Course",
     "CourseStatus",
+    "CourseTeacher",
     "Device",
     "EngagementScore",
     "Enrollment",

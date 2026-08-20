@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import can_access_course, can_manage_course, require_roles
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, Lesson, LessonContent, Module
@@ -20,9 +20,7 @@ async def _lesson_with_owner_check(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
     module = await db.get(Module, lesson.module_id)
     course = await db.get(Course, module.course_id) if module else None
-    if course is None or (
-        course.teacher_id != user.id and "admin" not in user.role_codes
-    ):
+    if course is None or not await can_access_course(db, course, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
     return lesson
 
@@ -60,7 +58,7 @@ async def recompute_course_analytics(
     course = await db.get(Course, course_id)
     if course is None or course.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khóa học")
-    if course.teacher_id != user.id and "admin" not in user.role_codes:
+    if not await can_manage_course(db, course, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
     lesson_ids = list(
         (

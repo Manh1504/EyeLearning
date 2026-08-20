@@ -10,6 +10,7 @@ import { type ReactNode } from 'react';
 import { Icon } from '@/components/ui/icon';
 import { UserMenu } from '@/components/ui/user-menu';
 import { useMyProfile } from '@/hooks/use-profile';
+import { useStoredUser } from '@/lib/hooks/use-stored-user';
 
 const NAV = [
   { href: '/teacher/courses', label: 'Khóa học của tôi', icon: 'ri-stack-line' },
@@ -17,6 +18,8 @@ const NAV = [
 
 export function TeacherShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const user = useStoredUser();
+  const isAdmin = user?.roles.includes('admin');
   const { data: profile } = useMyProfile('teacher');
   const name = profile?.fullName ?? 'Tài khoản';
   const initials = name
@@ -54,6 +57,19 @@ export function TeacherShell({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
+            {isAdmin && (
+              <Link
+                href="/admin/courses"
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                  pathname.startsWith('/admin')
+                    ? 'bg-violet-50 text-violet-700'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <Icon name="ri-shield-user-line" className="h-4 w-4" />
+                Quản trị
+              </Link>
+            )}
           </nav>
 
           <div className="ml-auto">

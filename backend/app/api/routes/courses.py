@@ -1,8 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import (
+    can_access_course,
+    can_manage_course,
+    get_current_user,
+    require_roles,
+)
 from app.core.helpers import color_for, gradient_for, relative_time_vn
 from app.db.session import get_db
 from app.models.analytics import EngagementScore
@@ -10,6 +15,7 @@ from app.models.auth import User
 from app.models.course import (
     Course,
     CourseStatus,
+    CourseTeacher,
     Enrollment,
     Lesson,
     LessonProgress,
@@ -24,8 +30,10 @@ from app.schemas.course import (
     LessonNodeOut,
     ModuleItemOut,
     ModuleNodeOut,
+    StudentDirectoryOut,
     StudentLessonOut,
     StudentRowOut,
+    StudentsAddIn,
     TeacherCourseOut,
 )
 from app.services import course_stats
@@ -49,8 +57,17 @@ async def _get_course_or_404(db: AsyncSession, course_id: str) -> Course:
 
 
 async def _get_owned_course(db: AsyncSession, course_id: str, user: User) -> Course:
+    """Khóa học mà user quản lý được (admin hoặc chủ khóa)."""
     course = await _get_course_or_404(db, course_id)
-    if course.teacher_id != user.id and "admin" not in user.role_codes:
+    if not await can_manage_course(db, course, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    return course
+
+
+async def _get_viewable_course(db: AsyncSession, course_id: str, user: User) -> Course:
+    """Khóa học mà user xem được (admin / chủ khóa / GV được phân công)."""
+    course = await _get_course_or_404(db, course_id)
+    if not await can_access_course(db, course, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
     return course
 
@@ -62,7 +79,22 @@ async def list_teacher_courses(
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Course).where(Course.teacher_id == user.id, Course.deleted_at.is_(None))
+    # Admin xem được toàn bộ khóa học; giáo viên xem khóa học mình sở hữu
+    # hoặc được admin phân công vào.
+    if "admin" in user.role_codes:
+        stmt = select(Course).where(Course.deleted_at.is_(None))
+    else:
+        assigned_stmt = select(CourseTeacher.course_id).where(
+            CourseTeacher.teacher_id == user.id
+        )
+        assigned_ids = set((await db.execute(assigned_stmt)).scalars().all())
+        stmt = select(Course).where(
+            or_(
+                Course.teacher_id == user.id,
+                Course.id.in_(assigned_ids) if assigned_ids else False,
+            ),
+            Course.deleted_at.is_(None),
+        )
     if status_filter:
         status_id = await _course_status_id(db, status_filter)
         stmt = stmt.where(Course.status_id == status_id)
@@ -95,6 +127,7 @@ async def list_teacher_courses(
             attention=round(attention[c.id], 1) if c.id in attention else None,
             sessions=sessions.get(c.id, 0),
             updated_at=c.updated_at,
+            is_owner="admin" in user.role_codes or c.teacher_id == user.id,
         )
         for c in courses
     ]
@@ -107,10 +140,20 @@ async def create_course(
     db: AsyncSession = Depends(get_db),
 ):
     teacher = await db.get(TeacherProfile, user.id)
-    if teacher is None:
+    if teacher is None and "admin" not in user.role_codes:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Tài khoản không phải giáo viên"
         )
+    if teacher is None:
+        # Admin không có teacher_profiles nhưng courses.teacher_id
+        # trỏ tới teacher_profiles(user_id) nên tự cấp hồ sơ giáo viên cho admin.
+        teacher = TeacherProfile(
+            user_id=user.id,
+            teacher_code=f"ADM{user.id[:8].upper()}",
+            department="Quản trị hệ thống",
+        )
+        db.add(teacher)
+        await db.flush()
     course = Course(
         title=body.title,
         description=body.description,
@@ -204,7 +247,7 @@ async def get_course_tree(
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    course = await _get_owned_course(db, course_id, user)
+    course = await _get_viewable_course(db, course_id, user)
 
     completed_stmt = (
         select(LessonProgress.lesson_id, func.count(LessonProgress.id))
@@ -259,7 +302,7 @@ async def get_course_students(
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    course = await _get_owned_course(db, course_id, user)
+    course = await _get_viewable_course(db, course_id, user)
 
     lessons = list(
         (
@@ -354,6 +397,109 @@ async def get_course_students(
             )
         )
     return out
+
+
+@router.get("/teacher/students", response_model=list[StudentDirectoryOut])
+async def list_student_directory(
+    q: str | None = Query(default=None, max_length=100),
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Danh mục học viên để thêm vào khóa học (tìm theo tên / mã SV / email)."""
+    stmt = (
+        select(User, UserProfile, StudentProfile)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+        .where(
+            User.deleted_at.is_(None),
+            User.status.has(code="active"),
+            User.roles.any(code="student"),
+        )
+        .order_by(UserProfile.full_name)
+        .limit(200)
+    )
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                UserProfile.full_name.ilike(like),
+                StudentProfile.student_code.ilike(like),
+                User.email.ilike(like),
+            )
+        )
+    rows = (await db.execute(stmt)).all()
+    return [
+        StudentDirectoryOut(
+            id=u.id,
+            name=p.full_name if p else u.email,
+            code=sp.student_code if sp else "",
+            email=u.email,
+            color=color_for(u.id),
+        )
+        for u, p, sp in rows
+    ]
+
+
+@router.post("/teacher/courses/{course_id}/students", status_code=201)
+async def add_course_students(
+    course_id: str,
+    body: StudentsAddIn,
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    course = await _get_owned_course(db, course_id, user)
+    ids = list(dict.fromkeys(body.student_ids))
+    if not ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Chưa chọn học viên nào")
+
+    valid_stmt = select(User.id).where(
+        User.id.in_(ids),
+        User.deleted_at.is_(None),
+        User.roles.any(code="student"),
+    )
+    valid_ids = set((await db.execute(valid_stmt)).scalars().all())
+
+    existing_stmt = select(Enrollment).where(
+        Enrollment.course_id == course.id, Enrollment.student_id.in_(valid_ids)
+    )
+    existing = {e.student_id: e for e in (await db.execute(existing_stmt)).scalars().all()}
+
+    added = 0
+    for sid in valid_ids:
+        enr = existing.get(sid)
+        if enr is not None:
+            if enr.status != "active":
+                enr.status = "active"
+                added += 1
+            continue
+        db.add(Enrollment(course_id=course.id, student_id=sid))
+        added += 1
+    await db.commit()
+    return {"ok": True, "added": added}
+
+
+@router.delete("/teacher/courses/{course_id}/students/{student_id}")
+async def remove_course_student(
+    course_id: str,
+    student_id: str,
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    course = await _get_viewable_course(db, course_id, user)
+    enrollment = (
+        await db.execute(
+            select(Enrollment).where(
+                Enrollment.course_id == course.id, Enrollment.student_id == student_id
+            )
+        )
+    ).scalar_one_or_none()
+    if enrollment is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail="Học viên chưa đăng ký khóa học này"
+        )
+    enrollment.status = "dropped"
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/api/courses/{course_id}", response_model=CourseOutlineOut)

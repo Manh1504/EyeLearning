@@ -41,7 +41,13 @@ export function LoginForm({
     try {
       const result = await login(email, password);
       const role = primaryRole(result.user.roles);
-      router.replace(role === 'student' ? '/student/my-courses' : '/teacher/courses');
+      const target =
+        role === 'student'
+          ? '/student/my-courses'
+          : role === 'admin'
+            ? '/admin/courses'
+            : '/teacher/courses';
+      router.replace(target);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -84,7 +90,7 @@ export function LoginForm({
               name="username"
               type="email"
               autoComplete="username"
-              pattern="[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+              pattern="[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
               placeholder="Nhập email"
               title="Vui lòng nhập email hợp lệ"
               required

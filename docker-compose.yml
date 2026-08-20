@@ -4,9 +4,9 @@ services:
     container_name: eyetracking-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: eyetracking
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       TZ: UTC
     ports:
       - "5435:5432"
@@ -14,7 +14,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d eyetracking"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -27,13 +27,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/eyetracking
-      AI_HTTP_URL: http://host.docker.internal:9000
-      AI_WS_URL: ws://host.docker.internal:9000/infer
-      JWT_SECRET: dev-secret-change-me-please-0123456789abcdef
-      CORS_ORIGINS: http://localhost:3000, https://learning-system-8sr2bcxcg-le-duc-manh.vercel.app
+      DATABASE_URL: ${DATABASE_URL_DOCKER}
+      AI_HTTP_URL: ${AI_HTTP_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      CLOUDINARY_URL: ${CLOUDINARY_URL:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
     ports:
       - "8001:8001"
+    volumes:
+      - backend-media:/app/media
 
 volumes:
   pgdata:
+  backend-media:

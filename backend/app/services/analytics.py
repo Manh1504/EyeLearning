@@ -13,6 +13,15 @@ FIXATION_RADIUS = 0.03
 MIN_FIXATION_POINTS = 2
 HOTSPOT_TOP_N = 5
 GRID_CELLS = 24
+HOTSPOT_MIN_CELL_RATIO = 0.01  # ô cần >= max(2, total * ratio) điểm
+MAX_POINTS = 300               # số điểm gaze tối đa trả về để vẽ scatter
+
+
+def _downsample(points: list[tuple[float, float]], limit: int) -> list[tuple[float, float]]:
+    if len(points) <= limit:
+        return points
+    step = len(points) / limit
+    return [points[int(i * step)] for i in range(limit)]
 
 
 async def _session_ids(
@@ -41,7 +50,7 @@ async def compute_slide_stats(
         return []
 
     empty = [
-        SlideStatOut(idx=i, on_slide=0, fixations=0, view_sec=0, hotspots=[])
+        SlideStatOut(idx=i, on_slide=0, fixations=0, view_sec=0, hotspots=[], points=[])
         for i in range(len(slides))
     ]
     if not session_ids:
@@ -93,6 +102,7 @@ async def compute_slide_stats(
                 fixations=fixations,
                 view_sec=round(view_ms / 1000 / n_sessions, 1),
                 hotspots=hotspots,
+                points=[list(p) for p in _downsample(points, MAX_POINTS)],
             )
         )
     return out
@@ -137,7 +147,7 @@ def _compute_hotspots(points: list[tuple[float, float]]) -> list[HotspotOut]:
     for i in range(GRID_CELLS):
         for j in range(GRID_CELLS):
             w = hist[i, j]
-            if w < max(3, total * 0.03):
+            if w < max(2, total * HOTSPOT_MIN_CELL_RATIO):
                 continue
             neighbors = hist[
                 max(0, i - 1) : i + 2,
@@ -283,3 +293,117 @@ def _scope_buckets(content_id, class_slide, per_student_slide):
     for (student, cid), bucket in per_student_slide.items():
         if cid == content_id:
             yield "student", student, bucket
+
+
+async def refresh_aggregates(
+    db: AsyncSession,
+    lesson_id: str,
+    *,
+    content_ids: list[str] | None = None,
+    enrollment_id: str | None = None,
+) -> int:
+    """Cập nhật Incremental `heatmap_aggregates` + `engagement_scores` ngay sau
+    mỗi batch gaze-sample → analytics luôn gần thời gian thực (không đợi bấm
+    recompute). Chỉ chạm vào slide + enrollment của phiên vừa ghi dữ liệu."""
+    from sqlalchemy import delete
+
+    scope_content_ids = content_ids
+    if not scope_content_ids:
+        scope_content_ids = list(
+            (
+                await db.execute(
+                    select(LessonContent.id).where(LessonContent.lesson_id == lesson_id)
+                )
+            ).scalars().all()
+        )
+    if not scope_content_ids:
+        return 0
+
+    # 1) heatmap_aggregates (class + student) cho các slide bị ảnh hưởng.
+    affected: set[str] = set(scope_content_ids)
+
+    stats_rows = (
+        await db.execute(
+            select(GazeSlideStat, LearningSession.id, Enrollment.student_id)
+            .join(LearningSession, LearningSession.id == GazeSlideStat.learning_session_id)
+            .join(Enrollment, Enrollment.id == LearningSession.enrollment_id)
+            .where(
+                LearningSession.lesson_id == lesson_id,
+                GazeSlideStat.lesson_content_id.in_(affected),
+            )
+        )
+    ).all()
+
+    class_bucket: dict[str, list[GazeSlideStat]] = {}
+    per_student_bucket: dict[tuple[str, str], list[GazeSlideStat]] = {}
+    for stat, _session_id, student_id in stats_rows:
+        class_bucket.setdefault(stat.lesson_content_id, []).append(stat)
+        if student_id:
+            per_student_bucket.setdefault((student_id, stat.lesson_content_id), []).append(stat)
+
+    if stats_rows:
+        await db.execute(
+            delete(HeatmapAggregate).where(
+                HeatmapAggregate.lesson_content_id.in_(affected)
+            )
+        )
+        now = datetime.now(timezone.utc)
+        count = 0
+        for content_id in affected:
+            for scope, student_id, bucket in _scope_buckets(
+                content_id, class_bucket, per_student_bucket
+            ):
+                total = sum(s.total_samples for s in bucket)
+                if total == 0:
+                    continue
+                on_slide = sum(s.on_slide_samples for s in bucket)
+                view_ms = sum(s.view_ms for s in bucket)
+                db.add(
+                    HeatmapAggregate(
+                        lesson_content_id=content_id,
+                        scope=scope,
+                        student_id=student_id,
+                        sample_count=total,
+                        on_slide_ratio=on_slide / total,
+                        avg_view_ms=view_ms // len(bucket),
+                        fixation_count=0,
+                        hotspots=[],
+                        computed_at=now,
+                    )
+                )
+                count += 1
+
+    # 2) engagement_scores (1 hàng / enrollment / lesson).
+    if enrollment_id:
+        await db.execute(
+            delete(EngagementScore).where(
+                EngagementScore.lesson_id == lesson_id,
+                EngagementScore.enrollment_id == enrollment_id,
+            )
+        )
+        enrollment_sessions = select(LearningSession.id).where(
+            LearningSession.lesson_id == lesson_id,
+            LearningSession.enrollment_id == enrollment_id,
+        )
+        student_stats = (
+            await db.execute(
+                select(GazeSlideStat).where(
+                    GazeSlideStat.learning_session_id.in_(enrollment_sessions)
+                )
+            )
+        ).scalars().all()
+        ratios = [
+            s.on_slide_samples / s.total_samples * 100
+            for s in student_stats
+            if s.total_samples > 0
+        ]
+        if ratios:
+            db.add(
+                EngagementScore(
+                    enrollment_id=enrollment_id,
+                    lesson_id=lesson_id,
+                    score=round(sum(ratios) / len(ratios), 2),
+                    on_slide_ratio=sum(ratios) / len(ratios) / 100,
+                )
+            )
+    return count

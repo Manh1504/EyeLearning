@@ -38,24 +38,31 @@ docker compose up -d            # postgres (5435) + backend (8001)
 cd backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt   # Windows
-copy .env.example .env                          # sửa nếu cần
+# Se dùng MỘT file env duy nhất ở gốc repo: copy .env.example .env (gốc repo)
 .venv\Scripts\python -m uvicorn app.main:app --port 8001 --reload
 ```
 
-Yêu cầu PostgreSQL đang chạy (mặc định `postgresql+asyncpg://postgres:postgres@localhost:5435/eyetracking`).
+Yêu cầu PostgreSQL đang chạy (`docker compose up -d postgres` từ gốc repo).
 
-## Cấu hình (.env)
+## Cấu hình (env — một file duy nhất ở gốc repo)
 
-| Biến | Mặc định | Ý nghĩa |
+Backend đọc mọi biến từ **`.env` ở gốc repo** (`backend/app/core/config.py` trỏ thẳng
+tới `ROOT_ENV_FILE`). Không còn giá trị mẫu nhúng trong code.
+
+| Biến | Bắt buộc | Ý nghĩa |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+asyncpg://postgres:postgres@localhost:5435/eyetracking` | Chuỗi kết nối PG (asyncpg) |
-| `JWT_SECRET` | dev | **Bắt buộc đổi ở production** |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | 60 | Hạn JWT access |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | 30 | Hạn refresh token (lưu hash trong `auth_sessions`) |
-| `CORS_ORIGINS` | `http://localhost:3000` | Phân tách bằng dấu phẩy |
-| `AI_HTTP_URL` | `http://127.0.0.1:8000` | ML service (`API/server.py`) |
-| `AI_WS_URL` | `ws://127.0.0.1:8000/infer` | WebSocket inference |
-| `GAZE_DOWNSAMPLE_HZ` | 4.0 | Downsample gaze trước khi ghi DB |
+| `DATABASE_URL` | Có | Chuỗi kết nối PG (asyncpg) khi chạy ngoài container |
+| `DATABASE_URL_DOCKER` | Có (compose) | Chuỗi kết nối DB nội bộ cho container backend |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Có (compose) | Tạo DB của service `postgres` |
+| `JWT_SECRET` | Có | **Bắt buộc đổi ở production** |
+| `JWT_ALGORITHM` | Không | Mặc định `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Không | Hạn JWT access (mặc định 60) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Không | Hạn refresh token (mặc định 30) |
+| `CORS_ORIGINS` | Có | Phân tách bằng dấu phẩy |
+| `AI_HTTP_URL` | Có | ML service (`gaze-api`) HTTP — dùng cho `/ai/health` |
+| `GAZE_DOWNSAMPLE_HZ` | Không | Downsample gaze trước khi ghi DB (mặc định 4.0) |
+| `GAZE_BATCH_MAX` | Không | Batch gaze tối đa (mặc định 2000) |
+| `DEBUG` | Không | Bật debug (mặc định `false`) |
 | `TESTING` | - | `1` = dùng NullPool (cho pytest) |
 
 ## Endpoints chính
@@ -88,13 +95,13 @@ Yêu cầu PostgreSQL đang chạy (mặc định `postgresql+asyncpg://postgres
 - `POST /api/lessons/{id}/gaze-samples` — batch `{lessonContentId, x, y, ts}`; clamp [0,1], downsample, cập nhật `gaze_slide_stats`
 
 ### Calibration
-- `POST /api/calibrations` — lưu 6 tham số kappa (khóa cũ tự deactivate)
-- `GET /api/calibrations/active?deviceFingerprint=`
+- `POST /api/calibrations` — JSON `{deviceFingerprint, numPoints, params: [a1,a2,b1,a3,a4,b2], maePx?, mappingModelVersion?, screenWidthPx?, screenHeightPx?}` — 6 tham số trả về từ `POST /calibrate/fit` của AI service; bất kỳ bản cũ nào của (user, device) tự deactivate
+- `GET /api/calibrations/active?deviceFingerprint=` — metadata bản active (`calibrated`, `maePx`, `mappingModelVersion`, `calibratedAt`)
+- `GET /api/calibrations/active/params?deviceFingerprint=` — JSON `{params: [a1,a2,b1,a3,a4,b2]}` active để client gửi vào message cấu hình của WS `/infer` (không cần calibrate lại)
 
-### Proxy ML service (`API/server.py`)
-- `POST /calibrate/point`, `POST /calibrate/fit` — forward HTTP
-- `WS /infer` — proxy WebSocket 2 chiều
-- `GET /ai/health`
+### AI service — kết nối trực tiếp
+- WebSocket `/infer` và `POST /calibrate/point`, `POST /calibrate/fit` **không còn proxy qua backend** — frontend/AI service gọi trực tiếp (`AI_HTTP_URL` của ML service).
+- `GET /ai/health` — backend probe ML service còn sống không.
 
 ## Tests
 
@@ -114,6 +121,6 @@ cd backend
 
 - **JWT access ngắn hạn + refresh token** lưu dạng SHA-256 hash trong `auth_sessions`, rotation khi refresh.
 - **RBAC**: role trong JWT + kiểm tra `user_roles`; ownership khóa học theo `courses.teacher_id`.
-- **Gaze**: tọa độ chuẩn hóa [0,1]; clamp ở application trước khi insert vào `gaze_events` (partitioned theo tháng); thống kê on-slide/view-time ghi vào `gaze_slide_stats` lúc ingest (trước clamp) để tính on-slide ratio chính xác.
-- **Heatmap**: fixation detection (dispersion) + hotspot clustering (grid 24×24 + local maxima) tính on-the-fly; `heatmap_aggregates`/`engagement_scores` tính bằng endpoint recompute (batch).
+- **Gaze**: tọa độ chuẩn hóa [0,1]; chỉ ghi event khi nằm trong [0,1] — sample "ngoài màn hình" (AI báo no_face → -1,-1) chỉ đếm vào `gaze_slide_stats` (total/on-slide) để on-slide ratio chính xác mà không nhiễu heatmap; thống kê on-slide/view-time ghi lúc ingest.
+- **Heatmap**: fixation detection (dispersion) + hotspot clustering (grid 24×24 + local maxima) tính on-the-fly từ `gaze_events`; `heatmap_aggregates`/`engagement_scores` được tự refresh gần thời gian thực sau mỗi batch gaze-sample (incremental, chỉ chạm slide của batch) + endpoint recompute (batch) để chạy lại toàn bài.
 - **camelCase**: toàn bộ response dùng alias generator `to_camel` — khớp `frontend/lib/types/domain.ts`, UI không cần sửa.

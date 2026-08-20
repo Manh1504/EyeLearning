@@ -22,12 +22,11 @@ export function useCourseOutline(courseId: string) {
   });
 }
 
-export function useLessonSlides(lessonId: string, lesson?: LessonItem) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function useLessonSlides(lessonId: string, _lesson?: LessonItem) {
   return useQuery({
     queryKey: ['student', 'lesson-slides', lessonId],
-    queryFn: () => {
-      if (!lesson) return Promise.resolve([]);
-      return fetchLessonSlides(lessonId);
-    },
+    queryFn: () => (lessonId ? fetchLessonSlides(lessonId) : Promise.resolve([])),
+    enabled: Boolean(lessonId),
   });
 }

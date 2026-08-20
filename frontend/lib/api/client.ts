@@ -115,3 +115,64 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   }
   return res.json() as Promise<T>;
 }
+
+// apiFetch dạng multipart/form-data (tự gắn Authorization, refresh 1 lần khi 401).
+// KHÔNG đặt header Content-Type — browser tự set boundary với FormData.
+export async function apiFetchMultipart<T>(
+  path: string,
+  form: FormData,
+  method: 'POST' | 'PUT' | 'PATCH' = 'POST',
+): Promise<T> {
+  const doFetch = (): Promise<Response> =>
+    fetch(buildUrl(path), {
+      method,
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      body: form,
+    });
+
+  let res = await doFetch();
+
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      res = await doFetch();
+    } else {
+      clearAuthStorage();
+    }
+  }
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const data = (await res.json()) as { detail?: string; message?: string };
+      message = data.detail ?? data.message ?? message;
+    } catch { /* body không phải JSON */ }
+    throw new ApiError(res.status, message);
+  }
+  return res.json() as Promise<T>;
+}
+
+// GET trả về Blob (file .ubj) — có Authorization + refresh 1 lần.
+export async function apiFetchBlob(
+  path: string,
+  params?: ApiRequestOptions['params'],
+): Promise<Blob> {
+  const doFetch = (): Promise<Response> =>
+    fetch(buildUrl(path, params), {
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    });
+
+  let res = await doFetch();
+
+  if (res.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      res = await doFetch();
+    } else {
+      clearAuthStorage();
+    }
+  }
+
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  return res.blob();
+}
