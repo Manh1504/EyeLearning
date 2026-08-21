@@ -22,6 +22,8 @@ import {
   patchLessonProgress,
   postGazeSamples,
 } from '@/lib/api/student';
+import { getStoredGazeSessionId } from '@/lib/api/calibration';
+import { API_BASE_URL } from '@/lib/api/client';
 
 const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
   encodeURIComponent(
@@ -33,15 +35,6 @@ const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
       `<line x1="320" y1="330" x2="480" y2="330" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>` +
       `</g></svg>`,
   );
-
-function isUnresolvableImageUrl(url: string): boolean {
-  try {
-    const hostname = new URL(url, window.location.origin).hostname;
-    return hostname === '' || !hostname.includes('.');
-  } catch {
-    return true;
-  }
-}
 
 export default function CourseLearningPage() {
   const params = useParams();
@@ -106,10 +99,13 @@ export default function CourseLearningPage() {
   // Đổi bài có ít slide hơn → quay về slide đầu (render-phase adjust).
   if (total > 0 && currentSlide > total - 1) setCurrentSlide(0);
   const currentContent = slides[currentSlide];
-  const slideImageUrl =
-    currentContent?.imageUrl && !isUnresolvableImageUrl(currentContent.imageUrl)
-      ? currentContent.imageUrl
-      : null;
+  const slideImageUrl = useMemo(() => {
+    const raw = currentContent?.imageUrl ?? null;
+    if (!raw) return null;
+    if (/^https?:\/\//.test(raw)) return raw;
+    if (raw.startsWith('/media/')) return `${API_BASE_URL}${raw}`;
+    return raw;
+  }, [currentContent]);
 
   const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
   const courseProgress = allLessons.length
@@ -136,7 +132,7 @@ export default function CourseLearningPage() {
       .then((session) => {
         if (!cancelled) {
           setLearningSessionIds((prev) => ({ ...prev, [activeLessonId]: session.id }));
-          setGazeCalibrated(session.calibrated);
+          setGazeCalibrated(Boolean(getStoredGazeSessionId()));
         }
       })
       .catch(() => {});
@@ -463,12 +459,11 @@ export default function CourseLearningPage() {
             </div>
           </div>
 
-          {/* Reader — luôn nằm gọn trong phần viewport còn lại.
-              Ảnh trang PDF giữ nguyên aspect ratio gốc, không bị ép thành 16:9. */}
-          <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-5 sm:py-4 lg:px-6">
-            <div className="relative mx-auto flex h-full min-h-0 max-w-[1280px] items-center justify-center overflow-hidden">
+          {/* Reader — 1 slide / trang, cuộn dọc để đọc hết nội dung */}
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-3 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto w-full max-w-[900px]">
               {slideImageUrl ? (
-                <span className="relative inline-block">
+                <div className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-900/10">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={slideImageUrl}
@@ -479,22 +474,20 @@ export default function CourseLearningPage() {
                       img.dataset.fallback = '1';
                       img.src = SLIDE_FALLBACK_IMAGE;
                     }}
-                    className="block h-auto max-h-full w-auto max-w-full bg-white object-contain shadow-sm ring-1 ring-slate-900/10"
+                    className="block h-auto w-full bg-white object-contain"
                   />
-                </span>
+                </div>
               ) : (
-                <div className="relative h-full max-h-full aspect-[210/297] max-w-full overflow-hidden bg-white shadow-sm ring-1 ring-slate-900/10">
-                  <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
-                      <RiImageLine className="h-5 w-5" />
-                    </div>
-                    <p className="mt-4 max-w-sm text-base font-semibold text-slate-800 sm:text-lg">
-                      {currentContent?.title ?? 'Nội dung bài học'}
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Nội dung trang PDF sẽ hiển thị tại đây.
-                    </p>
+                <div className="flex min-h-[60vh] flex-col items-center justify-center rounded-lg bg-white p-8 text-center shadow-sm ring-1 ring-slate-900/10">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
+                    <RiImageLine className="h-5 w-5" />
                   </div>
+                  <p className="mt-4 max-w-sm text-base font-semibold text-slate-800 sm:text-lg">
+                    {currentContent?.title ?? 'Nội dung bài học'}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Nội dung trang PDF sẽ hiển thị tại đây.
+                  </p>
                 </div>
               )}
             </div>

@@ -1,14 +1,13 @@
-// hooks/use-gaze-tracker.ts — Bật camera + WebSocket /infer (AI server, image
-// hieunm1501/gaze-api) để lấy điểm nhìn THẬT từ pipeline AI. Nếu chưa có params
-// calibration hoặc camera / AI service không khả dụng → rơi về điểm mô phỏng
-// để demo vẫn chạy.
+// hooks/use-gaze-tracker.ts — Bật camera + WebSocket stream (AI server, image
+// hieunm1501/gaze-api) để lấy điểm nhìn THẬT từ pipeline AI. Nếu chưa có session
+// calibration (localStorage) hoặc camera / AI service không khả dụng → rơi về
+// điểm mô phỏng để demo vẫn chạy.
 //
-// Luồng (khớp API/server.py đang chạy):
-//   1. calibrated=true → tải 6 tham số hiệu chỉnh active từ backend
-//      (GET /api/calibrations/active/params)
-//   2. mở WS /infer → message TEXT đầu tiên {"params":[6],"smooth":true} → server ack
-//   3. mỗi frame gửi binary JPEG → nhận {"ok","x","y"} chuẩn hóa hoặc
-//      {"ok": false, "error": "no_face"} → onPoint(-1, -1) để ghi "không nhìn màn".
+// Luồng (khớp server.py /session đang chạy):
+//   1. calibrated=true → đọc session id đã train từ localStorage
+//      (lưu lúc calibration), mở WS /session/{sid}/stream
+//   2. mỗi frame gửi binary JPEG → nhận {"ok","x","y"} chuẩn hóa hoặc
+//      {"ok":false,"error":"no_face"} → onPoint(-1, -1) ghi "không nhìn màn".
 //
 // onPoint(x, y): x/y hợp lệ trong [0,1] = điểm nhìn THẬT; khi "no_face" hook
 // gửi onPoint(-1, -1) để phía dưới ghi nhận "không nhìn màn" (on_slide giảm
@@ -17,7 +16,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchActiveParams } from '@/lib/api/calibration';
+import { gazeStreamUrl, getStoredGazeSessionId } from '@/lib/api/calibration';
 
 export type GazeSource = 'real' | 'simulated' | 'off';
 
@@ -31,12 +30,6 @@ export interface GazeTrackerState {
   stream: MediaStream | null;
   source: GazeSource;
 }
-
-// Nối thẳng WebSocket tới AI server (API/server.py). Luôn kết nối tới đường
-// /infer. Nếu env có ghi sẵn hậu tố /infer thì bỏ đi để khỏi trùng.
-const WS_ORIGIN = (
-  process.env.NEXT_PUBLIC_EYE_TRACKING_WS_URL?.trim() || 'ws://localhost:9000/infer'
-).replace(/\/infer\/?$/, '');
 
 const RESPONSE_TIMEOUT_MS = 5000; // quá 5s không có reply → thử lại frame sau
 const MIN_GAP_MS = 80;            // nghỉ tối thiểu sau 1 reply ok
@@ -87,13 +80,13 @@ export function useGazeTracker({
       return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.78));
     };
 
-    // Giữ 1 phiên WS: gửi text config trước, rồi binary JPEG, hồi đáp tuần tự.
+    // Giữ 1 phiên WS: gửi binary JPEG, server hồi đáp tuần tự.
     // Trả 'retry' khi WS rớt (để ngoài thử lại), 'abort' khi component disposed.
     const runWsSession = async (
       video: HTMLVideoElement,
-      params: number[],
+      url: string,
     ): Promise<'retry' | 'abort'> => {
-      const ws = new WebSocket(`${WS_ORIGIN}/infer`);
+      const ws = new WebSocket(url);
       let pendingResolve: ((event: MessageEvent | null) => void) | null = null;
       let sessionClosed = false;
 
@@ -138,23 +131,6 @@ export function useGazeTracker({
         };
 
         await wsReady;
-        if (disposed) return 'abort';
-
-        const configReply = await sendAndAwait(
-          JSON.stringify({ params, smooth: true }),
-          RESPONSE_TIMEOUT_MS,
-        );
-        pendingResolve = null;
-        if (!configReply) return 'retry';
-        try {
-          const cfg = JSON.parse(String(configReply.data)) as {
-            ok?: boolean;
-            error?: string;
-          };
-          if (!cfg.ok) return 'retry';
-        } catch {
-          return 'retry';
-        }
         if (disposed) return 'abort';
 
         let consecutiveNoFace = 0;
@@ -243,10 +219,10 @@ export function useGazeTracker({
           return;
         }
 
-        // Tải 6 tham số hiệu chỉnh đã lưu rồi gửi vào WS /infer để stream ngay.
-        const params = await fetchActiveParams();
+        // Dùng session model đã train (lưu ở bước calibration) để stream ngay.
+        const sessionId = getStoredGazeSessionId();
         if (disposed) return;
-        if (!params) {
+        if (!sessionId) {
           streamCleanup?.();
           setStream(null);
           startSimulation();
@@ -255,7 +231,7 @@ export function useGazeTracker({
 
         let attempts = 0;
         while (!disposed && attempts < MAX_RECONNECTS) {
-          const result = await runWsSession(video, params);
+          const result = await runWsSession(video, gazeStreamUrl(sessionId));
           if (result === 'abort') return;
           attempts += 1;
           if (attempts >= MAX_RECONNECTS) break;

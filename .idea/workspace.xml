@@ -4,54 +4,15 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5a410d18-b5b4-4a51-97af-185d5d2dee99" name="Changes" comment="update gan cuoi">
+    <list default="true" id="5a410d18-b5b4-4a51-97af-185d5d2dee99" name="Changes" comment="golive duoc roi day">
       <change afterPath="$PROJECT_DIR$/QWEN.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/API/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/API/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/.env.example" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/backend/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/deps.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/deps.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/analytics.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/analytics.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/calibration.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/calibration.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/courses.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/courses.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/gaze.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/gaze.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/lessons.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/lessons.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/modules.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/modules.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/api/routes/proxy.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/api/routes/proxy.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/core/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/core/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/models/calibration.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/models/calibration.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/models/course.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/models/course.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/schemas/analytics.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/schemas/analytics.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/schemas/calibration.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/schemas/calibration.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/schemas/course.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/schemas/course.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/schemas/gaze.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/schemas/gaze.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/app/services/analytics.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/services/analytics.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/tests/conftest.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/tests/conftest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/tests/test_flow.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/tests/test_flow.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/db/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/account/login-form.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/account/login-form.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/components/student/calibration.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/student/calibration.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/components/student/course-learning.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/student/course-learning.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/components/student/pre-learning-check.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/student/pre-learning-check.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/teacher/heatmap-viewer.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/teacher/heatmap-viewer.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/teacher/teacher-shell.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/teacher/teacher-shell.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/teacher/workspace/content-tab.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/teacher/workspace/content-tab.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/teacher/workspace/course-workspace.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/teacher/workspace/course-workspace.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/teacher/workspace/students-tab.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/teacher/workspace/students-tab.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/components/teacher/workspace/workspace-ui.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/components/teacher/workspace/workspace-ui.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/hooks/use-student.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/hooks/use-student.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/hooks/use-teacher.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/hooks/use-teacher.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/lib/api/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/api/auth.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/hooks/use-gaze-tracker.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/hooks/use-gaze-tracker.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/lib/api/calibration.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/api/calibration.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/lib/api/client.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/api/client.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/lib/api/student.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/api/student.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/lib/api/teacher.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/api/teacher.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/lib/types/domain.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/lib/types/domain.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/next.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/next.config.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -193,6 +154,9 @@
       <workItem from="1787233048288" duration="1633000" />
       <workItem from="1787236938666" duration="2840000" />
       <workItem from="1787240510050" duration="1809000" />
+      <workItem from="1787243667659" duration="471000" />
+      <workItem from="1787293485413" duration="5535000" />
+      <workItem from="1787314843604" duration="3196000" />
     </task>
     <task id="LOCAL-00001" summary="creat web back-end">
       <option name="closed" value="true" />
@@ -282,7 +246,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787049104619</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="golive duoc roi day">
+      <option name="closed" value="true" />
+      <created>1787243717739</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1787243717739</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -323,6 +295,7 @@
     <MESSAGE value="update nhieu quaaaaa" />
     <MESSAGE value="update truoc gio G" />
     <MESSAGE value="update gan cuoi" />
-    <option name="LAST_COMMIT_MESSAGE" value="update gan cuoi" />
+    <MESSAGE value="golive duoc roi day" />
+    <option name="LAST_COMMIT_MESSAGE" value="golive duoc roi day" />
   </component>
 </project>

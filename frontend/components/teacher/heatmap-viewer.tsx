@@ -62,7 +62,7 @@ export default function HeatmapViewer() {
   const [lessonId, setLessonId] = useState(() => String(routeParams?.lessonId ?? 'l8'));
   const [scope, setScope] = useState<Scope>(searchParams.get('student') ?? 'class');
   const [pageIdx, setPageIdx] = useState(0);
-  const [opacity, setOpacity] = useState(0.7);
+  const [opacity, setOpacity] = useState(0.88);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -185,14 +185,14 @@ export default function HeatmapViewer() {
     if (!dctx) return;
     dctx.globalCompositeOperation = 'lighter';
 
-    const pointR = Math.max(5, dw * 0.085);
+    const pointR = Math.max(6, dw * 0.11);
     for (const [x, y] of points) {
       const cx = x * dw;
       const cy = y * dh;
       const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, pointR);
-      gradient.addColorStop(0, 'rgba(255,255,255,0.55)');
-      gradient.addColorStop(0.4, 'rgba(255,255,255,0.22)');
-      gradient.addColorStop(0.75, 'rgba(255,255,255,0.08)');
+      gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
+      gradient.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+      gradient.addColorStop(0.7, 'rgba(255,255,255,0.15)');
       gradient.addColorStop(1, 'rgba(255,255,255,0)');
       dctx.fillStyle = gradient;
       dctx.beginPath();
@@ -203,10 +203,10 @@ export default function HeatmapViewer() {
     for (const hotspot of hotspots) {
       const cx = hotspot.x * dw;
       const cy = hotspot.y * dh;
-      const radius = Math.max(pointR * 2.5, hotspot.r * dw * 2.4);
+      const radius = Math.max(pointR * 3.0, hotspot.r * dw * 3.2);
       const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-      gradient.addColorStop(0, `rgba(255,255,255,${Math.min(1, hotspot.w * 1.2 + 0.25)})`);
-      gradient.addColorStop(0.45, `rgba(255,255,255,${Math.min(0.65, hotspot.w * 0.6)})`);
+      gradient.addColorStop(0, `rgba(255,255,255,${Math.min(1, hotspot.w * 1.4 + 0.35)})`);
+      gradient.addColorStop(0.4, `rgba(255,255,255,${Math.min(0.85, hotspot.w * 0.85)})`);
       gradient.addColorStop(1, 'rgba(255,255,255,0)');
       dctx.fillStyle = gradient;
       dctx.beginPath();
@@ -226,23 +226,22 @@ export default function HeatmapViewer() {
       if (data[i] > maxAlpha) maxAlpha = data[i];
     }
     if (maxAlpha < 1) return;
-    const gain = 2.6 / maxAlpha;
+    const gain = 255 / maxAlpha;
 
     for (let i = 0; i < data.length; i += 4) {
       const a = data[i + 3] / 255;
-      if (a < 0.03) {
+      if (a < 0.02) {
         data[i + 3] = 0;
         continue;
       }
 
-      // Đường cong mờ dần + sàn alpha → vùng quan sát nhiều đỏ đậm,
-      // vùng thưa vẫn còn nhìn thấy rõ.
-      const t = Math.min(1, Math.pow(a * gain * 1.6, 0.55));
+      // chuẩn hóa theo maxAlpha → vùng đậm nhất luôn lên tới đỏ (t≈1), vùng thưa vẫn thấy
+      const t = Math.min(1, Math.pow(a * gain, 0.6));
       const [r, g, b] = heatColor(t);
       data[i] = r;
       data[i + 1] = g;
       data[i + 2] = b;
-      data[i + 3] = Math.round(50 + t * 205);
+      data[i + 3] = Math.round(85 + t * 170);
     }
 
     ctx.putImageData(img, 0, 0);
@@ -530,7 +529,7 @@ export default function HeatmapViewer() {
                   )}
                   <canvas
                     ref={canvasRef}
-                    className="pointer-events-none absolute inset-0 h-full w-full mix-blend-multiply"
+                    className="pointer-events-none absolute inset-0 h-full w-full mix-blend-normal"
                     style={{ opacity }}
                   />
                 </div>

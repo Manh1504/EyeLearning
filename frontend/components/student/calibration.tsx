@@ -1,49 +1,38 @@
 'use client';
 
-// components/student/calibration.tsx — Hiệu chỉnh mắt (16 điểm, phủ kín viewport).
+// components/student/calibration.tsx — Hiệu chỉnh mắt (16 điểm, 5 mẫu/điểm).
 //
-// Luồng (khớp AI service thật — API/server.py, image hieunm1501/gaze-api):
-//   1. Hiển thị từng chấm; người dùng nhìn vào chấm → BẤM → chụp frame, gửi
-//      POST /calibrate/point (image + x, y chuẩn hóa) → server trả 1 mẫu 10 số;
-//      client TỰ tích lũy mẫu (server KHÔNG giữ mẫu, không có session).
-//      no_face/invalid_image/network_error → báo bấm lại ở cùng chấm.
-//   2. Đủ 16 mẫu → POST /calibrate/fit → 6 tham số → lưu lên backend
-//      (POST /api/calibrations, JSON) → về khóa học.
+// Luồng (khớp AI service /session — server giữ model theo session):
+//   1. Tạo session POST /session (16 điểm chuẩn hóa [0,1]) → session_id.
+//   2. Hiển thị từng chấm; người dùng nhìn vào chấm → BẤM → chụp nhiều frame gửi
+//      POST /session/{sid}/calibrate (image + point_id) — server tự gom mẫu.
+//   3. Đủ 5 mẫu × 16 điểm → POST /session/{sid}/train → model sẵn sàng.
+//   4. Lưu session_id vào localStorage để phiên học sau mở WS /session/{sid}/stream.
 //
-// Không còn mock "80 mẫu": AI service không trả lời thì báo lỗi rõ ràng.
+// no_face/invalid_image/network_error → báo bấm lại ở cùng chấm.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  fitCalibration,
-  registerCalibrationPoint,
-  saveCalibrationParams,
+  buildCalibrationPoints,
+  createGazeSession,
+  storeGazeSession,
+  submitCalibrationSample,
+  trainGazeSession,
+  type CalPoint,
 } from '@/lib/api/calibration';
 
-const GRID = 4;        // 4×4 = 16 điểm
-const MARGIN = 2;      // % cách mép/góc viewport → sát viền, phủ kín
-const POINTS = GRID * GRID;
+const SAMPLES_PER_POINT = 5;       // server yêu cầu tối thiểu MIN_SAMPLES=5/điểm
+const MAX_CAPTURES_PER_POINT = 10; // giới hạn số frame chụp lại mỗi điểm
 
-type Phase = 'calibrating' | 'sending' | 'fitting' | 'saving';
-
-interface CalPoint { x: number; y: number } // % viewport
-
-function buildViewportPoints(): CalPoint[] {
-  const pos = Array.from(
-    { length: GRID },
-    (_, i) => MARGIN + (i * (100 - 2 * MARGIN)) / (GRID - 1),
-  );
-  const pts: CalPoint[] = [];
-  for (const y of pos) for (const x of pos) pts.push({ x, y });
-  return pts;
-}
+type Phase = 'calibrating' | 'sending' | 'training';
 
 const ERROR_TEXT: Record<string, string> = {
-  no_face: 'Không phát hiện khuôn mặt — hãy nhìn thẳng vào chấm đỏ và bấm lại.',
+  no_face: 'Không phát hiện khuôn mặt — hãy nhìn thẳng vào chấm đỏ rồi bấm lại.',
   invalid_image: 'Ảnh webcam không hợp lệ — bấm lại.',
   no_camera: 'Camera không khả dụng — hãy cho phép camera rồi tải lại trang.',
-  network_error:
-    'Không kết nối được dịch vụ AI — kiểm tra container gaze-api rồi bấm lại.',
+  network_error: 'Không kết nối được dịch vụ AI — kiểm tra container gaze-api rồi bấm lại.',
+  insufficient: 'Chưa đủ mẫu cho điểm này — hãy bấm lại và giữ nhìn vào chấm.',
 };
 
 export default function Calibration() {
@@ -51,17 +40,33 @@ export default function Calibration() {
   const router = useRouter();
   const courseId = String(params?.courseId ?? 'c1');
 
-  const points = useMemo(() => buildViewportPoints(), []);
+  const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
+  const total = points.length;
+
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>('calibrating');
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Camera preview (ảnh thu nhỏ, đặt trong card mờ giữa màn hình — không chiếm đất vùng chấm).
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [camOn, setCamOn] = useState(false);
 
-  const samplesRef = useRef<number[][]>([]);
+  // Tạo session gaze ngay khi mount (server giữ mẫu theo session này).
+  useEffect(() => {
+    let cancelled = false;
+    const screenWidth = typeof window !== 'undefined' ? (window.screen?.width ?? 1280) : 1280;
+    const screenHeight = typeof window !== 'undefined' ? (window.screen?.height ?? 720) : 720;
+    createGazeSession(points, screenWidth, screenHeight)
+      .then((res) => {
+        if (!cancelled && res.ok && res.sessionId) setSessionId(res.sessionId);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [points]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,31 +109,31 @@ export default function Calibration() {
   }, [courseId, router]);
 
   const finish = useCallback(async () => {
-    setPhase('fitting');
-    const fit = await fitCalibration(samplesRef.current);
-    if (!fit.ok) {
+    if (!sessionId) return;
+    setPhase('training');
+    const trained = await trainGazeSession(sessionId);
+    if (!trained.ok) {
       setPhase('calibrating');
-      setIdx(POINTS - 1); // bấm lại điểm cuối — thêm mẫu rồi fit lại
+      setIdx(total - 1); // bấm lại điểm cuối rồi train lại
       setError(
-        fit.error === 'network_error'
-          ? 'Không kết nối được dịch vụ AI khi khớp hiệu chỉnh — bấm lại điểm cuối để thử.'
-          : 'Không khớp được bộ hiệu chỉnh — bấm lại điểm cuối để thử.',
+        trained.error === 'insufficient_samples'
+          ? ERROR_TEXT.insufficient
+          : trained.error === 'network_error'
+            ? 'Không kết nối được dịch vụ AI khi huấn luyện — bấm lại điểm cuối để thử.'
+            : 'Không huấn luyện được bộ hiệu chỉnh — bấm lại điểm cuối để thử.',
       );
       return;
     }
-    setPhase('saving');
-    const saved = await saveCalibrationParams(fit.params ?? [], POINTS, null);
-    if (!saved.ok) {
-      setPhase('calibrating');
-      setIdx(POINTS - 1);
-      setError('Lưu bộ hiệu chỉnh thất bại — bấm lại điểm cuối để thử.');
-      return;
-    }
+    storeGazeSession(sessionId);
     goToCourse();
-  }, [goToCourse]);
+  }, [sessionId, total, goToCourse]);
 
   const handleDotClick = async () => {
     if (phase !== 'calibrating') return;
+    if (!sessionId) {
+      setError('Dịch vụ AI chưa sẵn sàng — hãy thử lại sau một nhịp.');
+      return;
+    }
     setPhase('sending');
     setError(null);
     await new Promise((r) => setTimeout(r, 250)); // feedback bấm → gửi
@@ -138,23 +143,39 @@ export default function Calibration() {
       setError(ERROR_TEXT['no_camera']);
       return;
     }
-    const frame = await captureFrame();
-    if (frame === null) {
-      setPhase('calibrating');
-      setError('Camera chưa bắt được hình — bấm lại sau một nhịp.');
-      return;
-    }
 
     const point = points[idx];
-    const result = await registerCalibrationPoint(frame, point.x / 100, point.y / 100);
-    if (!result.ok) {
+    let accepted = 0;
+    let failed: string | null = null;
+
+    for (let attempt = 0; attempt < MAX_CAPTURES_PER_POINT && accepted < SAMPLES_PER_POINT; attempt++) {
+      const frame = await captureFrame();
+      if (frame === null) {
+        failed = 'no_camera';
+        break;
+      }
+      const result = await submitCalibrationSample(sessionId, frame, point.id);
+      if (result.status === 'accepted') {
+        accepted += 1;
+      } else if (result.status === 'no_face' || result.status === 'invalid_image') {
+        failed = result.status;
+        break;
+      } else {
+        failed = 'network_error';
+        break;
+      }
+      if (accepted < SAMPLES_PER_POINT) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    if (accepted < SAMPLES_PER_POINT) {
       setPhase('calibrating');
-      setError(ERROR_TEXT[result.error ?? ''] ?? 'Gửi điểm thất bại — bấm lại.');
+      setError(failed ? (ERROR_TEXT[failed] ?? 'Gửi điểm thất bại — bấm lại.') : ERROR_TEXT.insufficient);
       return;
     }
 
-    samplesRef.current.push(result.sample ?? []);
-    if (idx === POINTS - 1) {
+    if (idx === total - 1) {
       await finish();
       return;
     }
@@ -164,8 +185,8 @@ export default function Calibration() {
 
   const current = points[idx];
   const step = idx;
-  const busy = phase === 'sending' || phase === 'fitting' || phase === 'saving';
-  const progress = ((step + (phase === 'fitting' || phase === 'saving' ? 1 : 0)) / POINTS) * 100;
+  const busy = phase !== 'calibrating';
+  const progress = ((step + (phase === 'training' ? 1 : 0)) / total) * 100;
 
   return (
     <div className="relative h-dvh overflow-hidden bg-slate-100 text-slate-900 font-sans antialiased">
@@ -173,9 +194,9 @@ export default function Calibration() {
       {!busy && (
         <button
           onClick={handleDotClick}
-          aria-label={`Điểm hiệu chỉnh ${step + 1}/${POINTS}`}
+          aria-label={`Điểm hiệu chỉnh ${step + 1}/${total}`}
           className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full outline-none"
-          style={{ left: `${current.x}%`, top: `${current.y}%` }}
+          style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
         >
           <span className="absolute inset-0 rounded-full bg-rose-500/20 transition group-hover:bg-rose-500/30" />
           <span className="absolute inset-2 rounded-full bg-rose-500/40" />
@@ -190,10 +211,10 @@ export default function Calibration() {
         <div className="pointer-events-none w-full max-w-xs rounded-2xl border border-slate-200/70 bg-white/55 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
           <p className="text-sm font-bold text-slate-900">Hiệu chỉnh mắt</p>
 
-          {phase === 'fitting' || phase === 'saving' ? (
+          {phase === 'training' ? (
             <p className="mt-2 flex items-center justify-center gap-2 text-sm text-slate-600">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
-              {phase === 'fitting' ? 'Đang khớp bộ hiệu chỉnh…' : 'Đang lưu bộ hiệu chỉnh…'}
+              Đang huấn luyện bộ hiệu chỉnh…
             </p>
           ) : (
             <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
@@ -206,7 +227,7 @@ export default function Calibration() {
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/80">
               <div className="h-full rounded-full bg-cyan-600 transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <span className="shrink-0 text-xs font-semibold text-slate-600">{Math.min(step + 1, POINTS)}/{POINTS}</span>
+            <span className="shrink-0 text-xs font-semibold text-slate-600">{Math.min(step + 1, total)}/{total}</span>
           </div>
 
           {error && (

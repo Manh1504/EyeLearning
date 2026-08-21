@@ -16,10 +16,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useCourseOutline } from '@/hooks/use-student';
-import {
-  fetchActiveCalibration,
-  registerCalibrationPoint,
-} from '@/lib/api/calibration';
+import { checkFace, getStoredCalibration } from '@/lib/api/calibration';
 import { cn } from '@/lib/utils';
 
 type CameraState = 'idle' | 'checking' | 'ready' | 'error';
@@ -98,14 +95,18 @@ export default function PreLearningCheck() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchActiveCalibration().then((active) => {
+    // Đọc localStorage qua setTimeout để tránh setState đồng bộ trong effect
+    // (quy tắc react-hooks) và tránh hydration mismatch khi SSR.
+    const timer = window.setTimeout(() => {
+      const stored = getStoredCalibration();
       if (cancelled) return;
-      setIsCalibrated(Boolean(active?.calibrated));
-      setCalibratedAt(active?.calibratedAt ?? null);
-    });
+      setIsCalibrated(stored.calibrated);
+      setCalibratedAt(stored.calibratedAt);
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -219,10 +220,8 @@ export default function PreLearningCheck() {
         return;
       }
 
-      // Tái sử dụng pipeline hiện có để xác nhận khuôn mặt có thể được xử lý.
-      // Mẫu trả về chỉ dùng để kiểm tra, không lưu vào calibration (server không
-      // giữ mẫu ở /calibrate/point — client tự gom).
-      const result = await registerCalibrationPoint(frame, 0.5, 0.5);
+      // Tạo session tạm để xác nhận khuôn mặt có thể được xử lý (mẫu không dùng lại).
+      const result = await checkFace(frame);
 
       if (result.ok) {
         setFaceState('ready');
