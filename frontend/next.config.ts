@@ -1,21 +1,40 @@
 import type { NextConfig } from "next";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
-const GAZE_BASE =
-  process.env.NEXT_PUBLIC_EYE_TRACKING_HTTP_URL ?? "http://127.0.0.1:8000";
+// Khi chạy qua Cloudflare tunnel, rewrite đến backend qua localhost (internal)
+const BACKEND_INTERNAL = process.env.NEXT_PUBLIC_BACKEND_INTERNAL ?? "http://localhost:8001";
+const GAZE_INTERNAL = process.env.NEXT_PUBLIC_GAZE_INTERNAL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [
-      {
-        source: "/media/:path*",
-        destination: `${API_BASE}/media/:path*`,
-      },
-      {
-        source: "/gaze/:path*",
-        destination: `${GAZE_BASE}/:path*`,
-      },
-    ];
+    // Để các rule cụ thể (/api/teacher, /api/admin) tách riêng vào beforeFiles
+    // tránh bị Next.js 16 deduplicate mất khi chúng là tập con của /api/:path*.
+    return {
+      beforeFiles: [
+        {
+          source: "/api/teacher/:path*",
+          destination: `${BACKEND_INTERNAL}/teacher/:path*`,
+        },
+        {
+          source: "/api/admin/:path*",
+          destination: `${BACKEND_INTERNAL}/admin/:path*`,
+        },
+      ],
+      afterFiles: [
+        {
+          source: "/api/:path*",
+          destination: `${BACKEND_INTERNAL}/api/:path*`,
+        },
+        {
+          source: "/media/:path*",
+          destination: `${BACKEND_INTERNAL}/media/:path*`,
+        },
+        {
+          source: "/gaze/:path*",
+          destination: `${GAZE_INTERNAL}/:path*`,
+        },
+      ],
+      fallback: [],
+    };
   },
 };
 

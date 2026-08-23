@@ -1,6 +1,6 @@
 import httpx
 
-BASE = "http://localhost:8001"
+BASE = "server.nmhieu.online"
 c = httpx.Client(timeout=30)
 
 

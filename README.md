@@ -34,7 +34,7 @@ trung) cho giáo viên.
 docker compose up -d              # postgres (:5435) + backend (:8001)
 ```
 
-- Backend: `http://localhost:8001` — Swagger tại `http://localhost:8001/docs`
+- Backend: `server.nmhieu.online` — Swagger tại `server.nmhieu.online/docs`
 - Postgres: `localhost:5435` (user/pass/db: `postgres/postgres/eyetracking`)
 
 Service ML (`API/`, cần GPU) đang được comment trong `docker-compose.yml`; bật lên
@@ -49,7 +49,7 @@ npm install
 npm run dev                       # http://localhost:3000
 ```
 
-Frontend gọi backend qua `NEXT_PUBLIC_API_URL` (mặc định `http://localhost:8001`,
+Frontend gọi backend qua `NEXT_PUBLIC_API_URL` (mặc định `server.nmhieu.online`,
 đã set trong `frontend/.env.local`).
 
 ### Backend chạy trực tiếp (không Docker)

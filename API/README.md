@@ -96,7 +96,7 @@ y = a3·pitch + a4·yaw + b2
 Kiểm tra dịch vụ đã load xong pipeline chưa trước khi nhận request thật.
 
 ```bash
-curl http://localhost:8000/health
+curl api.nmhieu.online/health
 ```
 
 ```json
@@ -145,7 +145,7 @@ Khai báo kích thước màn hình và danh sách N điểm calibration. Server
 ```
 
 ```bash
-curl -X POST http://localhost:8000/session \
+curl -X POST api.nmhieu.online/session \
   -H "Content-Type: application/json" \
   -d '{"screen_width":1920,"screen_height":1080,"points":[{"id":"tl","x":0.125,"y":0.167},{"id":"c","x":0.5,"y":0.5}]}'
 ```
@@ -167,7 +167,7 @@ curl -X POST http://localhost:8000/session \
 Dùng để theo dõi tiến độ thu mẫu (mỗi điểm đã có bao nhiêu mẫu) và biết khi nào train/stream được.
 
 ```bash
-curl http://localhost:8000/session/6f1a2b3c-...
+curl api.nmhieu.online/session/6f1a2b3c-...
 ```
 
 ```json
@@ -191,7 +191,7 @@ curl http://localhost:8000/session/6f1a2b3c-...
 Gọi khi người dùng hủy calibration hoặc đóng trang để giải phóng slot (nhớ giới hạn 100 session).
 
 ```bash
-curl -X DELETE http://localhost:8000/session/6f1a2b3c-...
+curl -X DELETE api.nmhieu.online/session/6f1a2b3c-...
 # {"status": "deleted"}
 ```
 
@@ -207,7 +207,7 @@ Gửi **multipart/form-data** gồm 1 frame JPEG + `point_id` của điểm đan
 | `point_id` | string | `id` của điểm đã khai báo ở `/session` |
 
 ```bash
-curl -X POST http://localhost:8000/session/6f1a2b3c.../calibrate \
+curl -X POST api.nmhieu.online/session/6f1a2b3c.../calibrate \
   -F "image=@frame.jpg" \
   -F "point_id=tl"
 ```
@@ -232,7 +232,7 @@ curl -X POST http://localhost:8000/session/6f1a2b3c.../calibrate \
 Không cần body. Điều kiện: **mỗi điểm đã có ≥ 5 mẫu**. Server fit `LinearRegression` mapping `(pitch, yaw) → (x, y)` chuẩn hóa và đánh giá bằng 5-fold cross-validation.
 
 ```bash
-curl -X POST http://localhost:8000/session/6f1a2b3c.../train
+curl -X POST api.nmhieu.online/session/6f1a2b3c.../train
 ```
 
 **Thành công:**
@@ -261,7 +261,7 @@ Sau khi train thành công, `state` chuyển sang `ready` — có thể stream.
 Tải mô hình đã train về dạng file `.ubj` (ubjson + pickle) để **lưu vào DB của backend** và tái sử dụng ở lần sau, khỏi phải calibration lại.
 
 ```bash
-curl -o calibration.ubj http://localhost:8000/session/6f1a2b3c.../model
+curl -o calibration.ubj api.nmhieu.online/session/6f1a2b3c.../model
 ```
 
 - Response: `application/octet-stream`, tên file `calibration_{sid}.ubj`.
@@ -276,7 +276,7 @@ Nạp file `.ubj` đã tải từ `/model` vào session mới, **bỏ qua toàn 
 | `model` | file | File `.ubj` tải từ `GET /session/{sid}/model` |
 
 ```bash
-curl -X POST http://localhost:8000/session/6f1a2b3c.../import \
+curl -X POST api.nmhieu.online/session/6f1a2b3c.../import \
   -F "model=@calibration.ubj"
 ```
 
@@ -409,7 +409,7 @@ Ví dụ gọi tuần tự bằng Python:
 import json
 import urllib.request
 
-BASE = "http://localhost:8000"
+BASE = "api.nmhieu.online"
 
 # 1. Tạo session
 points = [

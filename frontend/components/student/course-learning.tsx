@@ -23,7 +23,7 @@ import {
   postGazeSamples,
 } from '@/lib/api/student';
 import { getStoredGazeSessionId } from '@/lib/api/calibration';
-import { API_BASE_URL } from '@/lib/api/client';
+import { resolveMediaUrl } from '@/lib/api/client';
 
 const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
   encodeURIComponent(
@@ -99,13 +99,10 @@ export default function CourseLearningPage() {
   // Đổi bài có ít slide hơn → quay về slide đầu (render-phase adjust).
   if (total > 0 && currentSlide > total - 1) setCurrentSlide(0);
   const currentContent = slides[currentSlide];
-  const slideImageUrl = useMemo(() => {
-    const raw = currentContent?.imageUrl ?? null;
-    if (!raw) return null;
-    if (/^https?:\/\//.test(raw)) return raw;
-    if (raw.startsWith('/media/')) return `${API_BASE_URL}${raw}`;
-    return raw;
-  }, [currentContent]);
+  const slideImageUrl = useMemo(
+    () => resolveMediaUrl(currentContent?.imageUrl),
+    [currentContent],
+  );
 
   const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
   const courseProgress = allLessons.length
@@ -125,8 +122,8 @@ export default function CourseLearningPage() {
       enrollmentId: enrollment.enrollmentId,
       lessonId: activeLessonId,
       deviceFingerprint: getDeviceFingerprint(),
-      screenWidthPx: window.screen?.width,
-      screenHeightPx: window.screen?.height,
+      screenWidthPx: window.innerWidth,
+      screenHeightPx: window.innerHeight,
       trackingConsent: true,
     })
       .then((session) => {

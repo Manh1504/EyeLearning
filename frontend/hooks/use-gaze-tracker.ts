@@ -6,8 +6,9 @@
 // Luồng (khớp server.py /session đang chạy):
 //   1. calibrated=true → đọc session id đã train từ localStorage
 //      (lưu lúc calibration), mở WS /session/{sid}/stream
-//   2. mỗi frame gửi binary JPEG → nhận {"ok","x","y"} chuẩn hóa hoặc
-//      {"ok":false,"error":"no_face"} → onPoint(-1, -1) ghi "không nhìn màn".
+//   2. fire-and-forget: gửi binary JPEG đều đặn 10 FPS, không chờ response;
+//      server hồi đáp bất đồng bộ {"ok","x","y"} hoặc {"ok":false,"error":"no_face"}
+//      → onPoint(-1, -1) ghi "không nhìn màn".
 //
 // onPoint(x, y): x/y hợp lệ trong [0,1] = điểm nhìn THẬT; khi "no_face" hook
 // gửi onPoint(-1, -1) để phía dưới ghi nhận "không nhìn màn" (on_slide giảm
@@ -31,10 +32,9 @@ export interface GazeTrackerState {
   source: GazeSource;
 }
 
-const RESPONSE_TIMEOUT_MS = 5000; // quá 5s không có reply → thử lại frame sau
-const MIN_GAP_MS = 80;            // nghỉ tối thiểu sau 1 reply ok
-const NO_FACE_SLOW_MS = 1000;     // backoff khi liên tục không thấy mặt
-const MAX_RECONNECTS = 5;         // tối đa lần thử mở lại WS trước khi về mô phỏng
+const FPS = 20;
+const FRAME_INTERVAL_MS = 1000 / FPS; // 100ms
+const MAX_RECONNECTS = 5;              // tối đa lần thử mở lại WS trước khi về mô phỏng
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -80,112 +80,68 @@ export function useGazeTracker({
       return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.78));
     };
 
-    // Giữ 1 phiên WS: gửi binary JPEG, server hồi đáp tuần tự.
+    // Fire-and-forget: gửi frame đều đặn 10 FPS, không chờ response.
+    // Server hồi đáp bất đồng bộ qua ws.onmessage; drop-frame nếu bận.
     // Trả 'retry' khi WS rớt (để ngoài thử lại), 'abort' khi component disposed.
     const runWsSession = async (
       video: HTMLVideoElement,
       url: string,
     ): Promise<'retry' | 'abort'> => {
-      const ws = new WebSocket(url);
-      let pendingResolve: ((event: MessageEvent | null) => void) | null = null;
-      let sessionClosed = false;
+      return new Promise<'retry' | 'abort'>((resolve) => {
+        const ws = new WebSocket(url);
+        let sendTimer = 0;
 
-      const sendAndAwait = (
-        payload: string | Blob,
-        timeoutMs: number,
-      ): Promise<MessageEvent | null> =>
-        new Promise<MessageEvent | null>((resolve) => {
-          let done = false;
-          const finish = (event: MessageEvent | null) => {
-            if (done) return;
-            done = true;
-            resolve(event);
-          };
-          pendingResolve = finish;
-          window.setTimeout(() => finish(null), timeoutMs);
-          ws.send(payload);
-        });
-
-      try {
-        const wsReady = new Promise<void>((resolve, reject) => {
-          const timeout = window.setTimeout(() => reject(new Error('ws_timeout')), 8000);
-          ws.onopen = () => {
-            window.clearTimeout(timeout);
-            resolve();
-          };
-          ws.onerror = () => {
-            window.clearTimeout(timeout);
-            reject(new Error('ws_error'));
-          };
-        });
-        ws.onclose = () => {
-          sessionClosed = true;
-          const currentResolve = pendingResolve;
-          pendingResolve = null;
-          currentResolve?.(null);
-        };
-        ws.onmessage = (event: MessageEvent) => {
-          const currentResolve = pendingResolve;
-          pendingResolve = null;
-          currentResolve?.(event);
-        };
-
-        await wsReady;
-        if (disposed) return 'abort';
-
-        let consecutiveNoFace = 0;
-
-        while (!disposed && !sessionClosed && ws.readyState === WebSocket.OPEN) {
-          const blob = await captureFrame(video);
-          if (!blob) {
-            await sleep(200);
-            continue;
+        const scheduleSend = () => {
+          if (disposed) {
+            resolve('abort');
+            return;
           }
-
-          const event = await sendAndAwait(blob, RESPONSE_TIMEOUT_MS);
-
-          if (event) {
-            try {
-              const data = JSON.parse(String(event.data)) as {
-                ok?: boolean;
-                error?: string;
-                x?: number;
-                y?: number;
-              };
-              if (data.ok && typeof data.x === 'number' && typeof data.y === 'number') {
-                consecutiveNoFace = 0;
-                onPointRef.current(data.x, data.y, 'real');
-                await sleep(MIN_GAP_MS);
-                continue;
-              }
-              if (data.error === 'no_face') {
-                consecutiveNoFace += 1;
-                onPointRef.current(-1, -1, 'real');
-                await sleep(consecutiveNoFace > 2 ? NO_FACE_SLOW_MS : 500);
-                continue;
-              }
-            } catch {
-              // ignore
+          sendTimer = window.setTimeout(async () => {
+            if (disposed || ws.readyState !== WebSocket.OPEN) return;
+            const blob = await captureFrame(video);
+            if (blob && ws.readyState === WebSocket.OPEN) {
+              ws.send(blob);
             }
-            await sleep(250);
-            continue;
+            scheduleSend();
+          }, FRAME_INTERVAL_MS);
+        };
+
+        ws.onopen = () => {
+          if (disposed) {
+            try { ws.close(); } catch { /* ignore */ }
+            return;
           }
+          scheduleSend();
+        };
 
-          // Timeout: reply thất bại/thất lạc → thử frame tiếp.
-          await sleep(250);
-        }
+        ws.onmessage = (event: MessageEvent) => {
+          try {
+            const data = JSON.parse(String(event.data)) as {
+              ok?: boolean;
+              error?: string;
+              x?: number;
+              y?: number;
+            };
+            if (data.ok && typeof data.x === 'number' && typeof data.y === 'number') {
+              onPointRef.current(data.x, data.y, 'real');
+            } else if (data.error === 'no_face') {
+              onPointRef.current(-1, -1, 'real');
+            }
+          } catch {
+            // ignore
+          }
+        };
 
-        return disposed ? 'abort' : 'retry';
-      } catch {
-        return disposed ? 'abort' : 'retry';
-      } finally {
-        pendingResolve = null;
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-      }
+        ws.onclose = () => {
+          window.clearTimeout(sendTimer);
+          resolve(disposed ? 'abort' : 'retry');
+        };
+
+        ws.onerror = () => {
+          window.clearTimeout(sendTimer);
+          if (!disposed) resolve('retry');
+        };
+      });
     };
 
     const run = async () => {

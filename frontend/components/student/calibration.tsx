@@ -56,8 +56,8 @@ export default function Calibration() {
   // Tạo session gaze ngay khi mount (server giữ mẫu theo session này).
   useEffect(() => {
     let cancelled = false;
-    const screenWidth = typeof window !== 'undefined' ? (window.screen?.width ?? 1280) : 1280;
-    const screenHeight = typeof window !== 'undefined' ? (window.screen?.height ?? 720) : 720;
+    const screenWidth = typeof window !== 'undefined' ? (window.innerWidth || 1280) : 1280;
+    const screenHeight = typeof window !== 'undefined' ? (window.innerHeight || 720) : 720;
     createGazeSession(points, screenWidth, screenHeight)
       .then((res) => {
         if (!cancelled && res.ok && res.sessionId) setSessionId(res.sessionId);
@@ -190,17 +190,18 @@ export default function Calibration() {
 
   return (
     <div className="relative h-dvh overflow-hidden bg-slate-100 text-slate-900 font-sans antialiased">
-      {/* Chấm đỏ hiện tại — chỉ 1 chấm một lúc */}
-      {!busy && (
+      {/* Chấm đỏ hiện tại — chỉ 1 chấm một lúc; ẩn khi đang training */}
+      {phase !== 'training' && (
         <button
           onClick={handleDotClick}
+          disabled={busy}
           aria-label={`Điểm hiệu chỉnh ${step + 1}/${total}`}
-          className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full outline-none"
+          className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none disabled:cursor-default"
           style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
         >
           <span className="absolute inset-0 rounded-full bg-rose-500/20 transition group-hover:bg-rose-500/30" />
-          <span className="absolute inset-2 rounded-full bg-rose-500/40" />
-          <span className="relative h-5 w-5 rounded-full border-2 border-white bg-rose-500 shadow-lg transition group-hover:scale-110" />
+          <span className={`absolute inset-2 rounded-full bg-rose-500/40 transition ${busy ? 'animate-pulse' : ''}`} />
+          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-rose-500 shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
         </button>
       )}
 

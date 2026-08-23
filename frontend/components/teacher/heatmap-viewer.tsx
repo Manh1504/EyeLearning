@@ -12,7 +12,8 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { useCourseStudents, useCourseTree, useHeatmap } from '@/hooks/use-teacher';
 import { useLessonSlides } from '@/hooks/use-student';
-import { API_BASE_URL } from '@/lib/api/client';
+import { resolveMediaUrl } from '@/lib/api/client';
+import { buildHeatLegendGradient, heatColor } from '@/lib/heatmap-colors';
 import { cn } from '@/lib/utils';
 
 type Scope = 'class' | string;
@@ -20,7 +21,10 @@ type Scope = 'class' | string;
 const SELECT_CLS =
   'h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100';
 
-const PAGE_ASPECT_RATIO = '210 / 297';
+// Heatmap vẽ theo tọa độ VIEWPORT (0,0 = góc trên-trái viewport, toàn màn hình),
+// nên canvas đại diện cả viewport 16:9; slide là ảnh con căn giữa bên trong.
+// Nhờ vậy những điểm nhìn ngoài slide vẫn được vẽ lên vùng trống quanh slide.
+const VIEWPORT_ASPECT_RATIO = '16 / 9';
 
 function formatDuration(seconds: number) {
   const mins = Math.floor(seconds / 60);
@@ -28,31 +32,14 @@ function formatDuration(seconds: number) {
   return mins > 0 ? `${mins}m${String(secs).padStart(2, '0')}s` : `${secs}s`;
 }
 
-const HEAT_STOPS: Array<[number, [number, number, number]]> = [
-  [0.0, [30, 60, 200]],
-  [0.25, [60, 180, 250]],
-  [0.5, [80, 215, 120]],
-  [0.75, [250, 210, 60]],
-  [1.0, [235, 70, 50]],
-];
-
-function heatColor(t: number): [number, number, number] {
-  if (t <= 0) return HEAT_STOPS[0][1];
-  if (t >= 1) return HEAT_STOPS[HEAT_STOPS.length - 1][1];
-  for (let i = 1; i < HEAT_STOPS.length; i++) {
-    if (t <= HEAT_STOPS[i][0]) {
-      const [t0, c0] = HEAT_STOPS[i - 1];
-      const [t1, c1] = HEAT_STOPS[i];
-      const u = (t - t0) / (t1 - t0);
-      return [
-        Math.round(c0[0] + (c1[0] - c0[0]) * u),
-        Math.round(c0[1] + (c1[1] - c0[1]) * u),
-        Math.round(c0[2] + (c1[2] - c0[2]) * u),
-      ];
-    }
-  }
-  return HEAT_STOPS[HEAT_STOPS.length - 1][1];
-}
+// Biểu diễn "vùng tập trung" (fixation clusters từ backend hotspots {x,y,r,w}):
+// vẽ từng cụm thành hình tròn rõ nét + chấm trung tâm + nhãn hạng & tỉ trọng,
+// thay cho heatmap KDE mờ loang.
+const SCATTER_RADIUS = 2;          // bán kính chấm "Điểm nhìn" (CSS px)
+const ZONE_MIN_RADIUS = 0.008;     // tối thiểu = height*factor
+const ZONE_MAX_RADIUS = 0.28;      // tối đa = height*factor (tránh nuốt cả slide)
+const CENTER_DOT_RADIUS = 0.006;   // chấm tâm = height*factor
+const ZONE_RING_WIDTH = 2;         // độ dày vòng viền (px)
 
 export default function HeatmapViewer() {
   const routeParams = useParams();
@@ -64,6 +51,7 @@ export default function HeatmapViewer() {
   const [pageIdx, setPageIdx] = useState(0);
   const [opacity, setOpacity] = useState(0.88);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showScatter, setShowScatter] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [imgFailed, setImgFailed] = useState(false);
@@ -86,14 +74,9 @@ export default function HeatmapViewer() {
   const pageCount = stats.length || slides.length || lesson.slides || 1;
   const activePageIdx = Math.min(pageCount - 1, Math.max(0, pageIdx));
   const slideImageRaw = slides[activePageIdx]?.imageUrl ?? null;
-  // Ảnh media dạng đường dẫn tương đối (/media/…) → trỏ thẳng backend,
-  // tránh phụ thuộc proxy + vấn đề ảnh không hiện khi đổi route.
-  const slideImageUrl = useMemo(() => {
-    if (!slideImageRaw) return null;
-    if (/^https?:\/\//.test(slideImageRaw)) return slideImageRaw;
-    if (slideImageRaw.startsWith('/media/')) return `${API_BASE_URL}${slideImageRaw}`;
-    return slideImageRaw;
-  }, [slideImageRaw]);
+  // Ảnh media dạng đường dẫn tương đối (/media/…) đi qua Next.js rewrite,
+  // dùng nguyên dạng để đúng phần /media mount của backend.
+  const slideImageUrl = useMemo(() => resolveMediaUrl(slideImageRaw), [slideImageRaw]);
   const current = useMemo(
     () =>
       stats[activePageIdx] ?? stats[0] ?? {
@@ -106,6 +89,7 @@ export default function HeatmapViewer() {
     [activePageIdx, stats],
   );
   const lowestOnPage = useMemo(() => [...stats].sort((a, b) => a.onSlide - b.onSlide)[0], [stats]);
+  const legendGradient = useMemo(() => buildHeatLegendGradient(260, 8), []);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -168,84 +152,81 @@ export default function HeatmapViewer() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    if (noConsent || !showHeatmap) return;
+    if (noConsent) return;
 
     const points = current.points ?? [];
-    const hotspots = current.hotspots ?? [];
 
-    // Vẽ "mật độ" ở bản nhỏ, chồng gaussian mềm bằng composite 'lighter',
-    // rồi phóng to + tô màu — tạo heatmap liên tục kiểu chuẩn.
-    const SCALE = 6;
-    const dw = Math.max(12, Math.round(width / SCALE));
-    const dh = Math.max(12, Math.round(height / SCALE));
-    const density = document.createElement('canvas');
-    density.width = dw;
-    density.height = dh;
-    const dctx = density.getContext('2d');
-    if (!dctx) return;
-    dctx.globalCompositeOperation = 'lighter';
-
-    const pointR = Math.max(6, dw * 0.11);
-    for (const [x, y] of points) {
-      const cx = x * dw;
-      const cy = y * dh;
-      const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, pointR);
-      gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
-      gradient.addColorStop(0.35, 'rgba(255,255,255,0.45)');
-      gradient.addColorStop(0.7, 'rgba(255,255,255,0.15)');
-      gradient.addColorStop(1, 'rgba(255,255,255,0)');
-      dctx.fillStyle = gradient;
-      dctx.beginPath();
-      dctx.arc(cx, cy, pointR, 0, Math.PI * 2);
-      dctx.fill();
-    }
-
-    for (const hotspot of hotspots) {
-      const cx = hotspot.x * dw;
-      const cy = hotspot.y * dh;
-      const radius = Math.max(pointR * 3.0, hotspot.r * dw * 3.2);
-      const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-      gradient.addColorStop(0, `rgba(255,255,255,${Math.min(1, hotspot.w * 1.4 + 0.35)})`);
-      gradient.addColorStop(0.4, `rgba(255,255,255,${Math.min(0.85, hotspot.w * 0.85)})`);
-      gradient.addColorStop(1, 'rgba(255,255,255,0)');
-      dctx.fillStyle = gradient;
-      dctx.beginPath();
-      dctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      dctx.fill();
-    }
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(density, 0, 0, dw, dh, 0, 0, width, height);
-
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = img.data;
-
-    let maxAlpha = 0;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] > maxAlpha) maxAlpha = data[i];
-    }
-    if (maxAlpha < 1) return;
-    const gain = 255 / maxAlpha;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const a = data[i + 3] / 255;
-      if (a < 0.02) {
-        data[i + 3] = 0;
-        continue;
+    // Chế độ "Điểm nhìn": vẽ scatter gaze thô (không đổi theo độ đậm heatmap).
+    if (showScatter) {
+      ctx.save();
+      ctx.fillStyle = `rgba(30, 30, 60, ${0.5 + (1 - opacity) * 0.3})`;
+      for (const [x, y] of points) {
+        ctx.beginPath();
+        ctx.arc(x * width, y * height, SCATTER_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
       }
-
-      // chuẩn hóa theo maxAlpha → vùng đậm nhất luôn lên tới đỏ (t≈1), vùng thưa vẫn thấy
-      const t = Math.min(1, Math.pow(a * gain, 0.6));
-      const [r, g, b] = heatColor(t);
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = Math.round(85 + t * 170);
+      ctx.restore();
     }
 
-    ctx.putImageData(img, 0, 0);
-  }, [current, noConsent, opacity, showHeatmap, stageSize]);
+    if (!showHeatmap) return;
+
+    // ---- "Vùng tập trung": vẽ từng fixation cluster rõ nét (không loang) ----
+    const hotspots = current.hotspots ?? [];
+    ctx.save();
+    ctx.globalAlpha = opacity; // opacity hiện vẫn dùng chung cho các vùng
+
+    const minZone = Math.max(4, height * ZONE_MIN_RADIUS);
+    const maxZone = Math.max(minZone, height * ZONE_MAX_RADIUS);
+
+    hotspots.forEach((h, i) => {
+      const cx = h.x * width;
+      const cy = h.y * height;
+      const radius = Math.min(maxZone, Math.max(minZone, h.r * height));
+      const t = Math.min(1, Math.max(0, h.w));
+      const [r, g, b] = heatColor(t);
+      const color = `rgb(${r},${g},${b})`;
+
+      // Vùng mờ nhẹ trong vòng giới hạn, alpha theo tỉ trọng.
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      glow.addColorStop(0, `rgba(${r},${g},${b},${0.28 + t * 0.32})`);
+      glow.addColorStop(0.7, `rgba(${r},${g},${b},${0.06 + t * 0.1})`);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Vòng viền sắc nét xác định run rõ biên vùng.
+      ctx.strokeStyle = color;
+      ctx.lineWidth = ZONE_RING_WIDTH;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Chấm trung tâm: vị trí chính xác người dùng nhắm vào.
+      const dotR = Math.max(2, height * CENTER_DOT_RADIUS);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Nhãn: "#hạng · %" đặt lệch khỏi tâm (trên-giữa), có halo trắng dễ đọc.
+      const label = `#${i + 1} ${Math.round(t * 100)}%`;
+      const fontSize = Math.max(11, Math.round(height * 0.02));
+      ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      const lx = cx;
+      const ly = cy - dotR - radius * 0.16;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.strokeText(label, lx, ly);
+      ctx.fillStyle = 'rgba(20,24,40,0.92)';
+      ctx.fillText(label, lx, ly);
+    });
+
+    ctx.restore();
+  }, [current, noConsent, opacity, showHeatmap, showScatter, stageSize]);
 
   const Controls = (
     <div className="flex h-full flex-col">
@@ -357,7 +338,7 @@ export default function HeatmapViewer() {
           <p className="text-xs font-medium text-slate-500">Hiển thị</p>
           <div className="mt-2 space-y-2">
             <label className="flex items-center justify-between gap-3 text-sm text-slate-700">
-              <span>Heatmap</span>
+              <span>Vùng tập trung</span>
               <input
                 type="checkbox"
                 checked={showHeatmap}
@@ -365,9 +346,14 @@ export default function HeatmapViewer() {
                 className="h-4 w-4 accent-cyan-700"
               />
             </label>
-            <label className="flex items-center justify-between gap-3 text-sm text-slate-400">
+            <label className="flex items-center justify-between gap-3 text-sm text-slate-700">
               <span>Điểm nhìn</span>
-              <input type="checkbox" disabled className="h-4 w-4" />
+              <input
+                type="checkbox"
+                checked={showScatter}
+                onChange={(event) => setShowScatter(event.target.checked)}
+                className="h-4 w-4 accent-cyan-700"
+              />
             </label>
           </div>
 
@@ -380,7 +366,7 @@ export default function HeatmapViewer() {
               step={0.05}
               value={opacity}
               onChange={(event) => setOpacity(Number(event.target.value))}
-              disabled={!showHeatmap}
+              disabled={!showHeatmap && !showScatter}
               className="mt-2 w-full accent-cyan-700 disabled:opacity-40"
             />
           </label>
@@ -405,6 +391,10 @@ export default function HeatmapViewer() {
               <dt className="text-slate-500">Tỷ lệ gaze trên trang</dt>
               <dd className="font-medium tabular-nums text-slate-800">{current.onSlide}%</dd>
             </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500">Vùng tập trung</dt>
+              <dd className="font-medium tabular-nums text-slate-800">{(current.hotspots ?? []).length}</dd>
+            </div>
           </dl>
         </section>
 
@@ -424,8 +414,13 @@ export default function HeatmapViewer() {
 
         {showHeatmap && (
           <section className="pt-1">
-            <p className="text-xs font-medium text-slate-500">Mật độ quan sát</p>
-            <div className="mt-2 h-2 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 via-yellow-300 to-red-500" />
+            <p className="text-xs font-medium text-slate-500">Mức tập trung</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={legendGradient}
+              alt="Thang màu mức tập trung"
+              className="mt-2 h-2 w-full rounded-full object-cover"
+            />
             <div className="mt-1 flex justify-between text-[11px] text-slate-400">
               <span>Thấp</span>
               <span>Cao</span>
@@ -505,9 +500,9 @@ export default function HeatmapViewer() {
               <div className="flex h-full w-full flex-col items-center justify-center gap-3">
                 <div
                   ref={stageRef}
-                  className="relative h-full w-auto max-h-full max-w-full overflow-hidden rounded-lg border border-border bg-white shadow-sm"
+                  className="relative h-full w-auto max-h-full max-w-full overflow-hidden rounded-lg border border-border bg-slate-100 shadow-sm"
                   style={{
-                    aspectRatio: PAGE_ASPECT_RATIO,
+                    aspectRatio: VIEWPORT_ASPECT_RATIO,
                   }}
                 >
                   {slideImageUrl && !imgFailed ? (
@@ -518,7 +513,7 @@ export default function HeatmapViewer() {
                       alt={slides[activePageIdx]?.title ?? `Trang ${activePageIdx + 1}`}
                       onLoad={() => setImgFailed(false)}
                       onError={() => setImgFailed(true)}
-                      className="absolute inset-0 h-full w-full bg-white object-contain"
+                      className="absolute inset-0 h-full w-full object-contain"
                     />
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-white px-[8%] text-center">

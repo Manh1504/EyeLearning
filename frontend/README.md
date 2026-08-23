@@ -32,7 +32,7 @@ app/providers.tsx     # QueryClientProvider
 
 ## Nối backend (FastAPI) khi sẵn sàng
 
-1. Copy `.env.example` → `.env.local`, đặt `NEXT_PUBLIC_API_URL` (mặc định `http://localhost:8000`).
+1. Copy `.env.example` → `.env.local`, đặt `NEXT_PUBLIC_API_URL` (mặc định `api.nmhieu.online`).
 2. Sửa thân hàm trong `lib/api/*.ts` (đang trả mock từ `lib/mock/*`) sang `apiFetch(...)` với endpoint tương ứng — **giữ nguyên chữ ký hàm và type** để UI không phải đổi.
 3. Type trong `lib/types/domain.ts` là contract duy nhất, bám theo `db/migrations/*.sql`.
 

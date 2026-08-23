@@ -1,10 +1,32 @@
 // lib/api/client.ts — Fetch wrapper cho backend.
-//   - Đặt NEXT_PUBLIC_API_URL trong .env.local (mặc định http://localhost:8001)
+//   - Gọi /api/* (relative) — Next.js rewrite -> backend
 //   - Tự gắn Authorization header từ localStorage (khóa 'auth_token')
 //   - Khi access token hết hạn (401) → tự refresh bằng refresh token rồi retry 1 lần
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001';
+function normalizeApiUrl(url: string): string {
+  // Nếu đã là relative path (bắt đầu với /) thì giữ nguyên
+  if (url.startsWith('/')) return url;
+  // Nếu đã có protocol thì giữ nguyên
+  if (url.startsWith('http')) return url;
+  // Không thì thêm https://
+  return `https://${url}`;
+}
+
+export const API_BASE_URL = normalizeApiUrl(
+  process.env.NEXT_PUBLIC_API_URL ?? 'server.nmhieu.online'
+);
+
+// Resolve đường dẫn file media (ảnh slide render từ PDF) về URL có thể dùng cho <img>.
+// - URL tuyệt đối http(s): giữ nguyên.
+// - Đường dẫn tương đối bắt đầu bằng "/" (vd /media/...): đi qua Next.js rewrite (/media/:path*)
+//   nên dùng nguyên dạng, không ghép API_BASE_URL.
+// - Các dạng khác: ghép API_BASE_URL.
+export function resolveMediaUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (/^https?:\/\//.test(raw)) return raw;
+  if (raw.startsWith('/')) return raw;
+  return `${API_BASE_URL}${raw}`;
+}
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_KEY = 'refresh_token';
@@ -28,13 +50,17 @@ export interface ApiRequestOptions {
 }
 
 function buildUrl(path: string, params?: ApiRequestOptions['params']) {
-  const url = new URL(path, API_BASE_URL);
+  // Use relative path for API calls — Next.js rewrite sẽ handle
+  let url = path;
   if (params) {
+    const searchParams = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined) url.searchParams.set(k, String(v));
+      if (v !== undefined) searchParams.set(k, String(v));
     }
+    const queryString = searchParams.toString();
+    url = queryString ? `${path}?${queryString}` : path;
   }
-  return url.toString();
+  return url;
 }
 
 function getToken(): string | null {
@@ -52,7 +78,7 @@ async function tryRefresh(): Promise<boolean> {
   const refreshToken = globalThis.localStorage?.getItem(REFRESH_KEY) ?? null;
   if (!refreshToken) return false;
   try {
-    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    const res = await fetch(`/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
