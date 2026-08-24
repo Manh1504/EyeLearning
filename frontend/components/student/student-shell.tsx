@@ -6,6 +6,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { type ReactNode } from 'react';
+import { BrandLogo } from '@/components/ui/brand-logo';
 import { Icon } from '@/components/ui/icon';
 import { UserMenu } from '@/components/ui/user-menu';
 import { useMyProfile } from '@/hooks/use-profile';
@@ -30,11 +31,9 @@ export function StudentShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-6">
-          <Link href="/student/my-courses" className="flex items-center gap-2 font-bold text-slate-900">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-cyan-800 text-white">
-              <Icon name="ri-eye-line" className="h-4 w-4" />
-            </div>
-            <span className="hidden sm:inline">Gaze<span className="text-cyan-700">Edu</span></span>
+          <Link href="/student/my-courses" className="flex h-10 items-center" aria-label="GazeEdu">
+            <BrandLogo variant="icon" className="h-8 sm:hidden" priority />
+            <BrandLogo variant="light" className="hidden h-8 sm:block" priority />
           </Link>
 
           <nav className="flex items-center gap-1">
@@ -45,7 +44,7 @@ export function StudentShell({ children }: { children: ReactNode }) {
                   key={n.href}
                   href={n.href}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    active ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-100'
+                    active ? 'bg-accent text-primary' : 'text-slate-600 hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary focus-visible:ring-3 focus-visible:ring-ring/20'
                   }`}
                 >
                   <Icon name={n.icon} className="h-4 w-4" />
@@ -59,6 +58,7 @@ export function StudentShell({ children }: { children: ReactNode }) {
             <UserMenu
               name={name}
               initials={initials}
+              avatarUrl={profile?.avatarUrl}
               profileHref="/student/profile"
               roleLabel="Học sinh"
             />

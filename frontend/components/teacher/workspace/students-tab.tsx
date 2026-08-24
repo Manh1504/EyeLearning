@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { Card, ConfirmDialog, EmptyState, PrimaryBtn } from './workspace-ui';
+import { Input } from '@/components/ui/input';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { Card, ConfirmDialog, EmptyState } from './workspace-ui';
 import { useCourseStudents, useCourseTree } from '@/hooks/use-teacher';
 import {
   addCourseStudents,
@@ -16,6 +19,7 @@ import {
 } from '@/lib/api/teacher';
 import { ENROLL_LABEL } from '@/lib/mock/teacher';
 import type { EnrollStatus, StudentRow } from '@/lib/types/domain';
+import { cn } from '@/lib/utils';
 
 type StatusFilter = 'all' | EnrollStatus;
 type SortMode = 'recent' | 'progress' | 'name';
@@ -40,71 +44,57 @@ function relativeMinutes(value: string) {
 }
 
 function statusClasses(status: EnrollStatus) {
-  if (status === 'completed') return 'bg-cyan-50 text-cyan-700';
-  if (status === 'dropped') return 'bg-slate-100 text-slate-500';
-  return 'bg-slate-100 text-slate-600';
+  if (status === 'completed') return 'bg-emerald-50 text-emerald-700';
+  if (status === 'dropped') return 'bg-muted text-muted-foreground';
+  return 'bg-accent text-primary';
 }
 
-function ProgressBar({ value, className = '' }: { value: number; className?: string }) {
+function activityText(value: string | null | undefined) {
+  const clean = value?.trim();
+  return clean ? clean : '—';
+}
+
+function ProgressBar({ value, label, className = '' }: { value: number; label: string; className?: string }) {
+  const normalized = Math.max(0, Math.min(100, value));
+
   return (
-    <div className={`h-1.5 overflow-hidden rounded-full bg-slate-100 ${className}`}>
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={normalized}
+      className={`h-1.5 overflow-hidden rounded-full bg-muted ${className}`}
+    >
       <div
-        className="h-full rounded-full bg-cyan-600 transition-[width]"
-        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+        className="h-full rounded-full bg-brand-cyan transition-[width]"
+        style={{ width: `${normalized}%` }}
       />
     </div>
   );
 }
 
-function StudentActions({
+function RemoveStudentButton({
   student,
-  onOpen,
   onRemove,
+  canManage,
 }: {
   student: StudentRow;
-  onOpen: () => void;
   onRemove: () => void;
+  canManage: boolean;
 }) {
+  if (!canManage || student.status === 'dropped') return null;
+
   return (
-    <details className="relative" onClick={(event) => event.stopPropagation()}>
-      <summary
-        aria-label={`Thao tác với ${student.name}`}
-        className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-lg leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden"
-      >
-        ⋯
-      </summary>
-
-      <div className="absolute right-0 top-9 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.currentTarget.closest('details')?.removeAttribute('open');
-            onOpen();
-          }}
-          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-        >
-          <Icon name="ri-eye-line" className="text-base text-slate-400" />
-          Xem chi tiết
-        </button>
-
-        {student.status !== 'dropped' && (
-          <>
-            <div className="mx-3 my-1 border-t border-slate-100" />
-            <button
-              type="button"
-              onClick={(event) => {
-                event.currentTarget.closest('details')?.removeAttribute('open');
-                onRemove();
-              }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-rose-600 transition hover:bg-rose-50"
-            >
-              <Icon name="ri-delete-bin-line" className="text-base" />
-              Gỡ khỏi khóa học
-            </button>
-          </>
-        )}
-      </div>
-    </details>
+    <button
+      type="button"
+      title="Gỡ khỏi khóa học"
+      aria-label={`Gỡ ${student.name} khỏi khóa học`}
+      onClick={() => onRemove()}
+      className="flex size-10 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-destructive/20"
+    >
+      <Icon name="ri-delete-bin-line" className="text-base" aria-hidden />
+    </button>
   );
 }
 
@@ -121,14 +111,28 @@ export function StudentsTab({
   const courseId = String(params?.courseId ?? 'c1');
   const queryClient = useQueryClient();
 
-  const { data: studentsData = [] } = useCourseStudents(isNew ? '' : courseId);
+  const {
+    data: studentsData = [],
+    isLoading: studentsLoading,
+    isError: studentsError,
+    error: studentsErrorValue,
+    isFetched: studentsFetched,
+  } = useCourseStudents(isNew ? '' : courseId);
   const { data: tree = [] } = useCourseTree(isNew ? '' : courseId);
-  const { data: directory = [] } = useQuery({
+  const {
+    data: directory = [],
+    isLoading: directoryLoading,
+    isError: directoryError,
+  } = useQuery({
     queryKey: ['teacher', 'student-directory'],
     queryFn: () => fetchStudentDirectory(),
   });
 
-  const [students, setStudents] = useState<StudentRow[]>([]);
+  const [studentsState, setStudentsState] = useState<{
+    source: StudentRow[] | null;
+    rows: StudentRow[];
+  }>({ source: null, rows: [] });
+  const students = studentsState.rows;
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -139,13 +143,11 @@ export function StudentsTab({
   const [addQuery, setAddQuery] = useState('');
   const [justAdded, setJustAdded] = useState<string[]>([]);
   const [addError, setAddError] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
 
-  // Hiện thực danh sách học viên từ backend một lần khi tải xong.
+  // Đồng bộ danh sách khi query trả dữ liệu mới, bao gồm avatar/profile vừa cập nhật.
   // Điều chỉnh state ngay trong render (pattern «adjusting state when props change»).
-  if (!isNew && !hydrated && studentsData.length > 0) {
-    setHydrated(true);
-    setStudents(studentsData);
+  if (!isNew && studentsFetched && studentsState.source !== studentsData) {
+    setStudentsState({ source: studentsData, rows: studentsData });
   }
 
   const rows = useMemo(() => {
@@ -172,6 +174,11 @@ export function StudentsTab({
 
   const activeCount = students.filter((student) => student.status === 'active').length;
   const completedCount = students.filter((student) => student.status === 'completed').length;
+  const hasActiveSearch = query.trim().length > 0 || statusFilter !== 'all';
+  const resetFilters = () => {
+    setQuery('');
+    setStatusFilter('all');
+  };
 
   const lessonTitle = (id: string) =>
     tree.flatMap((module) => module.lessons).find((lesson) => lesson.id === id)?.title ?? id;
@@ -196,20 +203,23 @@ export function StudentsTab({
         queryClient.invalidateQueries({ queryKey: ['teacher', 'course-students', courseId] });
         queryClient.invalidateQueries({ queryKey: ['teacher', 'courses'] });
       }
-      setStudents((prev) => [
+      setStudentsState((prev) => ({
         ...prev,
-        {
-          id: candidate.id,
-          name: candidate.name,
-          code: candidate.code,
-          color: candidate.color,
-          progress: 0,
-          attention: null,
-          lastActive: 'Vừa thêm',
-          status: 'active',
-          lessons: [],
-        },
-      ]);
+        rows: [
+          ...prev.rows,
+          {
+            id: candidate.id,
+            name: candidate.name,
+            code: candidate.code,
+            color: candidate.color,
+            progress: 0,
+            attention: null,
+            lastActive: 'Vừa thêm',
+            status: 'active',
+            lessons: [],
+          },
+        ],
+      }));
       setJustAdded((prev) => [...prev, candidate.id]);
     } catch (error) {
       setAddError(error instanceof Error ? error.message : 'Không thêm được học viên');
@@ -218,7 +228,10 @@ export function StudentsTab({
 
   // Xóa mềm: enrollments.status = 'dropped' (giữ lịch sử học)
   const removeStudent = async (id: string) => {
-    setStudents((prev) => prev.filter((student) => student.id !== id));
+    setStudentsState((prev) => ({
+      ...prev,
+      rows: prev.rows.filter((student) => student.id !== id),
+    }));
     if (openId === id) setOpenId(null);
     if (isNew) return;
     try {
@@ -244,10 +257,10 @@ export function StudentsTab({
           </div>
 
           {canManage && (
-            <PrimaryBtn onClick={() => setShowAdd(true)} className="flex items-center justify-center gap-2">
+            <Button onClick={() => setShowAdd(true)} className="gap-2">
               <Icon name="ri-user-add-line" className="text-base" />
               Thêm học viên
-            </PrimaryBtn>
+            </Button>
           )}
         </div>
       )}
@@ -267,54 +280,76 @@ export function StudentsTab({
         </div>
       )}
 
-      <Card className={embed ? 'overflow-visible border-0 shadow-none' : 'mt-5 overflow-visible'}>
+      <Card className={embed ? 'overflow-visible rounded-xl border border-border bg-card shadow-none' : 'mt-5 overflow-visible rounded-xl border border-border bg-card shadow-none'}>
         {embed && (
-          <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-5">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">Học viên</h3>
-              <p className="mt-0.5 text-xs text-slate-500">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-slate-950">Học viên</h3>
+              <p className="mt-1 text-sm text-slate-500">
                 {students.length === 0
                   ? 'Chưa có học viên nào trong khóa học.'
-                  : `${activeCount} đang học · ${completedCount} hoàn thành`}
+                  : `${students.length} học viên đang tham gia khóa học · ${activeCount} đang học · ${completedCount} hoàn thành`}
               </p>
             </div>
             {canManage && (
-            <PrimaryBtn onClick={() => setShowAdd(true)} className="flex items-center justify-center gap-2">
-              <Icon name="ri-user-add-line" className="text-base" />
-              Thêm học viên
-            </PrimaryBtn>
+              <Button onClick={() => setShowAdd(true)} className="w-full gap-2 sm:w-auto">
+                <Icon name="ri-user-add-line" className="text-base" />
+                Thêm học viên
+              </Button>
           )}
         </div>
       )}
 
-        {students.length === 0 ? (
+        {studentsLoading ? (
+          <div aria-live="polite" aria-busy="true" className="grid gap-2 px-4 py-5 sm:px-5">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3">
+                <div className="h-9 w-9 rounded-full bg-muted" />
+                <div className="min-w-0 flex-1">
+                  <div className="h-4 w-40 max-w-full rounded bg-muted" />
+                  <div className="mt-2 h-3 w-24 rounded bg-muted" />
+                </div>
+                <div className="hidden h-4 w-24 rounded bg-muted sm:block" />
+              </div>
+            ))}
+          </div>
+        ) : studentsError ? (
+          <EmptyState
+            className="py-16"
+            icon={<Icon name="ri-error-warning-line" className="text-2xl text-rose-500" />}
+            title="Không tải được danh sách học viên"
+            desc={studentsErrorValue instanceof Error ? studentsErrorValue.message : 'Vui lòng thử lại sau.'}
+          />
+        ) : students.length === 0 ? (
           <EmptyState
             className="py-16"
             icon={<Icon name="ri-group-line" className="text-2xl text-slate-400" />}
             title="Chưa có học viên"
-            desc="Thêm học viên vào khóa học để bắt đầu theo dõi tiến độ."
+            desc={canManage ? 'Thêm học viên vào khóa học để bắt đầu theo dõi tiến độ.' : 'Bạn chưa có quyền quản lý danh sách học viên của khóa học này.'}
           >
             {canManage && (
-              <PrimaryBtn onClick={() => setShowAdd(true)} className="mt-4 flex items-center gap-2">
+              <Button onClick={() => setShowAdd(true)} className="mt-4 gap-2">
                 <Icon name="ri-user-add-line" />
                 Thêm học viên
-              </PrimaryBtn>
+              </Button>
             )}
           </EmptyState>
         ) : (
           <>
             {/* Search + filter + sort */}
-            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-3 border-b border-border bg-card px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="relative w-full lg:max-w-sm">
+                <label htmlFor="student-search" className="sr-only">Tìm học viên</label>
                 <Icon
                   name="ri-search-line"
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
                 />
-                <input
+                <Input
+                  id="student-search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Tìm theo tên hoặc mã sinh viên"
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                  className="pl-9 pr-3"
                 />
               </div>
 
@@ -326,7 +361,7 @@ export function StudentsTab({
                   id="student-status-filter"
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                  className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition hover:border-ring/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
                 >
                   <option value="all">Tất cả trạng thái</option>
                   <option value="active">Đang học</option>
@@ -341,50 +376,65 @@ export function StudentsTab({
                   id="student-sort"
                   value={sortMode}
                   onChange={(event) => setSortMode(event.target.value as SortMode)}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                  className="h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition hover:border-ring/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
                 >
                   <option value="recent">Hoạt động gần nhất</option>
                   <option value="progress">Tiến độ cao → thấp</option>
                   <option value="name">Tên A → Z</option>
                 </select>
+                {hasActiveSearch && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className={cn(buttonVariants({ variant: 'outline', size: 'default' }), 'col-span-2 sm:col-span-1')}
+                  >
+                    Xóa lọc
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Desktop table */}
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[680px] text-sm">
+              <table className="w-full min-w-[680px] text-sm text-foreground">
                 <thead>
-                  <tr className="border-b border-slate-100 text-left text-xs font-medium text-slate-400">
-                    <th className="px-5 py-3 font-medium">Học viên</th>
-                    <th className="px-4 py-3 font-medium">Trạng thái</th>
-                    <th className="px-4 py-3 font-medium">Tiến độ</th>
-                    <th className="px-4 py-3 font-medium">Hoạt động gần nhất</th>
-                    <th className="w-12 px-4 py-3" />
+                  <tr className="border-b border-border bg-muted/60 text-left text-sm font-semibold text-muted-foreground">
+                    <th className="px-5 py-3 font-semibold">Học viên</th>
+                    <th className="px-4 py-3 font-semibold">Trạng thái</th>
+                    <th className="px-4 py-3 font-semibold">Tiến độ</th>
+                    <th className="px-4 py-3 font-semibold">Hoạt động gần nhất</th>
+                    <th className="w-[220px] px-4 py-3 text-center font-semibold">Hành động</th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-400">
-                        Không tìm thấy học viên phù hợp.
+                      <td colSpan={5} className="px-5 py-12 text-center">
+                        <p className="text-sm font-medium text-foreground">Không tìm thấy học viên phù hợp</p>
+                        {hasActiveSearch && (
+                          <button
+                            type="button"
+                            onClick={resetFilters}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}
+                          >
+                            Xóa từ khóa và bộ lọc
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ) : (
                     rows.map((student) => (
                       <tr
                         key={student.id}
-                        onClick={() => setOpenId(student.id)}
-                        className="group cursor-pointer transition hover:bg-slate-50/80"
+                        className="group transition hover:bg-muted/30"
                       >
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                              {initials(student.name)}
-                            </div>
+                            <UserAvatar src={student.avatarUrl} name={student.name} className="h-9 w-9" />
                             <div className="min-w-0">
-                              <p className="truncate font-medium text-slate-900">{student.name}</p>
-                              <p className="mt-0.5 text-xs text-slate-400">{student.code}</p>
+                              <p className="truncate text-base font-semibold text-foreground">{student.name}</p>
+                              <p className="mt-0.5 text-sm font-normal text-muted-foreground">{student.code}</p>
                             </div>
                           </div>
                         </td>
@@ -399,21 +449,30 @@ export function StudentsTab({
 
                         <td className="px-4 py-3">
                           <div className="flex min-w-[138px] items-center gap-2.5">
-                            <ProgressBar value={student.progress} className="w-24" />
-                            <span className="w-9 text-right text-xs font-medium tabular-nums text-slate-500">
+                            <ProgressBar value={student.progress} label={`Tiến độ của ${student.name}`} className="w-24" />
+                            <span className="w-9 text-right text-sm font-normal tabular-nums text-muted-foreground">
                               {student.progress}%
                             </span>
                           </div>
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-slate-500">{student.lastActive}</td>
+                        <td className="px-4 py-3 text-sm font-normal text-muted-foreground">{activityText(student.lastActive)}</td>
 
-                        <td className="px-4 py-3 text-right">
-                          <StudentActions
-                            student={student}
-                            onOpen={() => setOpenId(student.id)}
-                            onRemove={() => setStudentToRemove(student)}
-                          />
+                        <td className="w-[220px] px-4 py-3 text-center">
+                          <div className="inline-flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setOpenId(student.id)}
+                              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'min-w-[104px]')}
+                            >
+                              Xem tiến độ
+                            </button>
+                            <RemoveStudentButton
+                              student={student}
+                              canManage={canManage}
+                              onRemove={() => setStudentToRemove(student)}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -423,32 +482,38 @@ export function StudentsTab({
             </div>
 
             {/* Mobile list */}
-            <div className="divide-y divide-slate-100 md:hidden">
+            <div className="divide-y divide-border md:hidden">
               {rows.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-slate-400">
-                  Không tìm thấy học viên phù hợp.
+                <div className="px-4 py-12 text-center">
+                  <p className="text-sm font-medium text-foreground">Không tìm thấy học viên phù hợp</p>
+                  {hasActiveSearch && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3')}
+                    >
+                      Xóa từ khóa và bộ lọc
+                    </button>
+                  )}
                 </div>
               ) : (
                 rows.map((student) => (
                   <article
                     key={student.id}
-                    onClick={() => setOpenId(student.id)}
-                    className="cursor-pointer px-4 py-4 transition active:bg-slate-50"
+                    className="px-4 py-4 transition active:bg-muted/50"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                        {initials(student.name)}
-                      </div>
+                      <UserAvatar src={student.avatarUrl} name={student.name} className="h-10 w-10" />
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{student.name}</p>
-                            <p className="mt-0.5 text-xs text-slate-400">{student.code}</p>
+                            <p className="truncate text-base font-semibold text-foreground">{student.name}</p>
+                            <p className="mt-0.5 text-sm font-normal text-muted-foreground">{student.code}</p>
                           </div>
-                          <StudentActions
+                          <RemoveStudentButton
                             student={student}
-                            onOpen={() => setOpenId(student.id)}
+                            canManage={canManage}
                             onRemove={() => setStudentToRemove(student)}
                           />
                         </div>
@@ -459,17 +524,24 @@ export function StudentsTab({
                           >
                             {student.status === 'dropped' ? 'Đã gỡ' : ENROLL_LABEL[student.status]}
                           </span>
-                          <span className="text-xs text-slate-400">{student.lastActive}</span>
+                          <span className="text-sm text-muted-foreground">{activityText(student.lastActive)}</span>
                         </div>
 
                         <div className="mt-3">
                           <div className="mb-1.5 flex items-center justify-between text-xs">
-                            <span className="text-slate-400">Tiến độ</span>
-                            <span className="font-medium tabular-nums text-slate-600">{student.progress}%</span>
+                            <span className="text-muted-foreground">Tiến độ</span>
+                            <span className="font-medium tabular-nums text-foreground">{student.progress}%</span>
                           </div>
-                          <ProgressBar value={student.progress} />
+                          <ProgressBar value={student.progress} label={`Tiến độ của ${student.name}`} />
                         </div>
 
+                        <button
+                          type="button"
+                          onClick={() => setOpenId(student.id)}
+                          className={cn(buttonVariants({ variant: 'outline', size: 'default' }), 'mt-3 w-full')}
+                        >
+                          Xem tiến độ
+                        </button>
                       </div>
                     </div>
                   </article>
@@ -482,7 +554,7 @@ export function StudentsTab({
 
       <ConfirmDialog
         open={studentToRemove !== null}
-        title="Gỡ học viên khỏi khóa học?"
+        title={studentToRemove ? `Gỡ ${studentToRemove.name} khỏi khóa học?` : 'Gỡ học viên khỏi khóa học?'}
         description={
           studentToRemove ? (
             <>
@@ -511,8 +583,8 @@ export function StudentsTab({
           <section className="relative flex max-h-[min(680px,calc(100dvh-32px))] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
               <div>
-                <h3 className="font-semibold text-slate-900">Thêm học viên</h3>
-                <p className="mt-1 text-xs text-slate-400">Tìm theo tên hoặc mã sinh viên.</p>
+                <h3 className="font-semibold text-slate-900">Thêm học viên vào khóa học</h3>
+                <p className="mt-1 text-xs text-slate-400">Tìm học viên theo tên hoặc mã sinh viên rồi thêm vào khóa học hiện tại.</p>
               </div>
               <button
                 type="button"
@@ -526,11 +598,13 @@ export function StudentsTab({
 
             <div className="border-b border-slate-100 px-5 py-3 sm:px-6">
               <div className="relative">
+                <label htmlFor="add-student-search" className="sr-only">Tìm học viên để thêm</label>
                 <Icon
                   name="ri-search-line"
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                 />
                 <input
+                  id="add-student-search"
                   autoFocus
                   value={addQuery}
                   onChange={(event) => setAddQuery(event.target.value)}
@@ -541,7 +615,23 @@ export function StudentsTab({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {candidates.length === 0 ? (
+              {directoryLoading ? (
+                <div aria-live="polite" aria-busy="true" className="space-y-2 p-2">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                      <div className="h-9 w-9 rounded-full bg-slate-100" />
+                      <div className="min-w-0 flex-1">
+                        <div className="h-4 w-40 max-w-full rounded bg-slate-100" />
+                        <div className="mt-2 h-3 w-20 rounded bg-slate-100" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : directoryError ? (
+                <div role="alert" className="px-4 py-10 text-center text-sm text-rose-600">
+                  Không tải được danh mục học viên.
+                </div>
+              ) : candidates.length === 0 ? (
                 <div className="px-4 py-10 text-center text-sm text-slate-400">Không tìm thấy sinh viên phù hợp.</div>
               ) : (
                 <ul>
@@ -569,7 +659,7 @@ export function StudentsTab({
                           <button
                             type="button"
                             onClick={() => addStudent(candidate)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700"
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100"
                           >
                             Thêm
                           </button>
@@ -597,9 +687,7 @@ export function StudentsTab({
           <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl">
             <header className="border-b border-slate-100 px-5 py-5 sm:px-6">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
-                  {initials(open.name)}
-                </div>
+                <UserAvatar src={open.avatarUrl} name={open.name} className="h-11 w-11 text-sm" />
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-slate-900">{open.name}</p>
@@ -635,7 +723,7 @@ export function StudentsTab({
                 </div>
               </div>
 
-              <p className="mt-3 text-xs text-slate-400">Hoạt động gần nhất: {open.lastActive}</p>
+              <p className="mt-3 text-xs text-slate-400">Hoạt động gần nhất: {activityText(open.lastActive)}</p>
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
@@ -669,7 +757,7 @@ export function StudentsTab({
                               <span className="shrink-0 text-xs font-medium tabular-nums text-slate-500">{pct}%</span>
                             </div>
 
-                            <ProgressBar value={pct} className="mt-2" />
+                            <ProgressBar value={pct} label={`Tiến độ bài ${lessonTitle(lesson.lessonId)} của ${open.name}`} className="mt-2" />
 
                             <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-400">
                               <span>

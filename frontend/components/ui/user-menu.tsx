@@ -7,16 +7,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/ui/icon';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { logout as apiLogout } from '@/lib/api/auth';
 
 export function UserMenu({
   name,
   initials,
+  avatarUrl,
   profileHref,
   roleLabel,
 }: {
   name: string;
   initials: string;
+  avatarUrl?: string | null;
   profileHref: string;
   roleLabel: string;
 }) {
@@ -51,11 +54,9 @@ export function UserMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-lg px-2 py-1.5 outline-none transition hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-cyan-500/40"
+        className="flex min-h-10 items-center gap-2 rounded-lg px-2 py-1.5 outline-none transition hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/25"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-100 text-xs font-bold text-cyan-800">
-          {initials}
-        </span>
+        <UserAvatar src={avatarUrl} name={name || initials} alt="" className="h-8 w-8" />
         <span className="hidden text-sm font-medium text-slate-700 sm:block">{name}</span>
         <Icon
           name="ri-arrow-down-s-line"
@@ -74,15 +75,17 @@ export function UserMenu({
           </div>
           <Link
             href={profileHref}
+            role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 transition hover:bg-slate-50"
+            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 outline-none transition hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
           >
             <Icon name="ri-user-line" className="h-4 w-4 text-slate-400" />
             Hồ sơ
           </Link>
           <button
+            role="menuitem"
             onClick={logout}
-            className="flex w-full items-center gap-2.5 border-t border-slate-100 px-4 py-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+            className="flex w-full items-center gap-2.5 border-t border-slate-100 px-4 py-2.5 text-sm font-medium text-rose-600 outline-none transition hover:bg-rose-50 focus-visible:bg-rose-50"
           >
             <Icon name="ri-logout-box-r-line" className="h-4 w-4" />
             Đăng xuất

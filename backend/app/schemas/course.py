@@ -153,6 +153,7 @@ class StudentRowOut(CamelModel):
     name: str
     code: str
     color: str
+    avatar_url: str | None = None
     progress: float
     attention: float | None = None
     last_active: str | None = None

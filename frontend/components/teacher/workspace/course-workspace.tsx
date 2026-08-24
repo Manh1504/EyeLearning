@@ -11,10 +11,7 @@ import { useTeacherCourses } from '@/hooks/use-teacher';
 import { LEVEL_LABEL, STATUS_LABEL } from '@/lib/mock/teacher';
 import type { TeacherCourse } from '@/lib/types/domain';
 
-// Khóa học được chỉnh sửa trên MỘT trang duy nhất:
-//   Thông tin + nội dung (ContentTab embed) và Học viên (StudentsTab embed).
-// '?tab=overview' vẫn hiển thị bảng tổng quan cho khóa học đã có dữ liệu.
-type View = 'edit' | 'overview';
+type View = 'content' | 'students' | 'overview';
 
 function statusDot(status: string) {
   if (status === 'published') return 'bg-emerald-500';
@@ -34,18 +31,19 @@ function SegmentedNav({
   const base = `/teacher/courses/${isNew ? 'c-new' : courseId}`;
   const queryFor = (key: View) => {
     const suffix = `?tab=${key}`;
-    return isNew ? `${base}?new=1${key === 'edit' ? '' : suffix}` : `${base}${suffix}`;
+    return isNew ? `${base}?new=1` : `${base}${suffix}`;
   };
 
   const items: { key: View; label: string }[] = [
-    { key: 'edit', label: 'Chỉnh sửa' },
+    { key: 'content', label: 'Nội dung' },
+    { key: 'students', label: 'Học viên' },
     { key: 'overview', label: 'Tổng quan' },
   ];
 
   return (
     <nav className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
       {items.map((item) => {
-        if (item.key === 'overview' && isNew) return null;
+        if (isNew && item.key !== 'content') return null;
         const active = view === item.key;
         return (
           <Link
@@ -68,7 +66,13 @@ export default function TeacherCourseWorkspace() {
   const params = useParams();
   const courseId = String(params?.courseId ?? 'c1');
   const isNew = searchParams.get('new') === '1';
-  const view: View = searchParams.get('tab') === 'overview' ? 'overview' : 'edit';
+  const tab = searchParams.get('tab');
+  const view: View =
+    tab === 'students'
+      ? 'students'
+      : tab === 'overview'
+        ? 'overview'
+        : 'content';
 
   const { data: courses = [] } = useTeacherCourses();
   const course: TeacherCourse | undefined = useMemo(() => {
@@ -106,21 +110,23 @@ export default function TeacherCourseWorkspace() {
             </div>
           </div>
 
-          {!isNew && (
-            <SegmentedNav isNew={false} courseId={courseId} view={view} />
-          )}
+          {!isNew && <SegmentedNav isNew={false} courseId={courseId} view={view} />}
         </div>
       </header>
 
       <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto w-full max-w-6xl space-y-5">
-          {view === 'overview' ? (
-            <OverviewTab isNew={isNew} />
-          ) : (
+          {view === 'overview' && <OverviewTab isNew={false} />}
+
+          {view === 'students' && (
+            <StudentsTab isNew={false} embed canManage={canManage} />
+          )}
+
+          {view === 'content' && (
             <>
               <ContentTab isNew={isNew} embed />
 
-              {isNew ? (
+              {isNew && (
                 <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6">
                   <Icon name="ri-group-line" className="mt-0.5 shrink-0 text-slate-400" />
                   <div>
@@ -130,8 +136,6 @@ export default function TeacherCourseWorkspace() {
                     </p>
                   </div>
                 </div>
-              ) : (
-                <StudentsTab isNew={false} embed canManage={canManage} />
               )}
             </>
           )}

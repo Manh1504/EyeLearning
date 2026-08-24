@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+import { BrandLogo } from '@/components/ui/brand-logo';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icon';
@@ -61,18 +62,11 @@ export function LoginForm({
 
   return (
     <div className={cn('w-full', className)} {...props}>
-      <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card px-6 py-8 sm:px-8 sm:py-9">
+      <form onSubmit={handleSubmit} className="relative rounded-xl border border-border bg-card px-6 py-8 shadow-sm shadow-brand-navy/5 sm:px-8 sm:py-9">
         <div className="flex flex-col items-center text-center">
-          <div className="flex items-center gap-2">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Icon name="ri-eye-line" className="text-xl" />
-            </span>
-            <span className="text-base font-semibold text-slate-900">
-              Gaze<span className="text-primary">Edu</span>
-            </span>
-          </div>
+          <BrandLogo variant="light" className="h-11" priority />
 
-          <h1 className="mt-7 text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="mt-7 text-2xl font-bold tracking-tight text-primary">
             Chào mừng trở lại
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -109,10 +103,9 @@ export function LoginForm({
               <FieldLabel htmlFor="login-password" className="text-sm font-medium text-slate-700">
                 Mật khẩu
               </FieldLabel>
-              {/* Route will be implemented in the forgot-password page task. */}
               <Link
                 href="/account/forgot-password"
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                className="text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25"
               >
                 Quên mật khẩu?
               </Link>
@@ -131,6 +124,7 @@ export function LoginForm({
               <button
                 type="button"
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-pressed={showPassword}
                 title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 onClick={() => setShowPassword((value) => !value)}
                 className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"

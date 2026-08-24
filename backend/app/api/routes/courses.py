@@ -385,6 +385,7 @@ async def get_course_students(
                 name=profile.full_name if profile else student.email,
                 code=sp.student_code if sp else "",
                 color=color_for(student.id),
+                avatar_url=profile.avatar_url if profile else None,
                 progress=(
                     round(completed_count / total_lessons * 100, 1)
                     if total_lessons

@@ -4,270 +4,317 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo } from 'react';
 import { Icon } from '@/components/ui/icon';
+import { buttonVariants } from '@/components/ui/button';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { useCourseStudents, useCourseTree, useTeacherCourses } from '@/hooks/use-teacher';
-import { formatShortDate } from '@/lib/utils';
+import { STATUS_LABEL } from '@/lib/mock/teacher';
+import { cn } from '@/lib/utils';
+import type { EnrollStatus } from '@/lib/types/domain';
 
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  return parts.slice(-2).map((part) => part[0]).join('').toUpperCase();
+function displayValue(value: number | string | null | undefined, suffix = '') {
+  if (value === null || value === undefined || value === '') return '—';
+  return `${value}${suffix}`;
 }
 
-function gazeTone(value: number | null) {
-  if (value === null) return 'text-slate-400';
-  if (value < 50) return 'text-rose-600';
-  if (value < 65) return 'text-amber-600';
-  return 'text-slate-700';
+function activityText(value: string | null | undefined) {
+  const clean = value?.trim();
+  return clean ? clean : '—';
+}
+
+function statusText(status: EnrollStatus) {
+  if (status === 'active') return 'Đang học';
+  if (status === 'completed') return 'Đã hoàn thành';
+  return 'Đã gỡ';
+}
+
+function statusClass(status: EnrollStatus) {
+  if (status === 'completed') return 'bg-emerald-50 text-emerald-700';
+  if (status === 'dropped') return 'bg-slate-100 text-slate-500';
+  return 'bg-cyan-50 text-cyan-700';
+}
+
+function MetricCard({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-slate-400">{note}</p>
+    </div>
+  );
+}
+
+function DistributionRow({
+  label,
+  count,
+  total,
+}: {
+  label: string;
+  count: number;
+  total: number;
+}) {
+  const percent = total > 0 ? Math.round((count / total) * 100) : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium text-slate-700">{label}</span>
+        <span className="tabular-nums text-slate-500">
+          {count} học viên{percent !== null ? ` · ${percent}%` : ''}
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={`${label}: ${count} học viên${percent !== null ? `, ${percent}%` : ''}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? 0}
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"
+      >
+        <div
+          className="h-full rounded-full bg-cyan-700"
+          style={{ width: `${percent ?? 0}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export function OverviewTab({ isNew }: { isNew: boolean }) {
   const params = useParams();
   const courseId = String(params?.courseId ?? 'c1');
 
-  const { data: courses = [] } = useTeacherCourses();
+  const { data: courses = [], isLoading: coursesLoading, isError: coursesError } = useTeacherCourses();
   const course = useMemo(
-    () => courses.find((c) => c.id === courseId),
+    () => courses.find((item) => item.id === courseId),
     [courses, courseId],
   );
-  const { data: modules = [] } = useCourseTree(isNew ? '' : courseId);
-  const { data: students = [] } = useCourseStudents(isNew ? '' : courseId);
+  const { data: modules = [], isLoading: modulesLoading, isError: modulesError } = useCourseTree(isNew ? '' : courseId);
+  const { data: students = [], isLoading: studentsLoading, isError: studentsError } = useCourseStudents(isNew ? '' : courseId);
 
   if (isNew) {
     return (
       <div className="mx-auto max-w-xl py-16 text-center sm:py-24">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
-          <Icon name="ri-file-list-3-line" className="text-xl" />
+          <Icon name="ri-book-open-line" className="text-xl" />
         </div>
 
         <h2 className="mt-5 text-xl font-semibold text-slate-900">
           Bắt đầu bằng nội dung khóa học
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-          Khi khóa học có bài học và học viên bắt đầu học, phần tổng quan sẽ hiển thị tiến độ và dữ liệu quan sát tại đây.
+          Sau khi lưu khóa học và có học viên tham gia, phần tổng quan sẽ hiển thị tiến độ tại đây.
         </p>
 
         <Link
           href="/teacher/courses/c-new?tab=content&new=1"
-          className="mt-6 inline-flex h-9 items-center gap-2 rounded-lg bg-cyan-700 px-4 text-sm font-semibold text-white transition hover:bg-cyan-800"
+          className={cn(buttonVariants(), 'mt-6')}
         >
-          <Icon name="ri-add-line" />
+          <Icon name="ri-add-line" data-icon="inline-start" />
           Thêm nội dung đầu tiên
         </Link>
       </div>
     );
   }
 
-  const lessons = modules.flatMap((module) =>
-    module.lessons.map((lesson) => ({ ...lesson, module: module.title })),
-  );
+  const loading = coursesLoading || modulesLoading || studentsLoading;
+  const hasError = coursesError || modulesError || studentsError;
 
-  const reviewLessons = lessons
-    .filter((lesson) => lesson.attention !== null)
-    .sort((a, b) => (a.attention ?? 100) - (b.attention ?? 100))
-    .slice(0, 4);
+  const lessons = modules.flatMap((module) => module.lessons);
+  const lessonsWithPdf = lessons.filter((lesson) => lesson.slides > 0).length;
+  const totalStudents = students.length;
+  const notStarted = students.filter(
+    (student) => student.status === 'active' && student.progress <= 0,
+  ).length;
+  const inProgress = students.filter(
+    (student) => student.status === 'active' && student.progress > 0,
+  ).length;
+  const completed = students.filter((student) => student.status === 'completed').length;
+  const visibleStudents = students.filter((student) => student.status !== 'dropped').slice(0, 5);
 
-  const studentsToWatch = [...students]
-    .filter((student) => student.status === 'active')
-    .sort((a, b) => a.progress - b.progress)
-    .slice(0, 4);
+  if (loading) {
+    return (
+      <div aria-live="polite" aria-busy="true" className="grid gap-4">
+        <div className="h-24 rounded-xl border border-slate-200 bg-white" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-28 rounded-xl border border-slate-200 bg-white" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
-  const activeStudents = students.filter((student) => student.status === 'active').length;
-  const completedStudents = students.filter((student) => student.status === 'completed').length;
+  if (hasError) {
+    return (
+      <div role="alert" className="rounded-xl border border-rose-100 bg-rose-50 px-5 py-6 text-rose-700">
+        <h2 className="text-sm font-semibold">Không tải được tổng quan khóa học</h2>
+        <p className="mt-1 text-sm leading-6">Vui lòng thử lại sau. Điều hướng workspace vẫn được giữ nguyên.</p>
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* Page heading */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+          <h2 className="text-xl font-semibold tracking-tight text-slate-950">
             Tổng quan khóa học
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Những thông tin cần xem trước khi bạn chỉnh nội dung hoặc hỗ trợ học viên.
+            Tóm tắt tiến độ học viên và tình trạng nội dung của khóa học.
           </p>
         </div>
 
         <p className="text-xs text-slate-400">
-          Cập nhật {formatShortDate(course?.updatedAt) || '—'}
+          Cập nhật {displayValue(course?.updatedAt)}
         </p>
       </div>
 
-      {/* Snapshot — one surface, not four KPI cards */}
-      <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="grid grid-cols-2 md:grid-cols-4">
-          <div className="px-5 py-4 md:border-r md:border-slate-100">
-            <p className="text-xs font-medium text-slate-500">Học viên</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-semibold tracking-tight text-slate-900">
-                {course?.students ?? 0}
-              </span>
-              <span className="text-xs text-slate-400">đã ghi danh</span>
-            </div>
-          </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          label="Tổng học viên"
+          value={displayValue(course?.students ?? totalStudents)}
+          note="Số học viên đang được trả về cho khóa học"
+        />
+        <MetricCard
+          label="Đang học"
+          value={displayValue(inProgress)}
+          note="Học viên active có tiến độ lớn hơn 0%"
+        />
+        <MetricCard
+          label="Đã hoàn thành"
+          value={displayValue(completed)}
+          note="Theo trạng thái enrollment hiện có"
+        />
+        <MetricCard
+          label="Tiến độ trung bình"
+          value={displayValue(course?.completion, '%')}
+          note="Giá trị từ API khóa học"
+        />
+      </div>
 
-          <div className="border-l border-slate-100 px-5 py-4 md:border-l-0 md:border-r">
-            <p className="text-xs font-medium text-slate-500">Hoàn thành trung bình</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-semibold tracking-tight text-slate-900">
-                {course?.completion ?? 0}%
-              </span>
-              <span className="text-xs text-slate-400">toàn khóa</span>
-            </div>
+      {totalStudents === 0 ? (
+        <section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center">
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+            <Icon name="ri-group-line" className="text-xl" />
           </div>
-
-          <div className="border-t border-slate-100 px-5 py-4 md:border-r md:border-t-0">
-            <p className="text-xs font-medium text-slate-500">Phiên học</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-semibold tracking-tight text-slate-900">
-                {course?.sessions ?? 0}
-              </span>
-              <span className="text-xs text-slate-400">phiên</span>
-            </div>
-          </div>
-
-          <div className="border-l border-t border-slate-100 px-5 py-4 md:border-l-0 md:border-t-0">
-            <p className="text-xs font-medium text-slate-500">Chỉ số quan sát TB</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className={`text-2xl font-semibold tracking-tight ${gazeTone(course?.attention ?? null)}`}>
-                {course?.attention ?? '—'}{course?.attention != null ? '%' : ''}
-              </span>
-              <span className="text-xs text-slate-400">từ gaze</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Main actionable areas */}
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        {/* Lessons */}
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">Bài học nên xem lại</h3>
+          <h3 className="mt-3 text-sm font-semibold text-slate-900">Khóa học chưa có học viên</h3>
+          <p className="mx-auto mt-1.5 max-w-md text-sm leading-6 text-slate-500">
+            Thêm học viên hoặc mở tab Học viên để quản lý danh sách tham gia khóa học.
+          </p>
+          <Link
+            href={`/teacher/courses/${courseId}?tab=students`}
+            className={cn(buttonVariants({ variant: 'outline' }), 'mt-4')}
+          >
+            Xem tab Học viên
+          </Link>
+        </section>
+      ) : (
+        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="rounded-xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h3 className="text-sm font-semibold text-slate-900">Phân bố tiến độ</h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                Ưu tiên từ tín hiệu gaze thấp trong các bài đã có dữ liệu.
+                Phân loại theo trạng thái và tiến độ hiện có của học viên.
               </p>
             </div>
-            <Icon name="ri-arrow-right-up-line" className="text-slate-300" />
-          </div>
+            <div className="space-y-5 px-5 py-5">
+              <DistributionRow label="Chưa bắt đầu" count={notStarted} total={totalStudents} />
+              <DistributionRow label="Đang học" count={inProgress} total={totalStudents} />
+              <DistributionRow label="Đã hoàn thành" count={completed} total={totalStudents} />
+            </div>
+          </section>
 
-          <div className="divide-y divide-slate-100">
-            {reviewLessons.map((lesson, index) => (
-              <Link
-                key={lesson.id}
-                href={`/teacher/courses/${courseId}/lessons/${lesson.id}/heatmap`}
-                className="group grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3.5 transition hover:bg-slate-50"
-              >
-                <span className="text-xs font-semibold tabular-nums text-slate-300">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900 group-hover:text-cyan-800">
-                    {lesson.title}
-                  </p>
-                  <p className="mt-0.5 truncate text-xs text-slate-400">
-                    {lesson.module} · {lesson.slides} trang · {lesson.completion}% hoàn thành
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3 pl-2">
-                  <div className="text-right">
-                    <p className={`text-sm font-semibold tabular-nums ${gazeTone(lesson.attention)}`}>
-                      {lesson.attention}%
-                    </p>
-                    <p className="text-[10px] uppercase tracking-wide text-slate-400">gaze</p>
-                  </div>
-                  <Icon name="ri-arrow-right-s-line" className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
-                </div>
-              </Link>
-            ))}
-          </div>
-
-          <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-3">
-            <p className="text-xs leading-5 text-slate-500">
-              Mở heatmap để kiểm tra vùng nội dung người học thực sự quan sát trước khi quyết định chỉnh bài.
-            </p>
-          </div>
-        </section>
-
-        {/* Students */}
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <div className="flex items-start justify-between gap-4">
+          <section className="rounded-xl border border-slate-200 bg-white">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Học viên cần theo dõi</h3>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Đang học nhưng có tiến độ thấp nhất.
-                </p>
+                <h3 className="text-sm font-semibold text-slate-900">Tiến độ học viên</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Danh sách học viên từ dữ liệu hiện có.</p>
               </div>
-
               <Link
                 href={`/teacher/courses/${courseId}?tab=students`}
-                className="shrink-0 text-xs font-semibold text-cyan-700 hover:text-cyan-800"
+                className="shrink-0 text-xs font-semibold text-cyan-700 hover:text-cyan-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100"
               >
                 Xem tất cả
               </Link>
             </div>
-          </div>
 
-          <div className="divide-y divide-slate-100">
-            {studentsToWatch.map((student) => (
-              <Link
-                key={student.id}
-                href={`/teacher/courses/${courseId}?tab=students`}
-                className="group flex items-center gap-3 px-5 py-3.5 transition hover:bg-slate-50"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
-                  {initials(student.name)}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-900">
-                    {student.name}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {student.lastActive}
-                  </p>
-                </div>
-
-                <div className="w-20 shrink-0">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400">Tiến độ</span>
-                    <span className={`font-semibold tabular-nums ${student.progress < 40 ? 'text-rose-600' : 'text-slate-600'}`}>
-                      {student.progress}%
+            <div className="divide-y divide-slate-100">
+              {visibleStudents.map((student) => (
+                <div key={student.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <UserAvatar src={student.avatarUrl} name={student.name} className="h-9 w-9 text-[11px]" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-900">{student.name}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {student.code} · {activityText(student.lastActive)}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs font-semibold tabular-nums text-slate-700">{student.progress}%</p>
+                    <span className={`mt-1 inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium ${statusClass(student.status)}`}>
+                      {statusText(student.status)}
                     </span>
                   </div>
-                  <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className={`h-full rounded-full ${student.progress < 40 ? 'bg-rose-500' : 'bg-cyan-600'}`}
-                      style={{ width: `${student.progress}%` }}
-                    />
-                  </div>
                 </div>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-3">
+              <Link
+                href={`/teacher/courses/${courseId}?tab=students`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-full')}
+              >
+                Xem tiến độ học viên
               </Link>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-2 border-t border-slate-100 bg-slate-50/70">
-            <div className="px-5 py-3">
-              <p className="text-lg font-semibold text-slate-900">{activeStudents}</p>
-              <p className="text-[11px] text-slate-400">Đang học</p>
             </div>
-            <div className="border-l border-slate-100 px-5 py-3">
-              <p className="text-lg font-semibold text-slate-900">{completedStudents}</p>
-              <p className="text-[11px] text-slate-400">Đã hoàn thành</p>
-            </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      )}
 
-      {/* Metric disclaimer */}
-      <div className="mt-5 flex gap-2.5 rounded-lg bg-slate-100/70 px-4 py-3 text-xs leading-5 text-slate-500">
-        <Icon name="ri-information-line" className="mt-0.5 shrink-0 text-slate-400" />
-        <p>
-          Chỉ số quan sát được tổng hợp từ dữ liệu gaze và chỉ dùng để hỗ trợ phân tích hành vi xem nội dung; không nên được diễn giải trực tiếp là mức độ tập trung hay năng lực học tập.
-        </p>
-      </div>
+      <section className="mt-6 rounded-xl border border-slate-200 bg-white">
+        <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Tình trạng nội dung</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Dữ liệu lấy từ cấu trúc chương và bài học hiện có.
+            </p>
+          </div>
+          <Link
+            href={`/teacher/courses/${courseId}?tab=content`}
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-full sm:w-auto')}
+          >
+            Quản lý nội dung
+          </Link>
+        </div>
+        <div className="grid border-t border-slate-100 sm:grid-cols-4">
+          <div className="px-5 py-4">
+            <p className="text-lg font-semibold text-slate-950">{modules.length}</p>
+            <p className="text-xs text-slate-500">Chương</p>
+          </div>
+          <div className="border-t border-slate-100 px-5 py-4 sm:border-l sm:border-t-0">
+            <p className="text-lg font-semibold text-slate-950">{lessons.length}</p>
+            <p className="text-xs text-slate-500">Bài học</p>
+          </div>
+          <div className="border-t border-slate-100 px-5 py-4 sm:border-l sm:border-t-0">
+            <p className="text-lg font-semibold text-slate-950">{lessonsWithPdf}</p>
+            <p className="text-xs text-slate-500">Bài có PDF</p>
+          </div>
+          <div className="border-t border-slate-100 px-5 py-4 sm:border-l sm:border-t-0">
+            <p className="text-lg font-semibold text-slate-950">
+              {course?.status ? STATUS_LABEL[course.status] : '—'}
+            </p>
+            <p className="text-xs text-slate-500">Trạng thái</p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

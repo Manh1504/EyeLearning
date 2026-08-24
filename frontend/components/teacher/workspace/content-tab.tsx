@@ -7,7 +7,8 @@
 //   - Bài học:  POST/DELETE /teacher/modules/{id}/lessons, PATCH /teacher/lessons/{id}
 //   - PDF:      POST /teacher/lessons/{id}/slides/upload (backend render từng trang ra JPEG)
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,152 @@ type Selection =
   | { type: 'lesson'; id: string }
   | null;
 
+type StructureMenuKey = { type: 'module' | 'lesson'; id: string } | null;
+
+type StructureMenuAction = {
+  label: string;
+  onSelect: () => void;
+  destructive?: boolean;
+  separated?: boolean;
+};
+
+function sameMenu(a: StructureMenuKey, b: Exclude<StructureMenuKey, null>) {
+  return a?.type === b.type && a.id === b.id;
+}
+
+function StructureMenu({
+  menu,
+  openMenu,
+  setOpenMenu,
+  label,
+  actions,
+  widthClass = 'w-40',
+}: {
+  menu: Exclude<StructureMenuKey, null>;
+  openMenu: StructureMenuKey;
+  setOpenMenu: (menu: StructureMenuKey) => void;
+  label: string;
+  actions: StructureMenuAction[];
+  widthClass?: string;
+}) {
+  const isOpen = sameMenu(openMenu, menu);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  const closeMenu = useCallback(() => {
+    setOpenMenu(null);
+  }, [setOpenMenu]);
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    const content = menuRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = content?.offsetWidth ?? (widthClass === 'w-36' ? 144 : 160);
+    const menuHeight = content?.offsetHeight ?? 128;
+    const gap = 8;
+    const margin = 8;
+    const belowTop = rect.bottom + gap;
+    const aboveTop = rect.top - gap - menuHeight;
+    const top =
+      belowTop + menuHeight <= window.innerHeight - margin
+        ? belowTop
+        : Math.max(margin, aboveTop);
+    const left = Math.min(
+      Math.max(margin, rect.right - menuWidth),
+      window.innerWidth - menuWidth - margin,
+    );
+
+    setPosition({ top, left });
+  }, [widthClass]);
+
+  useLayoutEffect(() => {
+    if (isOpen) updatePosition();
+  }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      closeMenu();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu();
+        triggerRef.current?.focus();
+      }
+    };
+    const onReposition = () => closeMenu();
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [closeMenu, isOpen]);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label={label}
+        title="Thao tác"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpenMenu(isOpen ? null : menu);
+        }}
+        className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition hover:bg-muted hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      >
+        <Icon name="ri-more-2-fill" className="text-lg" aria-hidden />
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            className={`fixed z-[80] overflow-hidden rounded-xl border border-border bg-white py-1 shadow-lg ${widthClass}`}
+            style={{ top: position.top, left: position.left }}
+          >
+            {actions.map((action) => (
+              <div key={action.label}>
+                {action.separated && <div className="my-1 border-t border-border" />}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`flex w-full px-3 py-2 text-left text-sm outline-none transition hover:bg-slate-50 focus-visible:bg-slate-50 ${
+                    action.destructive ? 'text-rose-600 hover:bg-rose-50 focus-visible:bg-rose-50' : 'text-slate-700'
+                  }`}
+                  onClick={() => {
+                    closeMenu();
+                    action.onSelect();
+                  }}
+                >
+                  {action.label}
+                </button>
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: boolean }) {
   const params = useParams();
   const router = useRouter();
@@ -53,6 +200,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
   const [selection, setSelection] = useState<Selection>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<{ type: 'module' | 'lesson'; id: string } | null>(null);
+  const [openMenu, setOpenMenu] = useState<StructureMenuKey>(null);
   const [lessonToDelete, setLessonToDelete] = useState<LessonNode | null>(null);
   const [moduleToDelete, setModuleToDelete] = useState<ModuleNode | null>(null);
   const [confirmDeleteCourse, setConfirmDeleteCourse] = useState(false);
@@ -278,20 +426,41 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     }
   };
 
+  const currentStatus: CourseStatus = course?.status ?? 'draft';
+  const currentStatusLabel =
+    currentStatus === 'published'
+      ? 'Đã xuất bản'
+      : currentStatus === 'archived'
+        ? 'Lưu trữ'
+        : 'Bản nháp';
+  const currentStatusClass =
+    currentStatus === 'published'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : currentStatus === 'archived'
+        ? 'border-slate-200 bg-slate-100 text-slate-600'
+        : 'border-amber-200 bg-amber-50 text-amber-700';
+
   if (isNew) {
     // Luồng tạo mới: nhập thông tin → lưu → chuyển sang workspace thật (id real).
     return (
-      <div className="mx-auto max-w-xl py-10 sm:py-14">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700">
-          Khóa học mới
-        </p>
-        <h2 className="mt-2 text-xl font-bold text-slate-900">Thông tin khóa học</h2>
-        <p className="mt-1.5 text-sm leading-6 text-slate-500">
-          Nhập tên và mô tả, sau đó lưu nháp hoặc xuất bản. Ngay sau khi lưu bạn có thể
-          thêm chương, bài học và PDF bài giảng.
-        </p>
+      <div className="mx-auto max-w-3xl py-8 sm:py-12">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+          <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700">
+                Khóa học mới
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-slate-950">Tạo khóa học mới</h2>
+              <p className="mt-1.5 text-sm leading-6 text-slate-500">
+                Nhập thông tin cơ bản rồi lưu khóa học trước khi thêm chương, bài học và PDF.
+              </p>
+            </div>
+            <span className="inline-flex w-fit rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+              Bản nháp
+            </span>
+          </div>
 
-        <div className="mt-7 space-y-5 rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="mt-6 space-y-5">
           <div>
             <label htmlFor="new-course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
               Tên khóa học <span className="text-rose-500">*</span>
@@ -303,6 +472,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               placeholder="Ví dụ: Lập trình Python cơ bản"
               className={INPUT_CLS}
             />
+            <p className="mt-1.5 text-xs text-slate-400">Tên này sẽ hiển thị với học viên sau khi khóa học được xuất bản.</p>
           </div>
 
           <div>
@@ -313,13 +483,13 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               id="new-course-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={4}
+              rows={5}
               placeholder="Tóm tắt nội dung, mục tiêu khóa học..."
-              className={`${INPUT_CLS} resize-none`}
+              className={`${INPUT_CLS} min-h-32 resize-y`}
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-5">
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -338,10 +508,11 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               Tạo và xuất bản
             </Button>
           </div>
+          </div>
         </div>
 
         {statusMsg && (
-          <p className={`mt-4 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
+          <p aria-live="polite" className={`mt-4 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
             {statusMsg.text}
           </p>
         )}
@@ -353,39 +524,39 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     ? 'flex flex-col'
     : 'flex min-h-0 flex-col lg:h-[calc(100dvh-8rem)] lg:overflow-hidden';
   const gridFrame = embed
-    ? 'mt-4 grid min-h-0 overflow-hidden rounded-2xl border border-border bg-card lg:h-[560px] lg:grid-cols-[350px_minmax(0,1fr)]'
-    : 'mt-4 grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card lg:grid-cols-[350px_minmax(0,1fr)]';
+    ? 'mt-4 grid rounded-xl border border-border bg-card lg:grid-cols-[minmax(300px,34%)_minmax(0,1fr)]'
+    : 'mt-4 grid flex-1 rounded-xl border border-border bg-card lg:grid-cols-[minmax(300px,34%)_minmax(0,1fr)]';
 
   return (
     <div className={pageFrame}>
       <header
         className={
           embed
-            ? 'shrink-0 rounded-2xl border border-border bg-white p-4 sm:p-5'
+            ? 'shrink-0 rounded-xl border border-border bg-white p-4 sm:p-5'
             : 'shrink-0 border-b border-border bg-slate-50 pb-4'
         }
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Nội dung khóa học</h2>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-950">{title || course?.title || 'Nội dung khóa học'}</h2>
+              <span className={`rounded-md border px-2 py-1 text-xs font-medium ${currentStatusClass}`}>
+                {currentStatusLabel}
+              </span>
+            </div>
             <p className="mt-1 text-sm text-slate-500">
               {embed
-                ? 'Điền thông tin, quản lý chương – bài học và tài liệu bài giảng.'
-                : 'Quản lý cấu trúc bài học và tài liệu của khóa học.'}
+                ? 'Quản lý thông tin khóa học, cấu trúc chương – bài học và tài liệu PDF.'
+                : 'Quản lý cấu trúc bài học và tài liệu PDF của khóa học.'}
             </p>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+              <span>{tree.length} chương</span>
+              <span>{totalLessons} bài học</span>
+              <span>{totalSlides} trang PDF</span>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {isOwner && !isNew && (
-              <Button
-                type="button"
-                variant="destructive"
-                size="default"
-                onClick={() => setConfirmDeleteCourse(true)}
-              >
-                Xóa
-              </Button>
-            )}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
             {isOwner && (
               <Button
                 type="button"
@@ -394,7 +565,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 disabled={saving || !title.trim()}
                 onClick={() => saveCourse('draft')}
               >
-                {saving ? 'Đang lưu…' : 'Lưu nháp'}
+                {saving ? 'Đang lưu…' : 'Lưu thay đổi'}
               </Button>
             )}
             {isOwner && (
@@ -408,57 +579,70 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 {saving ? 'Đang lưu…' : 'Xuất bản'}
               </Button>
             )}
+            {isOwner && !isNew && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="default"
+                className="border border-rose-200 bg-white hover:bg-rose-50 sm:ml-3"
+                onClick={() => setConfirmDeleteCourse(true)}
+              >
+                Xóa khóa học
+              </Button>
+            )}
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label htmlFor="course-title" className="mb-1 block text-xs font-medium text-slate-500">
-              Tên khóa học
-            </label>
-            <input
-              id="course-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              readOnly={!isOwner}
-              className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
-            />
+        <section className="mt-5 rounded-lg border border-slate-100 bg-slate-50/60 p-4">
+          <div className="grid gap-5">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-slate-900">Thông tin khóa học</h3>
+              <div className="mt-4 grid w-full gap-4">
+                <div>
+                  <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Tên khóa học <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="course-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    readOnly={!isOwner}
+                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Mô tả
+                  </label>
+                  <textarea
+                    id="course-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    readOnly={!isOwner}
+                    rows={4}
+                    className={`${INPUT_CLS} min-h-28 resize-y ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-          <div>
-            <label htmlFor="course-description" className="mb-1 block text-xs font-medium text-slate-500">
-              Mô tả
-            </label>
-            <input
-              id="course-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              readOnly={!isOwner}
-              className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
-            />
-          </div>
-        </div>
+        </section>
 
         {statusMsg && (
-          <p className={`mt-3 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
+          <p aria-live="polite" className={`mt-3 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
             {statusMsg.text}
           </p>
         )}
       </header>
 
       <div className={gridFrame}>
-        <aside className="min-h-0 border-b border-border lg:border-b-0 lg:border-r">
-          <div className="flex h-full min-h-0 flex-col">
+        <aside className="border-b border-border lg:border-b-0 lg:border-r">
+          <div className="flex flex-col lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)]">
             <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
               <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Cấu trúc khóa học
                 {treeFetching && <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />}
               </p>
-              {isOwner && (
-                <Button type="button" variant="ghost" size="xs" onClick={addModule} disabled={saving}>
-                  <Icon name="ri-add-line" data-icon="inline-start" />
-                  Thêm chương
-                </Button>
-              )}
             </div>
 
             {tree.length === 0 ? (
@@ -479,15 +663,15 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 </EmptyState>
               </div>
             ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+              <div className="px-2 py-3 lg:overflow-y-auto">
                 {tree.map((module, moduleIndex) => {
                   const moduleActive = selection?.type === 'module' && selection.id === module.id;
                   const isExpanded = expanded[module.id] ?? true;
 
                   return (
-                    <section key={module.id} className="mb-3">
+                    <section key={module.id} className="mb-3 rounded-lg border border-slate-100 bg-white">
                       <div
-                        className={`group flex items-center gap-2 rounded-lg px-2 py-2 ${
+                        className={`group flex items-center gap-2 rounded-t-lg px-2 py-2 ${
                           moduleActive ? 'bg-slate-100 text-slate-950' : 'text-slate-700 hover:bg-slate-50'
                         }`}
                       >
@@ -524,59 +708,49 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                               className="min-w-0 flex-1 rounded-md border border-cyan-300 px-2 py-1 text-sm font-medium outline-none ring-2 ring-cyan-100"
                             />
                           ) : (
-                            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{module.title}</span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={module.title}>{module.title}</span>
                           )}
+                          <span className="shrink-0 text-xs font-normal text-slate-400">
+                            {module.lessons.length} bài
+                          </span>
                         </button>
 
                         {isOwner && (
-                          <details className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
-                            <summary
-                              className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 transition hover:bg-muted hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 [&::-webkit-details-marker]:hidden"
-                              aria-label="Thao tác với chương"
-                              title="Thao tác"
-                            >
-                              <Icon name="ri-more-2-fill" className="text-lg" />
-                            </summary>
-                            <div className="absolute right-0 top-8 z-20 w-40 overflow-hidden rounded-xl border border-border bg-white py-1 shadow-lg">
-                              <button
-                                type="button"
-                                className="flex w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                onClick={(event) => {
-                                  event.currentTarget.closest('details')?.removeAttribute('open');
-                                  setRenaming({ type: 'module', id: module.id });
-                                }}
-                              >
-                                Đổi tên
-                              </button>
-                              <button
-                                type="button"
-                                className="flex w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                onClick={(event) => {
-                                  event.currentTarget.closest('details')?.removeAttribute('open');
+                          <StructureMenu
+                            menu={{ type: 'module', id: module.id }}
+                            openMenu={openMenu}
+                            setOpenMenu={setOpenMenu}
+                            label={`Mở menu chương ${module.title}`}
+                            actions={[
+                              {
+                                label: 'Đổi tên',
+                                onSelect: () => setRenaming({ type: 'module', id: module.id }),
+                              },
+                              {
+                                label: 'Thêm bài học',
+                                onSelect: () => {
                                   void addLesson(module.id);
-                                }}
-                              >
-                                Thêm bài học
-                              </button>
-                              <div className="my-1 border-t border-border" />
-                              <button
-                                type="button"
-                                className="flex w-full px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
-                                onClick={(event) => {
-                                  event.currentTarget.closest('details')?.removeAttribute('open');
-                                  setModuleToDelete(module);
-                                }}
-                              >
-                                Xóa chương
-                              </button>
-                            </div>
-                          </details>
+                                },
+                              },
+                              {
+                                label: 'Xóa chương',
+                                destructive: true,
+                                separated: true,
+                                onSelect: () => setModuleToDelete(module),
+                              },
+                            ]}
+                          />
                         )}
                       </div>
 
                       {isExpanded && (
                         <div className="ml-10 mt-1 space-y-0.5 border-l border-slate-100 pl-2">
-                          {module.lessons.map((lesson) => {
+                          {module.lessons.length === 0 && (
+                            <p className="px-2 py-3 text-xs leading-5 text-slate-400">
+                              Chương này chưa có bài học. Thêm bài đầu tiên để upload PDF.
+                            </p>
+                          )}
+                          {module.lessons.map((lesson, lessonIndex) => {
                             const lessonActive = selection?.type === 'lesson' && selection.id === lesson.id;
 
                             return (
@@ -590,6 +764,9 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                   }`}
                                 >
+                                  <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                                    {lessonIndex + 1}
+                                  </span>
                                   <Icon name="ri-book-open-line" className="shrink-0 text-sm text-slate-400" />
                                   {renaming?.type === 'lesson' && renaming.id === lesson.id ? (
                                     <input
@@ -606,46 +783,33 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                                       className="min-w-0 flex-1 rounded-md border border-cyan-300 px-2 py-1 text-sm outline-none ring-2 ring-cyan-100"
                                     />
                                   ) : (
-                                    <span className="min-w-0 flex-1 truncate">{lesson.title}</span>
+                                    <span className="min-w-0 flex-1 truncate" title={lesson.title}>{lesson.title}</span>
                                   )}
                                   {lesson.slides > 0 && (
-                                    <span className="shrink-0 text-xs font-normal text-slate-400">{lesson.slides}</span>
+                                    <span className="shrink-0 text-xs font-normal text-slate-400">{lesson.slides} trang</span>
                                   )}
                                 </button>
 
                                 {isOwner && (
-                                  <details className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
-                                    <summary
-                                      className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 transition hover:bg-muted hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 [&::-webkit-details-marker]:hidden"
-                                      aria-label="Thao tác với bài học"
-                                      title="Thao tác"
-                                    >
-                                      <Icon name="ri-more-2-fill" className="text-lg" />
-                                    </summary>
-                                    <div className="absolute right-0 top-8 z-20 w-36 overflow-hidden rounded-xl border border-border bg-white py-1 shadow-lg">
-                                      <button
-                                        type="button"
-                                        className="flex w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                        onClick={(event) => {
-                                          event.currentTarget.closest('details')?.removeAttribute('open');
-                                          setRenaming({ type: 'lesson', id: lesson.id });
-                                        }}
-                                      >
-                                        Đổi tên
-                                      </button>
-                                      <div className="my-1 border-t border-border" />
-                                      <button
-                                        type="button"
-                                        className="flex w-full px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
-                                        onClick={(event) => {
-                                          event.currentTarget.closest('details')?.removeAttribute('open');
-                                          setLessonToDelete(lesson);
-                                        }}
-                                      >
-                                        Xóa bài
-                                      </button>
-                                    </div>
-                                  </details>
+                                  <StructureMenu
+                                    menu={{ type: 'lesson', id: lesson.id }}
+                                    openMenu={openMenu}
+                                    setOpenMenu={setOpenMenu}
+                                    label={`Mở menu bài học ${lesson.title}`}
+                                    widthClass="w-36"
+                                    actions={[
+                                      {
+                                        label: 'Đổi tên',
+                                        onSelect: () => setRenaming({ type: 'lesson', id: lesson.id }),
+                                      },
+                                      {
+                                        label: 'Xóa bài',
+                                        destructive: true,
+                                        separated: true,
+                                        onSelect: () => setLessonToDelete(lesson),
+                                      },
+                                    ]}
+                                  />
                                 )}
                               </div>
                             );
@@ -681,7 +845,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
           </div>
         </aside>
 
-        <main className="min-h-0 overflow-y-auto">
+        <main className="min-w-0">
           {!selectedLessonContext && !selectedModule && (
             <EmptyState
               className="min-h-[420px] justify-center p-10"
@@ -697,22 +861,33 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 Chương {String(tree.findIndex((m) => m.id === selectedModule.id) + 1).padStart(2, '0')}
               </p>
               <h3 className="mt-2 text-xl font-semibold text-slate-900">{selectedModule.title}</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                {selectedModule.lessons.length > 0
+                  ? `${selectedModule.lessons.length} bài học trong chương này.`
+                  : 'Chương này chưa có bài học.'}
+              </p>
+              {isOwner && (
+                <Button type="button" variant="outline" size="sm" className="mt-5" onClick={() => addLesson(selectedModule.id)} disabled={saving}>
+                  <Icon name="ri-add-line" data-icon="inline-start" />
+                  Thêm bài học vào chương
+                </Button>
+              )}
             </div>
           )}
 
           {selectedLessonContext && (
             <div className="mx-auto max-w-5xl p-5 sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Bài học</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Bài học / PDF</p>
               <h3 className="mt-2 text-xl font-semibold text-slate-900">{selectedLessonContext.lesson.title}</h3>
               <p className="mt-1 text-sm text-slate-500">
                 Chương {tree.findIndex((m) => m.id === selectedLessonContext.module.id) + 1} · {selectedLessonContext.module.title}
               </p>
 
               <section className="mt-8 border-b border-border pb-8">
-                <h4 className="text-sm font-semibold text-slate-900">Thông tin bài học</h4>
+                  <h4 className="text-sm font-semibold text-slate-900">Thông tin bài học</h4>
                 <div className="mt-4">
                   <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Tên bài
+                    Tên bài <span className="text-rose-500">*</span>
                   </label>
                   <input
                     key={selectedLessonContext.lesson.id}
@@ -758,7 +933,8 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 />
 
                 {selectedLessonContext.lesson.slides === 0 ? (
-                  <div
+                  <button
+                    type="button"
                     onClick={() => fileRef.current?.click()}
                     onDragOver={(event) => {
                       event.preventDefault();
@@ -770,20 +946,20 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                       setDragOverZone(false);
                       void handleFiles(event.dataTransfer.files);
                     }}
-                    className={`mt-5 flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-8 py-14 text-center transition ${
+                    className={`mt-5 flex min-h-[260px] w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-8 py-14 text-center transition ${
                       dragOverZone
                         ? 'border-cyan-500 bg-cyan-50 text-cyan-700'
                         : 'border-border bg-muted/60 text-slate-500 hover:border-cyan-400 hover:bg-cyan-50/40'
                     }`}
                   >
                     <Icon name="ri-upload-cloud-2-line" className="text-4xl" />
-                    <p className="mt-4 text-base font-semibold text-slate-800">Upload PDF</p>
+                    <p className="mt-4 text-base font-semibold text-slate-800">Chưa có PDF</p>
                     <p className="mt-1.5 text-sm text-slate-500">Kéo file vào đây hoặc chọn từ máy.</p>
                     <p className="mt-1 text-xs text-slate-400">PDF · tối đa 100MB</p>
-                    <Button type="button" size="lg" className="mt-6" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                    <span className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">
                       {uploading ? 'Đang render slide…' : 'Chọn file PDF'}
-                    </Button>
-                  </div>
+                    </span>
+                  </button>
                 ) : (
                   <div className="mt-5 flex flex-col gap-4 rounded-xl border border-border bg-background p-5">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

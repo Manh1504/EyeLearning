@@ -48,6 +48,7 @@ export interface StudentRow {
   name: string;              // user_profiles.full_name
   code: string;              // student_profiles.student_code
   color: string;             // avatar giả
+  avatarUrl?: string | null;  // user_profiles.avatar_url
   progress: number;
   attention: number | null;  // null ⇔ learning_sessions.tracking_consent = false
   lastActive: string;

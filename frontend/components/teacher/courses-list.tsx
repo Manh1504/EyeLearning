@@ -4,9 +4,10 @@
 // "Tạo khóa học mới" → chuyển thẳng sang editor (?tab=content&new=1), không qua modal.
 // Data: useTeacherCourses → lib/api/teacher.ts (mock hiện tại, sẽ là GET /teacher/courses?status=&q=)
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 
+import { CourseCover } from '@/components/course/course-cover';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
@@ -31,20 +32,101 @@ const STATUS_BADGE: Record<CourseStatus, string> = {
 };
 
 const CREATE_HREF = '/teacher/courses/c-new?tab=content&new=1';
+const courseTableGrid =
+  'md:grid-cols-[minmax(0,1fr)_8.5rem_7rem_11rem_9rem_8rem] md:gap-4';
 
 function courseHref(course: TeacherCourse) {
   return `/teacher/courses/${course.id}?tab=content`;
 }
 
-function courseAction(course: TeacherCourse) {
-  if (course.status === 'draft') return 'Chỉnh sửa';
-  return 'Xem khóa học';
+function courseAction() {
+  return 'Quản lý';
+}
+
+function ProgressBar({ value, className }: { value: number; className?: string }) {
+  const progress = Math.min(Math.max(value, 0), 100);
+
+  return (
+    <div
+      className={cn('h-1.5 overflow-hidden rounded-full bg-muted', className)}
+      role="progressbar"
+      aria-label={`Hoàn thành ${progress}%`}
+      aria-valuenow={progress}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div
+        className="h-full rounded-full bg-brand-cyan transition-[width] duration-500"
+        style={{ width: `${progress}%` }}
+      />
+    </div>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+  action,
+  tone = 'neutral',
+}: {
+  title: string;
+  description: string;
+  action?: ReactNode;
+  tone?: 'neutral' | 'danger';
+}) {
+  return (
+    <div
+      role={tone === 'danger' ? 'alert' : undefined}
+      className="mt-5 flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border bg-card px-6 text-center"
+    >
+      <div className="max-w-sm">
+        <div
+          className={cn(
+            'mx-auto flex h-10 w-10 items-center justify-center rounded-lg',
+            tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground',
+          )}
+        >
+          <Icon
+            name={tone === 'danger' ? 'ri-error-warning-line' : 'ri-book-open-line'}
+            className="text-xl"
+          />
+        </div>
+        <h2 className="mt-3 text-sm font-semibold text-foreground">{title}</h2>
+        <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p>
+        {action}
+      </div>
+    </div>
+  );
+}
+
+function CourseSkeleton() {
+  return (
+    <div className={cn('grid min-h-20 grid-cols-1 gap-3 border-b border-border bg-card px-4 py-4 md:items-center', courseTableGrid)}>
+      <div className="flex items-center gap-3">
+        <div className="aspect-video w-[104px] rounded-lg bg-muted" />
+        <div className="min-w-0 flex-1">
+          <div className="h-4 w-2/3 rounded bg-muted" />
+          <div className="mt-2 h-3 w-28 rounded bg-muted" />
+        </div>
+      </div>
+      <div className="mx-auto h-6 w-24 rounded bg-muted" />
+      <div className="mx-auto h-4 w-16 rounded bg-muted" />
+      <div className="h-4 w-24 rounded bg-muted" />
+      <div className="mx-auto h-4 w-20 rounded bg-muted" />
+      <div className="ml-auto h-4 w-16 rounded bg-muted" />
+    </div>
+  );
 }
 
 export default function TeacherCoursesPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
-  const { data: courses = [] } = useTeacherCourses();
+  const {
+    data: courses = [],
+    isLoading,
+    isError,
+    error,
+  } = useTeacherCourses();
 
   const counts = useMemo(() => ({
     all: courses.length,
@@ -60,7 +142,8 @@ export default function TeacherCoursesPage() {
       const matchFilter = filter === 'all' || course.status === filter;
       const matchQuery =
         keyword.length === 0 ||
-        course.title.toLocaleLowerCase('vi').includes(keyword);
+        course.title.toLocaleLowerCase('vi').includes(keyword) ||
+        course.description.toLocaleLowerCase('vi').includes(keyword);
 
       return matchFilter && matchQuery;
     });
@@ -68,18 +151,30 @@ export default function TeacherCoursesPage() {
 
   const totalStudents = courses.reduce((sum, course) => sum + course.students, 0);
   const hasCourses = courses.length > 0;
+  const hasActiveSearch = query.trim().length > 0 || filter !== 'all';
+  const resetFilters = () => {
+    setQuery('');
+    setFilter('all');
+  };
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-5 py-7 sm:px-6 sm:py-9 lg:py-10">
-      <section className="flex flex-col gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-[1.75rem]">
-            Khóa học của tôi
+    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <section className="flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-slate-950 sm:text-[2rem]">
+            Khóa học
           </h1>
-          <p className="mt-1.5 text-sm leading-6 text-slate-500">
-            {counts.all} khóa học đang quản lý
-            <span className="mx-2 text-slate-300">·</span>
-            {totalStudents} học viên
+          <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+            Quản lý nội dung và theo dõi các khóa học của bạn.
+          </p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {counts.all} khóa học
+            {counts.all > 0 && (
+              <>
+                <span className="mx-2 text-border">·</span>
+                {totalStudents} học viên
+              </>
+            )}
           </p>
         </div>
 
@@ -89,122 +184,184 @@ export default function TeacherCoursesPage() {
         </Link>
       </section>
 
-      <section className="pt-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div role="tablist" aria-label="Lọc trạng thái khóa học" className="flex border-b border-slate-200">
-            {FILTER_TABS.map((item) => {
-              const active = item.key === filter;
-
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setFilter(item.key)}
-                  className={cn(
-                    'relative -mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition',
-                    active
-                      ? 'border-cyan-700 text-cyan-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-900',
-                  )}
-                >
-                  {item.label}
-                  <span className={cn('text-xs tabular-nums', active ? 'text-cyan-700' : 'text-slate-400')}>
-                    {counts[item.key]}
-                  </span>
-                </button>
-              );
-            })}
+      {isLoading && (
+        <section aria-live="polite" aria-busy="true" className="pt-6">
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Đang tải khóa học</h2>
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <CourseSkeleton key={index} />
+            ))}
           </div>
+        </section>
+      )}
 
-          <label className="relative block w-full lg:w-[300px]">
-            <span className="sr-only">Tìm theo tên khóa học</span>
-            <Icon name="ri-search-line" className="pointer-events-none absolute left-3.5 top-1/2 text-lg text-slate-400 -translate-y-1/2" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên khóa học..."
-              className="h-10 rounded-lg border-slate-200 bg-white pl-10 pr-3"
-            />
-          </label>
+      {isError && (
+        <EmptyState
+          tone="danger"
+          title="Không tải được danh sách khóa học"
+          description={
+            error instanceof Error
+              ? error.message
+              : 'Vui lòng kiểm tra kết nối và thử tải lại trang.'
+          }
+        />
+      )}
+
+      {!isLoading && !isError && (
+      <section className="pt-6">
+        <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <label className="relative block w-full lg:max-w-[360px]">
+              <span className="sr-only">Tìm theo tên hoặc mô tả khóa học</span>
+              <Icon
+                name="ri-search-line"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg text-muted-foreground"
+              />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Tìm theo tên hoặc mô tả..."
+                className="pl-10 pr-3"
+              />
+            </label>
+
+            <div
+              role="tablist"
+              aria-label="Lọc trạng thái khóa học"
+              className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1"
+            >
+              {FILTER_TABS.map((item) => {
+                const active = item.key === filter;
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setFilter(item.key)}
+                    className={cn(
+                      'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium outline-none transition focus-visible:ring-3 focus-visible:ring-ring/20',
+                      active
+                        ? 'bg-card text-primary shadow-sm'
+                        : 'text-muted-foreground hover:bg-card/70 hover:text-foreground',
+                    )}
+                  >
+                    {item.label}
+                    <span className={cn('text-xs tabular-nums', active ? 'text-primary' : 'text-muted-foreground')}>
+                      {counts[item.key]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {!hasCourses ? (
-          <div className="mt-10 flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 text-center">
-            <div className="max-w-sm">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                <Icon name="ri-book-open-line" className="text-xl" />
-              </div>
-              <h2 className="mt-3 text-sm font-semibold text-slate-900">Chưa có khóa học nào</h2>
-              <p className="mt-1.5 text-sm leading-6 text-slate-500">
-                Tạo khóa học đầu tiên để bắt đầu quản lý nội dung học tập.
-              </p>
+          <EmptyState
+            title="Chưa có khóa học nào"
+            description="Tạo khóa học đầu tiên để bắt đầu quản lý nội dung học tập."
+            action={
               <Link href={CREATE_HREF} className={cn(buttonVariants(), 'mt-4')}>
                 <Icon name="ri-add-line" data-icon="inline-start" />
                 Tạo khóa học mới
               </Link>
-            </div>
-          </div>
+            }
+          />
         ) : visible.length === 0 ? (
-          <div className="mt-10 flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 text-center">
-            <div className="max-w-sm">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                <Icon name="ri-inbox-line" className="text-xl" />
-              </div>
-              <h2 className="mt-3 text-sm font-semibold text-slate-900">Không tìm thấy khóa học phù hợp</h2>
-              <p className="mt-1.5 text-sm leading-6 text-slate-500">
-                Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {visible.map((course) => (
-              <Link
-                key={course.id}
-                href={courseHref(course)}
-                className={cn(
-                  'group flex min-h-[220px] flex-col rounded-xl border border-slate-200 bg-white p-4 outline-none transition hover:border-slate-300 hover:shadow-sm focus-visible:border-cyan-600 focus-visible:ring-3 focus-visible:ring-cyan-600/10',
-                  course.status === 'archived' && 'opacity-75',
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <span className={cn('rounded-md border px-2 py-1 text-xs font-medium', STATUS_BADGE[course.status])}>
-                    {STATUS_LABEL[course.status]}
-                  </span>
-                  <span className="text-xs font-medium text-slate-400">{LEVEL_LABEL[course.level]}</span>
-                </div>
-
-                <h2
-                  title={course.title}
-                  className="mt-4 line-clamp-2 min-h-[2.75rem] text-[15px] font-bold leading-[1.4] text-slate-900 transition-colors group-hover:text-cyan-700"
+          <EmptyState
+            title="Không tìm thấy khóa học phù hợp"
+            description="Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc."
+            action={
+              hasActiveSearch ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className={cn(buttonVariants({ variant: 'outline' }), 'mt-4')}
                 >
-                  {course.title}
-                </h2>
+                  Xóa tìm kiếm và bộ lọc
+                </button>
+              ) : null
+            }
+          />
+        ) : (
+          <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card">
+            <div className={cn('hidden border-b border-border bg-muted/60 px-4 py-3 text-sm font-semibold text-muted-foreground md:grid', courseTableGrid)}>
+              <span>Khóa học</span>
+              <span className="text-center">Trạng thái</span>
+              <span className="text-center">Học viên</span>
+              <span>Tiến độ TB</span>
+              <span className="text-center">Cập nhật</span>
+              <span className="text-right">Hành động</span>
+            </div>
 
-                <div className="mt-4 space-y-2 text-sm text-slate-500">
-                  <p className="flex items-center gap-1.5">
-                    <Icon name="ri-group-line" className="text-base text-slate-400" />
-                    {course.students > 0 ? `${course.students} học viên` : 'Chưa có học viên'}
-                  </p>
-                  <p className="flex items-center gap-1.5 text-xs text-slate-400">
-                    <Icon name="ri-calendar-line" className="text-sm" />
-                    Cập nhật {course.updatedAt}
-                  </p>
-                </div>
+            <div className="divide-y divide-border">
+              {visible.map((course) => {
+                const completion = Math.min(Math.max(course.completion, 0), 100);
 
-                <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3.5">
-                  <span className="text-sm font-semibold text-slate-700 group-hover:text-cyan-700">
-                    {courseAction(course)}
-                  </span>
-                  <Icon name="ri-arrow-right-line" className="text-base text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-cyan-700" />
-                </div>
-              </Link>
-            ))}
+                return (
+                  <article
+                    key={course.id}
+                    className={cn(
+                      'grid gap-3 bg-card px-4 py-4 transition hover:bg-muted/30 md:min-h-[84px] md:items-center',
+                      courseTableGrid,
+                      course.status === 'archived' && 'opacity-80',
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <CourseCover course={course} className="w-[96px] shrink-0 rounded-lg sm:w-[104px] md:w-[104px]" />
+                      <div className="min-w-0">
+                        <h2 title={course.title} className="line-clamp-2 text-[15px] font-semibold leading-snug text-foreground sm:text-base">
+                          {course.title}
+                        </h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {LEVEL_LABEL[course.level]}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex md:justify-center">
+                      <span className={cn('inline-flex rounded-md border px-2 py-1 text-xs font-semibold', STATUS_BADGE[course.status])}>
+                        {STATUS_LABEL[course.status]}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground md:justify-center md:text-center md:text-foreground">
+                      <span className="md:hidden">Học viên</span>
+                      <span className="font-medium tabular-nums">{course.students}</span>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground md:hidden">Tiến độ TB</span>
+                        <span className="font-semibold tabular-nums text-foreground">{completion}%</span>
+                      </div>
+                      <ProgressBar value={completion} className="w-full md:w-24" />
+                    </div>
+
+                    <div className="hidden text-center text-sm text-muted-foreground md:block">
+                      {course.updatedAt}
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Link
+                        href={courseHref(course)}
+                        aria-label={`Quản lý khóa học ${course.title}`}
+                        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'px-0 hover:bg-transparent md:px-2')}
+                      >
+                        {courseAction()}
+                        <Icon name="ri-arrow-right-line" data-icon="inline-end" />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         )}
       </section>
+      )}
     </main>
   );
 }
