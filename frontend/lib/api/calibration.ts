@@ -153,8 +153,13 @@ export function clearStoredGazeSession(): void {
 }
 
 // WebSocket stream (nối thẳng AI service — không qua proxy, không cần CORS).
-export const GAZE_WS_ORIGIN =
-  process.env.NEXT_PUBLIC_EYE_TRACKING_WS_URL?.trim() || 'wss://api.nmhieu.online';
+// Suy ra từ NEXT_PUBLIC_API_URL: https://... -> wss://..., http://... -> ws://
+const GAZE_WS_BASE =
+  process.env.NEXT_PUBLIC_API_URL?.trim() || "https://api.yourdomain.com";
+export const GAZE_WS_ORIGIN = GAZE_WS_BASE.replace(/^http:/, "ws:").replace(
+  /^https:/,
+  "wss:",
+);
 
 export function gazeStreamUrl(sessionId: string): string {
   return `${GAZE_WS_ORIGIN}/session/${sessionId}/stream`;

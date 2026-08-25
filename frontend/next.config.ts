@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
-// Khi chạy qua Cloudflare tunnel, rewrite đến backend qua localhost (internal)
-const BACKEND_INTERNAL = process.env.NEXT_PUBLIC_BACKEND_INTERNAL ?? "http://localhost:8001";
-const GAZE_INTERNAL = process.env.NEXT_PUBLIC_GAZE_INTERNAL ?? "http://localhost:8000";
+// Một biến duy nhất: origin của backend (vd https://api.yourdomain.com).
+// Tất cả rewrite (api, media, gaze) và URL都 suy ra từ đây.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://api.yourdomain.com";
 
 const nextConfig: NextConfig = {
   async rewrites() {
@@ -12,25 +12,25 @@ const nextConfig: NextConfig = {
       beforeFiles: [
         {
           source: "/api/teacher/:path*",
-          destination: `${BACKEND_INTERNAL}/teacher/:path*`,
+          destination: `${API_URL}/teacher/:path*`,
         },
         {
           source: "/api/admin/:path*",
-          destination: `${BACKEND_INTERNAL}/admin/:path*`,
+          destination: `${API_URL}/admin/:path*`,
         },
       ],
       afterFiles: [
         {
           source: "/api/:path*",
-          destination: `${BACKEND_INTERNAL}/api/:path*`,
+          destination: `${API_URL}/api/:path*`,
         },
         {
           source: "/media/:path*",
-          destination: `${BACKEND_INTERNAL}/media/:path*`,
+          destination: `${API_URL}/media/:path*`,
         },
         {
           source: "/gaze/:path*",
-          destination: `${GAZE_INTERNAL}/:path*`,
+          destination: `${API_URL}/gaze/:path*`,
         },
       ],
       fallback: [],

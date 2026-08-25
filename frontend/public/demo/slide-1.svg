@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <rect width="1280" height="10" fill="#0e7490"/>
+  <circle cx="1150" cy="150" r="90" fill="#ecfeff"/>
+  <circle cx="1190" cy="560" r="130" fill="#f0fdfa"/>
+  <text x="80" y="130" font-family="Arial, sans-serif" font-size="26" fill="#0e7490" font-weight="bold" letter-spacing="2">BAI GIANG MAU · MACHINE LEARNING CO BAN</text>
+  <text x="80" y="310" font-family="Arial, sans-serif" font-size="76" fill="#0f172a" font-weight="bold">Gradient Descent</text>
+  <text x="80" y="372" font-family="Arial, sans-serif" font-size="34" fill="#475569">Thuat toan toi uu nen tang cua hoc sau</text>
+  <rect x="80" y="430" width="120" height="6" rx="3" fill="#0e7490"/>
+  <text x="80" y="620" font-family="Arial, sans-serif" font-size="24" fill="#94a3b8">Trang 1 / 3 — GazeEdu Demo</text>
+  <path d="M 900 480 Q 1000 320 1100 470 Q 1150 540 1200 500" stroke="#0e7490" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <circle cx="900" cy="480" r="12" fill="#0e7490"/>
+  <circle cx="1035" cy="398" r="12" fill="#06b6d4"/>
+  <circle cx="1160" cy="505" r="12" fill="#f59e0b"/>
+</svg>

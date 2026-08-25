@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <rect width="1280" height="10" fill="#0e7490"/>
+  <text x="80" y="110" font-family="Arial, sans-serif" font-size="44" fill="#0f172a" font-weight="bold">Toc do hoc (learning rate α)</text>
+  <rect x="80" y="135" width="90" height="6" rx="3" fill="#0e7490"/>
+  <rect x="80" y="190" width="350" height="380" rx="16" fill="#fef2f2" stroke="#fecaca" stroke-width="2"/>
+  <text x="255" y="250" font-family="Arial, sans-serif" font-size="30" fill="#b91c1c" font-weight="bold" text-anchor="middle">α qua lon</text>
+  <path d="M 130 480 Q 180 300 230 470 Q 280 320 330 460 Q 370 350 390 420" stroke="#ef4444" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <text x="255" y="535" font-family="Arial, sans-serif" font-size="22" fill="#7f1d1d" text-anchor="middle">Phan tich, khong hoi tu</text>
+  <rect x="465" y="190" width="350" height="380" rx="16" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="2"/>
+  <text x="640" y="250" font-family="Arial, sans-serif" font-size="30" fill="#15803d" font-weight="bold" text-anchor="middle">α phu hop</text>
+  <path d="M 510 330 Q 590 500 700 520 Q 760 528 790 530" stroke="#22c55e" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <text x="640" y="535" font-family="Arial, sans-serif" font-size="22" fill="#14532d" text-anchor="middle">Hoi tu on dinh</text>
+  <rect x="850" y="190" width="350" height="380" rx="16" fill="#fffbeb" stroke="#fde68a" stroke-width="2"/>
+  <text x="1025" y="250" font-family="Arial, sans-serif" font-size="30" fill="#b45309" font-weight="bold" text-anchor="middle">α qua nho</text>
+  <path d="M 890 320 L 960 330 L 1030 345 L 1100 365 L 1170 390" stroke="#f59e0b" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <text x="1025" y="535" font-family="Arial, sans-serif" font-size="22" fill="#78350f" text-anchor="middle">Hoi tu rat cham</text>
+  <text x="80" y="660" font-family="Arial, sans-serif" font-size="24" fill="#94a3b8">Trang 3 / 3 — GazeEdu Demo</text>
+</svg>
