@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import security
+from app.core.ratelimit import rate_limit
 from app.crud import user as user_crud
 from app.db.session import get_db
 from app.models.auth import User
@@ -52,7 +53,11 @@ async def _issue_tokens(
     return _token_pair(user, access, refresh)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit(10, 60, "login"))],
+)
 async def login(
     body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
 ):

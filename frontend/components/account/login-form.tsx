@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { BrandLogo } from '@/components/ui/brand-logo';
@@ -103,12 +102,6 @@ export function LoginForm({
               <FieldLabel htmlFor="login-password" className="text-sm font-medium text-slate-700">
                 Mật khẩu
               </FieldLabel>
-              <Link
-                href="/account/forgot-password"
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25"
-              >
-                Quên mật khẩu?
-              </Link>
             </div>
 
             <div className="relative">

@@ -13,6 +13,7 @@ from app.api.deps import (
     get_current_user,
     require_roles,
 )
+from app.core.ratelimit import rate_limit
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.auth import User
@@ -209,6 +210,7 @@ def _render_pdf_slides(lesson_id: str, data: bytes) -> int:
 @router.post(
     "/teacher/lessons/{lesson_id}/slides/upload",
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit(15, 60, "upload"))],
 )
 async def upload_lesson_pdf(
     lesson_id: str,

@@ -42,6 +42,10 @@ export class ApiError extends Error {
   }
 }
 
+// Giới hạn upload (phải khớp với client_max_body_size của nginx).
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const MAX_UPLOAD_LABEL = `${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`;
+
 export interface ApiRequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
@@ -168,6 +172,9 @@ export async function apiFetchMultipart<T>(
   }
 
   if (!res.ok) {
+    if (res.status === 413) {
+      throw new ApiError(413, `File tải lên vượt quá ${MAX_UPLOAD_LABEL} cho phép.`);
+    }
     let message = `HTTP ${res.status}`;
     try {
       const data = (await res.json()) as { detail?: string; message?: string };

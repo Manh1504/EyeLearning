@@ -27,6 +27,7 @@ import {
   updateModule,
   uploadLessonPdf,
 } from '@/lib/api/teacher';
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from '@/lib/api/client';
 import type { CourseStatus, LessonNode, ModuleNode } from '@/lib/types/domain';
 
 type Selection =
@@ -412,6 +413,10 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     const pdf = list.find((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
     if (!pdf) {
       flash('err', 'Vui lòng chọn file PDF.');
+      return;
+    }
+    if (pdf.size > MAX_UPLOAD_BYTES) {
+      flash('err', `File PDF "${pdf.name}" có kích thước ${(pdf.size / (1024 * 1024)).toFixed(1)}MB, vượt quá ${MAX_UPLOAD_LABEL} cho phép.`);
       return;
     }
     setUploading(true);
@@ -955,7 +960,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                     <Icon name="ri-upload-cloud-2-line" className="text-4xl" />
                     <p className="mt-4 text-base font-semibold text-slate-800">Chưa có PDF</p>
                     <p className="mt-1.5 text-sm text-slate-500">Kéo file vào đây hoặc chọn từ máy.</p>
-                    <p className="mt-1 text-xs text-slate-400">PDF · tối đa 100MB</p>
+                    <p className="mt-1 text-xs text-slate-400">PDF · tối đa {MAX_UPLOAD_LABEL}</p>
                     <span className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">
                       {uploading ? 'Đang render slide…' : 'Chọn file PDF'}
                     </span>
