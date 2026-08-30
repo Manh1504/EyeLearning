@@ -15,9 +15,14 @@
 # Các service nội bộ giao tiếp qua docker network (tên service):
 #   backend -> http://gaze:8000  (AI_HTTP_URL)
 #
-# LƯU Ý (deploy qua Portainer, không có SSH): mọi file bind mount phải nằm TRONG
-# repo (Portainer clone từ Git). Vì vậy ./nginx/certs (SSL) và ./API/weights
-# (model gaze) cần được đưa vào repo (hoặc do container tự sinh) — xem trao đổi.
+# LƯU Ý (deploy qua Portainer, không có SSH):
+# - Config nginx BUILD thẳng vào image (nginx/Dockerfile + nginx/app.conf) để
+#   không bind-mount file từ host -> né lỗi "mounting a directory onto a file".
+# - Cert SSL do container certbot tự xin (Let's Encrypt, webroot) vào volume
+#   chung nginx-certs; nginx đọc tại /etc/nginx/certs/live/eyelearning/.
+#   Trước khi có cert thật, nginx sinh self-signed dự phòng (vẫn chạy được).
+#   Sau khi certbot báo "OK", restart container nginx để dùng cert thật.
+# - ./API/weights (model gaze) vẫn là bind mount thư mục, do anh tự lo.
 # ============================================================
 
 services:
@@ -84,26 +89,41 @@ services:
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
 
   nginx:
-    image: nginx:1.27-alpine
+    build: ./nginx
     container_name: eyetracking-nginx
     restart: unless-stopped
     depends_on:
       - backend
       - gaze
+      - certbot
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      # Cert + webroot ACME phải có mặt khi clone (xem thảo luận cert ở dưới).
-      - ./nginx/certs:/etc/nginx/certs:ro
-      - ./nginx/certbot:/var/www/certbot:ro
+      # Chia sẻ cert (certbot ghi, nginx đọc) và webroot ACME.
+      - nginx-certs:/etc/nginx/certs
+      - nginx-webroot:/var/www/certbot:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:80 >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
 
+  # Xin cert Let's Encrypt thật qua webroot (port 80 do nginx phục vụ).
+  # Sau khi có cert, restart container nginx (Portainer) để dùng cert thật.
+  certbot:
+    image: certbot/certbot:latest
+    container_name: eyetracking-certbot
+    restart: unless-stopped
+    volumes:
+      - nginx-certs:/etc/letsencrypt
+      - nginx-webroot:/var/www/certbot
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "while ! certbot certonly --webroot -w /var/www/certbot -d api.eyelearning.id.vn -d gaze.eyelearning.id.vn --cert-name eyelearning --email admin@eyelearning.id.vn --agree-tos --non-interactive; do echo '[certbot] chua xin duoc cert, thu lai sau 30s (hay kiem tra DNS + port 80)'; sleep 30; done; echo '[certbot] OK - co cert that'; while :; do sleep 12h; certbot renew --webroot -w /var/www/certbot; done"
+
 volumes:
   pgdata:
   backend-media:
+  nginx-certs:
+  nginx-webroot:
