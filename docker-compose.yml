@@ -15,8 +15,9 @@
 # Các service nội bộ giao tiếp qua docker network (tên service):
 #   backend -> http://gaze:8000  (AI_HTTP_URL)
 #
-# Chứng chỉ: mount ./nginx/certs (fullchain.pem + privkey.pem).
-# Lấy cert Let's Encrypt: xem ghi chú cuối file.
+# Chứng chỉ SSL + trọng số gaze nằm NGOÀI git (bí mật / file lớn) -> mount từ
+# đường dẫn tuyệt đối trên server: /opt/eyelearning/certs và /opt/eyelearning/weights.
+# Tạo 1 lần trên server (certbot / scp), không bị xoá khi redeploy clone mới.
 # ============================================================
 
 services:
@@ -77,7 +78,9 @@ services:
     environment:
       - DEVICE=cuda
     volumes:
-      - ./API/weights:/app/weights
+      # Trọng số model nằm ngoài git (gitignore + dung lượng lớn) -> mount từ
+      # đường dẫn tuyệt đối ổn định trên server, không phụ thuộc thư mục clone.
+      - /opt/eyelearning/weights:/app/weights
     gpus: all
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
 
@@ -93,8 +96,10 @@ services:
       - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
-      - ./nginx/certbot:/var/www/certbot:ro
+      # Cert + webroot ACME nằm ngoài git -> đường dẫn tuyệt đối ổn định trên
+      # server (tạo 1 lần bằng certbot, không bị xoá khi redeploy clone mới).
+      - /opt/eyelearning/certs:/etc/nginx/certs:ro
+      - /opt/eyelearning/certbot:/var/www/certbot:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:80 >/dev/null || exit 1"]
       interval: 15s
