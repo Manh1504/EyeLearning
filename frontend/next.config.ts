@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 // Một biến duy nhất: origin của backend (vd https://api.yourdomain.com).
 // Tất cả rewrite (api, media, gaze) và URL都 suy ra từ đây.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://api.yourdomain.com";
+// ML service (gaze-api) — chạy riêng (local :8000, hoặc domain riêng ở prod).
+// Luồng gaze (calibration /session + WS /session/{sid}/stream) gọi THẲNG service này,
+// không qua backend chính. Rewrite dưới đây strip tiền tố /gaze để khớp protocol /session.
+const GAZE_URL = process.env.NEXT_PUBLIC_GAZE_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
   async rewrites() {
@@ -30,7 +34,7 @@ const nextConfig: NextConfig = {
         },
         {
           source: "/gaze/:path*",
-          destination: `${API_URL}/gaze/:path*`,
+          destination: `${GAZE_URL}/:path*`,
         },
       ],
       fallback: [],

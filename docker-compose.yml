@@ -1,3 +1,22 @@
+# ============================================================
+# GazeEdu — Docker Compose (triển khai server trường)
+# ------------------------------------------------------------
+# Toàn bộ stack chạy sau 1 nginx reverse proxy (SSL, chỉ mở 80/443):
+#   https://eyelearning.id.vn        -> frontend (Next.js :3000)
+#   https://api.eyelearning.id.vn    -> backend  (FastAPI :8001)
+#   https://gaze.eyelearning.id.vn   -> gaze-api (ML :8000, GPU)
+#
+# Các service nội bộ giao tiếp qua docker network (tên service):
+#   backend  -> http://gaze:8000         (AI_HTTP_URL)
+#   next     -> https://gaze.../session  (NEXT_PUBLIC_GAZE_URL, rewrite + WS)
+#
+# Build ảnh với biến public của frontend (bị inlay lúc build):
+#   NEXT_PUBLIC_API_URL / NEXT_PUBLIC_GAZE_URL  (xem .env)
+#
+# Chứng chỉ: mount ./nginx/certs (fullchain.pem + privkey.pem).
+# Lấy cert Let's Encrypt: xem ghi chú cuối file.
+# ============================================================
+
 services:
   postgres:
     image: postgres:16
@@ -9,7 +28,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: UTC
     ports:
-      - "5435:5432"
+      - "5435:5432"   # chỉ để tool ngoài truy cập; app dùng service name `postgres:5432`
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -26,19 +45,84 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Trong docker: dùng tên service cho nội bộ (không dùng localhost).
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER}
-      AI_HTTP_URL: ${AI_HTTP_URL}
+      AI_HTTP_URL: http://gaze:8000
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS}
       CLOUDINARY_URL: ${CLOUDINARY_URL:-}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
-    ports:
-      - "8001:8001"
+      GAZE_DOWNSAMPLE_HZ: ${GAZE_DOWNSAMPLE_HZ:-4.0}
+      GAZE_BATCH_MAX: ${GAZE_BATCH_MAX:-2000}
+      DEBUG: ${DEBUG:-false}
     volumes:
       - backend-media:/app/media
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/ai/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # Không publish 8001 ra host — chỉ nginx truy cập nội bộ.
+
+  gaze:
+    image: hieunm1501/gaze-api:gpu
+    container_name: eyetracking-gaze
+    restart: unless-stopped
+    environment:
+      - DEVICE=cuda
+    volumes:
+      - ./API/weights:/app/weights
+    gpus: all
+    # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eyelearning.id.vn}
+        NEXT_PUBLIC_GAZE_URL: ${NEXT_PUBLIC_GAZE_URL:-https://gaze.eyelearning.id.vn}
+    container_name: eyetracking-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - gaze
+    environment:
+      # Cần ở runtime để Next đọc rewrite (/gaze/* -> gaze) khi `next start`.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eyelearning.id.vn}
+      NEXT_PUBLIC_GAZE_URL: ${NEXT_PUBLIC_GAZE_URL:-https://gaze.eyelearning.id.vn}
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Không publish 3000 ra host — chỉ nginx truy cập nội bộ.
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: eyetracking-nginx
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+      - gaze
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/certbot:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
