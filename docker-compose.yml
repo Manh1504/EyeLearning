@@ -1,17 +1,19 @@
 # ============================================================
 # GazeEdu — Docker Compose (triển khai server trường)
 # ------------------------------------------------------------
-# Toàn bộ stack chạy sau 1 nginx reverse proxy (SSL, chỉ mở 80/443):
-#   https://eyelearning.id.vn        -> frontend (Next.js :3000)
+# Frontend đã deploy riêng trên Vercel. Server này chỉ chạy:
+#   postgres + backend + gaze-api, đứng sau 1 nginx reverse proxy
+#   (SSL, chỉ mở 80/443):
 #   https://api.eyelearning.id.vn    -> backend  (FastAPI :8001)
 #   https://gaze.eyelearning.id.vn   -> gaze-api (ML :8000, GPU)
 #
-# Các service nội bộ giao tiếp qua docker network (tên service):
-#   backend  -> http://gaze:8000         (AI_HTTP_URL)
-#   next     -> https://gaze.../session  (NEXT_PUBLIC_GAZE_URL, rewrite + WS)
+# Frontend (Vercel) gọi trực tiếp 2 subdomain trên. Cần set trong
+# Vercel project env:
+#   NEXT_PUBLIC_API_URL=https://api.eyelearning.id.vn
+#   NEXT_PUBLIC_GAZE_URL=https://gaze.eyelearning.id.vn
 #
-# Build ảnh với biến public của frontend (bị inlay lúc build):
-#   NEXT_PUBLIC_API_URL / NEXT_PUBLIC_GAZE_URL  (xem .env)
+# Các service nội bộ giao tiếp qua docker network (tên service):
+#   backend -> http://gaze:8000  (AI_HTTP_URL)
 #
 # Chứng chỉ: mount ./nginx/certs (fullchain.pem + privkey.pem).
 # Lấy cert Let's Encrypt: xem ghi chú cuối file.
@@ -79,36 +81,11 @@ services:
     gpus: all
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
 
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eyelearning.id.vn}
-        NEXT_PUBLIC_GAZE_URL: ${NEXT_PUBLIC_GAZE_URL:-https://gaze.eyelearning.id.vn}
-    container_name: eyetracking-frontend
-    restart: unless-stopped
-    depends_on:
-      - backend
-      - gaze
-    environment:
-      # Cần ở runtime để Next đọc rewrite (/gaze/* -> gaze) khi `next start`.
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eyelearning.id.vn}
-      NEXT_PUBLIC_GAZE_URL: ${NEXT_PUBLIC_GAZE_URL:-https://gaze.eyelearning.id.vn}
-      NODE_ENV: production
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 >/dev/null || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    # Không publish 3000 ra host — chỉ nginx truy cập nội bộ.
-
   nginx:
     image: nginx:1.27-alpine
     container_name: eyetracking-nginx
     restart: unless-stopped
     depends_on:
-      - frontend
       - backend
       - gaze
     ports:
