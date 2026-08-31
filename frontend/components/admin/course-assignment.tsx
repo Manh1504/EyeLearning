@@ -35,7 +35,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 const STATUS_BADGE: Record<CourseStatus, string> = {
   published: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   draft: 'border-amber-200 bg-amber-50 text-amber-700',
-  archived: 'border-slate-200 bg-slate-100 text-slate-600',
+  archived: 'border-border bg-muted text-muted-foreground',
 };
 
 function getAssignedTeachers(assigned: CourseTeacher[]) {
@@ -58,19 +58,19 @@ function EmptyState({
   return (
     <div
       role={tone === 'danger' ? 'alert' : undefined}
-      className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center"
+      className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center"
     >
       <div className="max-w-sm">
         <div
           className={cn(
             'mx-auto flex h-10 w-10 items-center justify-center rounded-lg',
-            tone === 'danger' ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500',
+            tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground',
           )}
         >
           <Icon name={icon} className="text-xl" aria-hidden />
         </div>
-        <h2 className="mt-3 text-sm font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1.5 text-sm leading-6 text-slate-500">{description}</p>
+        <h2 className="mt-3 text-sm font-semibold text-foreground">{title}</h2>
+        <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p>
         {action}
       </div>
     </div>
@@ -182,12 +182,12 @@ function TeacherPicker({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={handleButtonKeyDown}
-        className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm outline-none transition hover:border-ring/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 text-left text-sm outline-none transition hover:border-ring/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
       >
         <span className="min-w-0 truncate">
           {loading ? 'Đang tải giảng viên...' : selected ? `${selected.name} · ${selected.code}` : 'Chọn giảng viên'}
         </span>
-        <Icon name="ri-arrow-down-s-line" className="shrink-0 text-slate-400" aria-hidden />
+        <Icon name="ri-arrow-down-s-line" className="shrink-0 text-muted-foreground" aria-hidden />
       </button>
 
       {open &&
@@ -195,14 +195,14 @@ function TeacherPicker({
           <div
             ref={menuRef}
             style={menuStyle}
-            className="overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/12"
+            className="overflow-y-auto rounded-xl border border-border bg-card shadow-lg shadow-brand-navy/15"
           >
-            <div className="border-b border-slate-100 p-2">
+            <div className="border-b border-border p-2">
               <label className="relative block">
                 <span className="sr-only">Tìm giảng viên</span>
                 <Icon
                   name="ri-search-line"
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                   aria-hidden
                 />
                 <Input
@@ -216,7 +216,7 @@ function TeacherPicker({
             </div>
             <div role="listbox" aria-label="Danh sách giảng viên" className="p-1">
               {filtered.length === 0 ? (
-                <p className="px-3 py-4 text-sm text-slate-500">Không có giảng viên phù hợp.</p>
+                <p className="px-3 py-4 text-sm text-muted-foreground">Không có giảng viên phù hợp.</p>
               ) : (
                 filtered.map((teacher) => (
                   <button
@@ -230,14 +230,14 @@ function TeacherPicker({
                       buttonRef.current?.focus();
                     }}
                     className={cn(
-                      'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none transition hover:bg-slate-50 focus-visible:bg-accent',
+                      'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none transition hover:bg-muted focus-visible:bg-accent',
                       teacher.id === value && 'bg-accent text-primary',
                     )}
                   >
                     <UserAvatar name={teacher.name} className="h-8 w-8" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-900">{teacher.name}</span>
-                      <span className="block truncate text-xs text-slate-500">
+                      <span className="block truncate text-sm font-medium text-foreground">{teacher.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
                         {teacher.code}{teacher.email ? ` · ${teacher.email}` : ''}
                       </span>
                     </span>
@@ -368,23 +368,23 @@ export default function CourseAssignment() {
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 sm:py-9 lg:py-10">
-      <section className="border-b border-slate-200 pb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-[1.75rem]">
+      <section className="border-b border-border pb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">
           Phân công giảng viên
         </h1>
-        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
           Chọn khóa học để xem chủ sở hữu và quản lý giảng viên được phân công.
         </p>
       </section>
 
       <section className="pt-6">
-        <div className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+        <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <label className="relative block w-full lg:max-w-[420px]">
               <span className="sr-only">Tìm theo tên hoặc mã khóa học</span>
               <Icon
                 name="ri-search-line"
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg text-slate-400"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg text-muted-foreground"
                 aria-hidden
               />
               <Input
@@ -398,7 +398,7 @@ export default function CourseAssignment() {
             <div
               role="tablist"
               aria-label="Lọc khóa học"
-              className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1"
+              className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1"
             >
               {FILTERS.map((item) => {
                 const active = filter === item.key;
@@ -412,12 +412,12 @@ export default function CourseAssignment() {
                     className={cn(
                       'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium outline-none transition focus-visible:ring-3 focus-visible:ring-ring/20',
                       active
-                        ? 'bg-white text-primary shadow-sm'
-                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-900',
+                        ? 'bg-card text-primary shadow-sm'
+                        : 'text-muted-foreground hover:bg-card/70 hover:text-foreground',
                     )}
                   >
                     {item.label}
-                    <span className={cn('text-xs tabular-nums', active ? 'text-primary' : 'text-slate-400')}>
+                    <span className={cn('text-xs tabular-nums', active ? 'text-primary' : 'text-muted-foreground')}>
                       {counts[item.key]}
                     </span>
                   </button>
@@ -430,10 +430,10 @@ export default function CourseAssignment() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
         <Card className="min-w-0 gap-0 py-0">
-          <div className="flex flex-col gap-1 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">Danh sách khóa học</h2>
-              <p className="text-xs text-slate-500">
+              <h2 className="text-sm font-semibold text-foreground">Danh sách khóa học</h2>
+              <p className="text-xs text-muted-foreground">
                 {visibleCourses.length} / {courses.length} khóa học
               </p>
             </div>
@@ -451,9 +451,9 @@ export default function CourseAssignment() {
           {isLoading ? (
             <div aria-live="polite" aria-busy="true" className="space-y-3 p-4">
               {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="rounded-lg border border-slate-100 p-4">
-                  <div className="h-5 w-2/3 rounded bg-slate-100" />
-                  <div className="mt-3 h-4 w-1/2 rounded bg-slate-100" />
+                <div key={index} className="rounded-lg border border-border p-4">
+                  <div className="h-5 w-2/3 rounded bg-muted" />
+                  <div className="mt-3 h-4 w-1/2 rounded bg-muted" />
                 </div>
               ))}
             </div>
@@ -516,8 +516,8 @@ export default function CourseAssignment() {
                       }
                     }}
                     className={cn(
-                      'cursor-pointer rounded-xl border bg-white p-4 outline-none transition hover:bg-slate-50 focus-visible:ring-3 focus-visible:ring-ring/20',
-                      selected ? 'border-brand-cyan/60 bg-accent ring-2 ring-ring/20' : 'border-slate-200',
+                      'cursor-pointer rounded-xl border bg-card p-4 outline-none transition hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/20',
+                      selected ? 'border-brand-cyan/60 bg-accent ring-2 ring-ring/20' : 'border-border',
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -526,15 +526,15 @@ export default function CourseAssignment() {
                           'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]',
                           selected
                             ? 'border-primary bg-primary text-white'
-                            : 'border-slate-300 bg-white text-transparent',
+                            : 'border-border bg-card text-transparent',
                         )}
                         aria-hidden
                       >
                         <Icon name="ri-check-line" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <h3 className="break-words text-sm font-semibold text-slate-900">{course.title}</h3>
-                        <p className="mt-0.5 text-xs text-slate-500">{course.id} · {course.students} học viên</p>
+                        <h3 className="break-words text-sm font-semibold text-foreground">{course.title}</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{course.id} · {course.students} học viên</p>
                       </div>
                       <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium', STATUS_BADGE[course.status])}>
                         {STATUS_LABEL[course.status]}
@@ -543,14 +543,14 @@ export default function CourseAssignment() {
 
                     <dl className="mt-4 grid gap-2 text-sm">
                       <div className="flex items-start justify-between gap-3">
-                        <dt className="text-slate-500">Chủ khóa học</dt>
-                        <dd className="min-w-0 text-right text-slate-700">
+                        <dt className="text-muted-foreground">Chủ khóa học</dt>
+                        <dd className="min-w-0 text-right text-foreground">
                           {selected && owner ? owner.name : course.isOwner ? 'Chủ sở hữu' : 'Chọn để xem'}
                         </dd>
                       </div>
                       <div className="flex items-start justify-between gap-3">
-                        <dt className="text-slate-500">Giảng viên</dt>
-                        <dd className={cn('min-w-0 text-right', assignedLabel === 'Chưa phân công' ? 'font-medium text-amber-700' : 'text-slate-700')}>
+                        <dt className="text-muted-foreground">Giảng viên</dt>
+                        <dd className={cn('min-w-0 text-right', assignedLabel === 'Chưa phân công' ? 'font-medium text-amber-700' : 'text-foreground')}>
                           {assignedLabel}
                         </dd>
                       </div>
@@ -561,8 +561,8 @@ export default function CourseAssignment() {
             </div>
 
             <div className="hidden md:block">
-              <table className="min-w-full table-fixed divide-y divide-slate-100">
-                <thead className="bg-slate-50 text-left text-sm font-semibold text-muted-foreground">
+              <table className="min-w-full table-fixed divide-y divide-border">
+                <thead className="bg-muted text-left text-sm font-semibold text-muted-foreground">
                   <tr>
                     <th scope="col" className="w-[44%] px-4 py-3">Khóa học</th>
                     <th scope="col" className="w-[16%] px-4 py-3">Trạng thái</th>
@@ -570,7 +570,7 @@ export default function CourseAssignment() {
                     <th scope="col" className="w-[20%] px-4 py-3">Giảng viên</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {visibleCourses.map((course) => {
                     const selected = course.id === selectedId;
                     const courseAssignedTeachers = selected ? assignedTeachers : [];
@@ -596,8 +596,8 @@ export default function CourseAssignment() {
                           }
                         }}
                         className={cn(
-                          'cursor-pointer outline-none transition hover:bg-slate-50 focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/20',
-                          selected ? 'bg-accent' : 'bg-white',
+                          'cursor-pointer outline-none transition hover:bg-muted focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/20',
+                          selected ? 'bg-accent' : 'bg-card',
                         )}
                       >
                         <td className="px-4 py-3 align-top">
@@ -607,14 +607,14 @@ export default function CourseAssignment() {
                                 'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]',
                                 selected
                                   ? 'border-primary bg-primary text-white'
-                                  : 'border-slate-300 bg-white text-transparent group-hover:border-ring/60',
+                                  : 'border-border bg-card text-transparent group-hover:border-ring/60',
                               )}
                               aria-hidden
                             >
                               <Icon name="ri-check-line" />
                             </span>
                             <span className="min-w-0">
-                              <span className="block truncate text-base font-semibold text-slate-900" title={course.title}>
+                              <span className="block truncate text-base font-semibold text-foreground" title={course.title}>
                                 {course.title}
                               </span>
                               <span className="mt-0.5 block truncate text-sm text-muted-foreground">
@@ -638,14 +638,14 @@ export default function CourseAssignment() {
                               Chủ sở hữu
                             </span>
                           ) : (
-                            <span className="text-xs text-slate-400">Chọn để xem</span>
+                            <span className="text-xs text-muted-foreground">Chọn để xem</span>
                           )}
                         </td>
                         <td className="px-4 py-3 align-top">
                           <span
                             className={cn(
                               'block truncate text-sm',
-                              assignedLabel === 'Chưa phân công' ? 'font-medium text-amber-700' : 'text-slate-600',
+                              assignedLabel === 'Chưa phân công' ? 'font-medium text-amber-700' : 'text-muted-foreground',
                             )}
                             title={assignedLabel}
                           >
@@ -663,10 +663,10 @@ export default function CourseAssignment() {
         </Card>
 
         <Card className="min-w-0 gap-0 py-0">
-          <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-slate-900">Gán giảng viên</h2>
-              <p className="mt-0.5 truncate text-xs text-slate-500">
+              <h2 className="text-sm font-semibold text-foreground">Gán giảng viên</h2>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {selectedCourse ? selectedCourse.title : 'Chọn một khóa học để thao tác'}
               </p>
             </div>
@@ -687,42 +687,42 @@ export default function CourseAssignment() {
 
           <div className="space-y-5 p-4">
             {!selectedCourse ? (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
-                <Icon name="ri-cursor-line" className="mx-auto text-2xl text-slate-400" aria-hidden />
-                <p className="mt-2 text-sm font-medium text-slate-800">Chưa chọn khóa học</p>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
+              <div className="rounded-lg border border-dashed border-border bg-muted px-4 py-6 text-center">
+                <Icon name="ri-cursor-line" className="mx-auto text-2xl text-muted-foreground" aria-hidden />
+                <p className="mt-2 text-sm font-medium text-foreground">Chưa chọn khóa học</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
                   Chọn một dòng trong danh sách để xem chủ khóa học và giảng viên hiện tại.
                 </p>
               </div>
             ) : (
               <>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Khóa học đang chọn</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{selectedCourse.title}</h3>
-                  <p className="mt-1 text-xs text-slate-500">
+                <div className="rounded-lg border border-border bg-muted px-3 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Khóa học đang chọn</p>
+                  <h3 className="mt-1 text-sm font-semibold text-foreground">{selectedCourse.title}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {STATUS_LABEL[selectedCourse.status]} · {selectedCourse.students} học viên
                   </p>
                 </div>
 
                 {assignedIsError ? (
-                  <div role="alert" className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {assignedError instanceof Error ? assignedError.message : 'Không tải được danh sách giảng viên của khóa học.'}
                   </div>
                 ) : (
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">Chủ khóa học và giảng viên hiện tại</p>
-                    <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
+                    <p className="text-sm font-semibold text-foreground">Chủ khóa học và giảng viên hiện tại</p>
+                    <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
                       {assignedLoading ? (
-                        <li className="px-3 py-3 text-sm text-slate-500">Đang tải phân công...</li>
+                        <li className="px-3 py-3 text-sm text-muted-foreground">Đang tải phân công...</li>
                       ) : assigned.length === 0 ? (
-                        <li className="px-3 py-3 text-sm text-slate-500">Chưa phân công.</li>
+                        <li className="px-3 py-3 text-sm text-muted-foreground">Chưa phân công.</li>
                       ) : (
                         assigned.map((teacher) => (
                           <li key={teacher.teacherId} className="flex items-center gap-3 px-3 py-2.5">
                             <UserAvatar name={teacher.name} className="h-8 w-8" />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-slate-900">{teacher.name}</span>
-                              <span className="block truncate text-xs text-slate-500">
+                              <span className="block truncate text-sm font-medium text-foreground">{teacher.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
                                 {teacher.code}{teacher.email ? ` · ${teacher.email}` : ''}
                               </span>
                             </span>
@@ -749,7 +749,7 @@ export default function CourseAssignment() {
                 )}
 
                 <div>
-                  <label htmlFor="teacher-picker" className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <label htmlFor="teacher-picker" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Giảng viên
                   </label>
                   <div id="teacher-picker" className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -775,18 +775,18 @@ export default function CourseAssignment() {
                     </Button>
                   </div>
                   {teachersIsError && (
-                    <p role="alert" className="mt-2 text-sm text-rose-600">
+                    <p role="alert" className="mt-2 text-sm text-destructive">
                       {teachersError instanceof Error ? teachersError.message : 'Không tải được danh sách giảng viên.'}
                     </p>
                   )}
                   {!teachersLoading && !teachersIsError && available.length === 0 && (
-                    <p className="mt-2 text-sm text-slate-500">
+                    <p className="mt-2 text-sm text-muted-foreground">
                       Không còn giảng viên phù hợp để phân công.
                     </p>
                   )}
                   {selectedTeacher && (
-                    <p className="mt-2 text-sm text-slate-500">
-                      Sẽ gán: <span className="font-medium text-slate-800">{selectedTeacher.name}</span>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Sẽ gán: <span className="font-medium text-foreground">{selectedTeacher.name}</span>
                       {selectedTeacher.email ? ` · ${selectedTeacher.email}` : ''}
                     </p>
                   )}
@@ -799,7 +799,7 @@ export default function CourseAssignment() {
                     </p>
                   )}
                   {actionError && (
-                    <p role="alert" className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                       {(actionError as Error).message || 'Thao tác thất bại.'}
                     </p>
                   )}

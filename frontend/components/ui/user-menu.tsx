@@ -57,35 +57,35 @@ export function UserMenu({
         className="flex min-h-10 items-center gap-2 rounded-lg px-2 py-1.5 outline-none transition hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/25"
       >
         <UserAvatar src={avatarUrl} name={name || initials} alt="" className="h-8 w-8" />
-        <span className="hidden text-sm font-medium text-slate-700 sm:block">{name}</span>
+        <span className="hidden text-sm font-medium text-foreground sm:block">{name}</span>
         <Icon
           name="ri-arrow-down-s-line"
-          className={`h-4 w-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5"
+          className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-lg"
         >
-          <div className="border-b border-slate-100 px-4 py-3">
-            <p className="truncate text-sm font-semibold text-slate-900">{name}</p>
-            <p className="text-xs text-slate-500">{roleLabel}</p>
+          <div className="border-b border-border px-4 py-3">
+            <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+            <p className="text-xs text-muted-foreground">{roleLabel}</p>
           </div>
           <Link
             href={profileHref}
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 outline-none transition hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
+            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground outline-none transition hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary"
           >
-            <Icon name="ri-user-line" className="h-4 w-4 text-slate-400" />
+            <Icon name="ri-user-line" className="h-4 w-4 text-muted-foreground" />
             Hồ sơ
           </Link>
           <button
             role="menuitem"
             onClick={logout}
-            className="flex w-full items-center gap-2.5 border-t border-slate-100 px-4 py-2.5 text-sm font-medium text-rose-600 outline-none transition hover:bg-rose-50 focus-visible:bg-rose-50"
+            className="flex w-full items-center gap-2.5 border-t border-border px-4 py-2.5 text-sm font-medium text-destructive outline-none transition hover:bg-destructive/10"
           >
             <Icon name="ri-logout-box-r-line" className="h-4 w-4" />
             Đăng xuất

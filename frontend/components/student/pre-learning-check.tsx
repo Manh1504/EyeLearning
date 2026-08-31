@@ -44,9 +44,9 @@ function StatusRow({
       <div
         className={cn(
           'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
-          tone === 'success' && 'border-cyan-100 bg-cyan-50 text-cyan-700',
-          tone === 'danger' && 'border-rose-100 bg-rose-50 text-rose-600',
-          tone === 'neutral' && 'border-slate-200 bg-slate-50 text-slate-500',
+          tone === 'success' && 'border-ring/40 bg-accent text-primary',
+          tone === 'danger' && 'border-destructive/25 bg-destructive/10 text-destructive',
+          tone === 'neutral' && 'border-border bg-muted text-muted-foreground',
         )}
       >
         {icon}
@@ -55,16 +55,16 @@ function StatusRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">{label}</p>
-            <p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p>
+            <p className="text-sm font-semibold text-foreground">{label}</p>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
           </div>
 
           <span
             className={cn(
               'shrink-0 pt-0.5 text-xs font-semibold',
-              tone === 'success' && 'text-cyan-700',
-              tone === 'danger' && 'text-rose-600',
-              tone === 'neutral' && 'text-slate-500',
+              tone === 'success' && 'text-primary',
+              tone === 'danger' && 'text-destructive',
+              tone === 'neutral' && 'text-muted-foreground',
             )}
           >
             {status}
@@ -281,18 +281,18 @@ export default function PreLearningCheck() {
   })();
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900">
-      <header className="h-14 shrink-0 border-b border-slate-200 bg-white">
+    <div className="flex h-dvh flex-col overflow-hidden bg-muted text-foreground">
+      <header className="h-14 shrink-0 border-b border-border bg-white">
         <div className="relative mx-auto flex h-full max-w-7xl items-center px-5 sm:px-6">
           <Link
             href="/student/my-courses"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-cyan-700"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <RiArrowLeftLine className="h-4 w-4" />
             <span className="hidden sm:inline">Khóa học của tôi</span>
           </Link>
 
-          <p className="pointer-events-none absolute left-1/2 max-w-[46%] -translate-x-1/2 truncate text-sm font-semibold text-slate-800">
+          <p className="pointer-events-none absolute left-1/2 max-w-[46%] -translate-x-1/2 truncate text-sm font-semibold text-foreground">
             {course?.title ?? 'Khóa học'}
           </p>
         </div>
@@ -304,18 +304,18 @@ export default function PreLearningCheck() {
             {/* Camera / instruction */}
             <section className="min-w-0">
               <div className="mb-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
                   Trước khi bắt đầu
                 </p>
-                <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-[1.75rem]">
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">
                   Kiểm tra camera và điểm nhìn
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
                   Đảm bảo khuôn mặt nằm rõ trong khung hình để hệ thống ghi nhận điểm nhìn ổn định trong bài học.
                 </p>
               </div>
 
-              <div className="relative h-[clamp(250px,36vh,330px)] overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
+              <div className="relative h-[clamp(250px,36vh,330px)] overflow-hidden rounded-xl border border-border bg-brand-dark shadow-sm">
                 <video
                   ref={videoRef}
                   muted
@@ -333,15 +333,15 @@ export default function PreLearningCheck() {
                       <RiCameraLine className="h-6 w-6" />
                     </div>
                     <p className="mt-4 text-sm font-semibold text-white">Camera chưa được kiểm tra</p>
-                    <p className="mt-1.5 max-w-sm text-xs leading-5 text-slate-300">
+                    <p className="mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
                       Nhấn “Kiểm tra camera” để cấp quyền và xem trước khung hình.
                     </p>
                   </div>
                 )}
 
                 {cameraState === 'checking' && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-slate-950/35">
-                    <div className="rounded-lg bg-slate-950/70 px-3 py-2 text-xs font-medium text-white backdrop-blur-sm">
+                  <div className="absolute inset-0 flex items-center justify-center bg-brand-dark/40">
+                    <div className="rounded-lg bg-brand-dark/80 px-3 py-2 text-xs font-medium text-white">
                       Đang kiểm tra…
                     </div>
                   </div>
@@ -353,7 +353,7 @@ export default function PreLearningCheck() {
                       <RiErrorWarningLine className="h-6 w-6" />
                     </div>
                     <p className="mt-4 text-sm font-semibold text-white">Chưa thể sử dụng camera</p>
-                    <p className="mt-1.5 max-w-sm text-xs leading-5 text-slate-300">
+                    <p className="mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
                       Kiểm tra quyền camera của trình duyệt rồi thử lại.
                     </p>
                   </div>
@@ -366,9 +366,9 @@ export default function PreLearningCheck() {
                       className={cn(
                         'h-[68%] max-h-[235px] w-[36%] min-w-[150px] max-w-[190px] rounded-[44%] border-2 transition-colors',
                         faceState === 'ready'
-                          ? 'border-cyan-300/80'
+                          ? 'border-ring/80'
                           : faceState === 'not-found' || faceState === 'error'
-                            ? 'border-rose-300/80'
+                            ? 'border-destructive/70'
                             : 'border-white/45',
                       )}
                     />
@@ -376,15 +376,15 @@ export default function PreLearningCheck() {
                 )}
 
                 {faceState === 'ready' && (
-                  <div className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-950/65 px-2.5 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
-                    <RiCheckboxCircleFill className="h-4 w-4 text-cyan-300" />
+                  <div className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-dark/80 px-2.5 py-1.5 text-xs font-medium text-white">
+                    <RiCheckboxCircleFill className="h-4 w-4 text-brand-cyan" />
                     Khuôn mặt đã sẵn sàng
                   </div>
                 )}
               </div>
 
-              <div className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500">
-                <RiShieldCheckLine className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              <div className="mt-3 flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+                <RiShieldCheckLine className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <p>
                   Video từ camera chỉ được dùng để ước lượng điểm nhìn trong phiên học và không được lưu lại.
                 </p>
@@ -392,15 +392,15 @@ export default function PreLearningCheck() {
             </section>
 
             {/* Readiness panel */}
-            <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <aside className="rounded-xl border border-border bg-white p-5 shadow-sm sm:p-6">
               <div>
-                <h2 className="text-base font-bold text-slate-950">Sẵn sàng bắt đầu</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
+                <h2 className="text-base font-bold text-foreground">Sẵn sàng bắt đầu</h2>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
                   Hoàn tất các kiểm tra dưới đây trước khi mở bài học.
                 </p>
               </div>
 
-              <div className="mt-5 divide-y divide-slate-100">
+              <div className="mt-5 divide-y divide-border">
                 <StatusRow
                   icon={<RiCameraLine className="h-4 w-4" />}
                   label="Camera"
@@ -463,7 +463,7 @@ export default function PreLearningCheck() {
               </div>
 
               {error && (
-                <div className="mt-5 flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700">
+                <div className="mt-5 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">
                   <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
                   <p>{error}</p>
                 </div>
@@ -486,7 +486,7 @@ export default function PreLearningCheck() {
                 {isCalibrated && faceState === 'ready' && (
                   <Link
                     href={calibrationHref}
-                    className="mt-3 flex h-8 items-center justify-center text-xs font-medium text-slate-500 transition-colors hover:text-cyan-700"
+                    className="mt-3 flex h-8 items-center justify-center text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
                   >
                     Hiệu chỉnh lại điểm nhìn
                   </Link>

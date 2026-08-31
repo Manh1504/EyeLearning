@@ -290,8 +290,8 @@ export default function CourseLearningPage() {
                         onClick={() => selectLesson(lesson.id)}
                         className={`relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors ${
                           active
-                            ? 'bg-cyan-50 text-cyan-800'
-                            : 'text-slate-600 hover:bg-muted/70 hover:text-foreground'
+                            ? 'bg-accent text-primary'
+                            : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                         }`}
                       >
                         {active && (
@@ -303,7 +303,7 @@ export default function CourseLearningPage() {
                         ) : (
                           <span
                             className={`h-3.5 w-3.5 shrink-0 rounded-full border ${
-                              active ? 'border-primary bg-primary/10' : 'border-slate-300'
+                              active ? 'border-primary bg-primary/10' : 'border-border'
                             }`}
                           />
                         )}
@@ -329,16 +329,16 @@ export default function CourseLearningPage() {
     gazePoint && gazePoint.x >= 0 && gazePoint.x <= 1 && gazePoint.y >= 0 && gazePoint.y <= 1 ? (
       <div className="pointer-events-none fixed inset-0 z-30">
         <span
-          className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-rose-500 shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
+          className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-destructive shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
           style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%` }}
         />
       </div>
     ) : null;
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-foreground">
+    <div className="flex h-dvh flex-col overflow-hidden bg-muted text-foreground">
       {/* App header */}
-      <header className="z-40 flex h-14 shrink-0 items-center border-b border-border bg-white px-4 sm:px-5">
+      <header className="z-40 flex h-14 shrink-0 items-center border-b border-border bg-card px-4 sm:px-5">
         <Link
           href="/student/my-courses"
           className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -386,7 +386,7 @@ export default function CourseLearningPage() {
       <div className="flex min-h-0 flex-1">
         {/* Desktop outline */}
         {desktopOutlineOpen && (
-          <aside className="hidden w-[292px] shrink-0 flex-col border-r border-border bg-white lg:flex">
+          <aside className="hidden w-[292px] shrink-0 flex-col border-r border-border bg-card lg:flex">
             {outline}
           </aside>
         )}
@@ -396,11 +396,11 @@ export default function CourseLearningPage() {
           <div className="fixed inset-0 z-50 lg:hidden">
             <button
               type="button"
-              className="absolute inset-0 bg-slate-950/20"
+              className="absolute inset-0 bg-brand-dark/40"
               onClick={() => setMobileOutlineOpen(false)}
               aria-label="Đóng mục lục"
             />
-            <aside className="absolute inset-y-0 left-0 flex w-[min(88vw,320px)] flex-col bg-white shadow-xl">
+            <aside className="absolute inset-y-0 left-0 flex w-[min(88vw,320px)] flex-col bg-card shadow-xl">
               <div className="flex h-14 items-center justify-between border-b border-border px-4">
                 <span className="text-sm font-semibold">Mục lục</span>
                 <Button
@@ -418,9 +418,9 @@ export default function CourseLearningPage() {
         )}
 
         {/* Learning canvas */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-muted">
           {/* Lesson meta */}
-          <div className="shrink-0 border-b border-border/70 bg-white px-4 py-3 sm:px-6 lg:px-8">
+          <div className="shrink-0 border-b border-border/70 bg-card px-4 py-3 sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-[1280px] items-center gap-3">
               {!desktopOutlineOpen && (
                 <Button
@@ -457,10 +457,10 @@ export default function CourseLearningPage() {
           </div>
 
           {/* Reader — 1 slide / trang, cuộn dọc để đọc hết nội dung */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-3 py-6 sm:px-6 lg:px-8">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-muted px-3 py-6 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-[900px]">
               {slideImageUrl ? (
-                <div className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-900/10">
+                <div className="overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={slideImageUrl}
@@ -471,15 +471,15 @@ export default function CourseLearningPage() {
                       img.dataset.fallback = '1';
                       img.src = SLIDE_FALLBACK_IMAGE;
                     }}
-                    className="block h-auto w-full bg-white object-contain"
+                    className="block h-auto w-full bg-card object-contain"
                   />
                 </div>
               ) : (
-                <div className="flex min-h-[60vh] flex-col items-center justify-center rounded-lg bg-white p-8 text-center shadow-sm ring-1 ring-slate-900/10">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
+                <div className="flex min-h-[60vh] flex-col items-center justify-center rounded-lg bg-card p-8 text-center shadow-sm ring-1 ring-border">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-accent text-primary">
                     <RiImageLine className="h-5 w-5" />
                   </div>
-                  <p className="mt-4 max-w-sm text-base font-semibold text-slate-800 sm:text-lg">
+                  <p className="mt-4 max-w-sm text-base font-semibold text-foreground sm:text-lg">
                     {currentContent?.title ?? 'Nội dung bài học'}
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
@@ -492,7 +492,7 @@ export default function CourseLearningPage() {
 
           {gazeStream && gazeSource === 'real' && (
             <div
-              className="pointer-events-none fixed bottom-20 right-4 z-30 h-28 w-20 overflow-hidden rounded-xl border-2 border-white shadow-lg ring-1 ring-slate-900/10"
+              className="pointer-events-none fixed bottom-20 right-4 z-30 h-28 w-20 overflow-hidden rounded-xl border-2 border-white shadow-lg ring-1 ring-border"
               title="Camera đang theo dõi điểm nhìn"
             >
               <video
@@ -510,7 +510,7 @@ export default function CourseLearningPage() {
           )}
 
           {/* Reader controls */}
-          <footer className="shrink-0 border-t border-border bg-white px-4 py-2 sm:px-6 lg:px-8">
+          <footer className="shrink-0 border-t border-border bg-card px-4 py-2 sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-[1280px] items-center gap-3">
               <Button
                 variant="outline"

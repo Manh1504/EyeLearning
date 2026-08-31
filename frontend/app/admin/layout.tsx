@@ -16,7 +16,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     .toUpperCase() || 'AD';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-muted">
       <TeacherAdminHeader
         showAdminLink
         user={{ name, initials, profileHref: '/account/login', roleLabel: 'Quản trị viên' }}

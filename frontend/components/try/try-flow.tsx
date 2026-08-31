@@ -20,7 +20,7 @@ import {
   RiRefreshLine,
 } from '@remixicon/react';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { useGazeTracker } from '@/hooks/use-gaze-tracker';
 import {
   buildCalibrationPoints,
@@ -31,6 +31,7 @@ import {
   trainGazeSession,
   type CalPoint,
 } from '@/lib/api/calibration';
+import { cn } from '@/lib/utils';
 
 const DEMO_SLIDES = [
   { id: 'demo-1', title: 'Gradient Descent — Trang bìa', src: '/demo/slide-1.svg' },
@@ -231,7 +232,7 @@ function GuestCalibration({ onDone, onSkip }: { onDone: () => void; onSkip: () =
   const progress = ((idx + (phase === 'training' ? 1 : 0)) / total) * 100;
 
   return (
-    <div className="relative h-dvh overflow-hidden bg-slate-100 text-slate-900 font-sans antialiased">
+    <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
       {phase !== 'training' && (
         <button
           onClick={handleDotClick}
@@ -240,41 +241,41 @@ function GuestCalibration({ onDone, onSkip }: { onDone: () => void; onSkip: () =
           className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none disabled:cursor-default"
           style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
         >
-          <span className="absolute inset-0 rounded-full bg-rose-500/20 transition group-hover:bg-rose-500/30" />
-          <span className={`absolute inset-2 rounded-full bg-rose-500/40 transition ${busy ? 'animate-pulse' : ''}`} />
-          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-rose-500 shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
+          <span className="absolute inset-0 rounded-full bg-destructive/20 transition group-hover:bg-destructive/30" />
+          <span className={`absolute inset-2 rounded-full bg-destructive/40 transition ${busy ? 'animate-pulse' : ''}`} />
+          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-destructive shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
         </button>
       )}
 
       <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
-        <div className="pointer-events-none w-full max-w-sm rounded-2xl border border-slate-200/70 bg-white/70 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
-          <p className="text-sm font-bold text-slate-900">Hiệu chỉnh điểm nhìn</p>
+        <div className="pointer-events-none w-full max-w-sm rounded-xl border border-border bg-card px-5 py-4 text-center shadow-lg">
+          <p className="text-sm font-bold text-foreground">Hiệu chỉnh điểm nhìn</p>
 
           {phase === 'training' ? (
-            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-slate-600">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
+            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               Đang huấn luyện bộ hiệu chỉnh…
             </p>
           ) : (
-            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-              Nhìn thẳng vào chấm đỏ rồi <span className="font-semibold text-slate-800">bấm vào chấm</span> để ghi nhận. Chấm tiếp theo hiện sau khi ghi nhận xong.
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              Nhìn thẳng vào chấm đỏ rồi <span className="font-semibold text-foreground">bấm vào chấm</span> để ghi nhận. Chấm tiếp theo hiện sau khi ghi nhận xong.
             </p>
           )}
 
           <div className="mt-3 flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/80">
-              <div className="h-full rounded-full bg-cyan-600 transition-all duration-300" style={{ width: `${progress}%` }} />
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-brand-cyan transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <span className="shrink-0 text-xs font-semibold text-slate-600">{Math.min(idx + 1, total)}/{total}</span>
+            <span className="shrink-0 text-xs font-semibold text-muted-foreground">{Math.min(idx + 1, total)}/{total}</span>
           </div>
 
           {error && (
-            <p className="mt-2 rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-600">{error}</p>
+            <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
           )}
 
           <div className="mt-3 flex items-center justify-center gap-2">
             {camOn && (
-              <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
+              <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-brand-dark">
                 <video
                   ref={(el) => {
                     videoRef.current = el;
@@ -298,7 +299,7 @@ function GuestCalibration({ onDone, onSkip }: { onDone: () => void; onSkip: () =
           <button
             type="button"
             onClick={onSkip}
-            className="pointer-events-auto mt-3 text-xs font-medium text-slate-500 underline-offset-2 hover:text-cyan-700 hover:underline"
+            className="pointer-events-auto mt-3 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
           >
             Bỏ qua hiệu chỉnh — dùng dữ liệu mô phỏng
           </button>
@@ -413,7 +414,7 @@ function HeatmapSlide({
   return (
     <div
       ref={stageRef}
-      className="relative w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+      className="relative w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm"
       style={{ aspectRatio: '16 / 9' }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -423,7 +424,7 @@ function HeatmapSlide({
         className="pointer-events-none absolute inset-0 h-full w-full"
         style={{ opacity: 0.88 }}
       />
-      <span className="absolute bottom-2 left-2 rounded-md bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-white">
+      <span className="absolute bottom-2 left-2 rounded-md bg-brand-dark/70 px-2 py-1 text-[11px] font-medium text-white">
         {title}
       </span>
     </div>
@@ -526,12 +527,12 @@ export default function TryFlow() {
   const stepIndex = STEP_LABELS.findIndex((s) => s.key === step);
 
   return (
-    <div className="flex min-h-dvh flex-col bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
+    <div className="flex min-h-dvh flex-col bg-muted text-foreground">
+      <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors hover:text-cyan-700"
+            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <RiArrowLeftSLine className="h-4 w-4" />
             Trang chủ
@@ -542,34 +543,34 @@ export default function TryFlow() {
               <span key={s.key} className="flex items-center gap-2">
                 <span
                   className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${
-                    i <= stepIndex ? 'bg-cyan-700 text-white' : 'bg-slate-200 text-slate-500'
+                    i <= stepIndex ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {i + 1}
                 </span>
-                <span className={`text-xs font-semibold ${i <= stepIndex ? 'text-slate-900' : 'text-slate-400'}`}>
+                <span className={`text-xs font-semibold ${i <= stepIndex ? 'text-foreground' : 'text-muted-foreground'}`}>
                   {s.label}
                 </span>
-                {i < STEP_LABELS.length - 1 && <span className="h-px w-6 bg-slate-200" />}
+                {i < STEP_LABELS.length - 1 && <span className="h-px w-6 bg-border" />}
               </span>
             ))}
           </div>
 
-          <span className="text-xs font-medium text-slate-400">Chế độ khách</span>
+          <span className="text-xs font-medium text-muted-foreground">Chế độ khách</span>
         </div>
       </header>
 
       {step === 'intro' && (
         <main className="flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm sm:p-12">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-cyan-800">
+          <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-8 shadow-sm sm:p-12">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-ring/40 bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
               <RiEyeLine className="h-3.5 w-3.5" />
               Dùng thử miễn phí
             </span>
-            <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900">
+            <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground">
               Trải nghiệm theo dõi điểm nhìn trong 2 phút
             </h1>
-            <p className="mt-3 text-slate-600">
+            <p className="mt-3 text-muted-foreground">
               Không cần tài khoản. Hệ thống dùng webcam ước lượng bạn đang nhìn đâu,
               sau đó vẽ lại bản đồ nhiệt (heatmap) từ chính dữ liệu của bạn.
             </p>
@@ -581,38 +582,37 @@ export default function TryFlow() {
                 { icon: RiBarChartLine, title: 'Nhận heatmap ngay', desc: 'Bản đồ nhiệt tính tức thì từ dữ liệu vừa thu.' },
               ].map((s, i) => (
                 <li key={s.title} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50 text-cyan-700">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
                     <s.icon className="h-4.5 w-4.5" />
                   </span>
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">{i + 1}. {s.title}</p>
-                    <p className="mt-0.5 text-sm text-slate-500">{s.desc}</p>
+                    <p className="text-sm font-semibold text-foreground">{i + 1}. {s.title}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{s.desc}</p>
                   </div>
                 </li>
               ))}
             </ol>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button
-                onClick={() => setStep('calibrate')}
-                className="group flex flex-1 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-6 py-3.5 font-semibold text-white shadow-lg shadow-cyan-700/25 transition-all hover:-translate-y-0.5 hover:bg-cyan-800"
-              >
+              <Button size="lg" onClick={() => setStep('calibrate')} className="w-full sm:w-auto">
                 Bắt đầu hiệu chỉnh
-                <RiArrowRightLine className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </button>
-              <button
+                <RiArrowRightLine data-icon="inline-end" />
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
                 onClick={() => {
                   setCalibrated(false);
                   setStep('view');
                 }}
-                className="flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3.5 font-semibold text-slate-700 transition-colors hover:border-cyan-300 hover:bg-cyan-50/50"
+                className="w-full sm:w-auto"
               >
                 Bỏ qua — dùng dữ liệu mô phỏng
-              </button>
+              </Button>
             </div>
 
-            <p className="mt-6 flex items-start gap-1.5 text-xs text-slate-400">
-              <RiCheckboxCircleLine className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-600" />
+            <p className="mt-6 flex items-start gap-1.5 text-xs text-muted-foreground">
+              <RiCheckboxCircleLine className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               Dữ liệu điểm nhìn chỉ lưu trên trình duyệt của bạn trong phiên này — không ghi vào hệ thống, không cần đăng nhập.
             </p>
           </div>
@@ -621,17 +621,17 @@ export default function TryFlow() {
 
       {step === 'view' && (
         <main className="flex min-h-0 flex-1 flex-col">
-          <div className="shrink-0 border-b border-slate-200/70 bg-white px-4 py-3 sm:px-6">
+          <div className="shrink-0 border-b border-border bg-card px-4 py-3 sm:px-6">
             <div className="mx-auto flex max-w-[1000px] items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-slate-400">Bài giảng mẫu · Gradient Descent</p>
+                <p className="truncate text-xs text-muted-foreground">Bài giảng mẫu · Gradient Descent</p>
                 <h1 className="mt-0.5 truncate text-sm font-semibold sm:text-base">{DEMO_SLIDES[currentSlide].title}</h1>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-xs text-slate-400">Trang</p>
+                <p className="text-xs text-muted-foreground">Trang</p>
                 <p className="text-sm font-semibold tabular-nums">
                   {currentSlide + 1}
-                  <span className="font-normal text-slate-400"> / {total}</span>
+                  <span className="font-normal text-muted-foreground"> / {total}</span>
                 </p>
               </div>
               {gazeSource === 'real' ? (
@@ -648,9 +648,9 @@ export default function TryFlow() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-3 py-6 sm:px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-muted px-3 py-6 sm:px-6">
             <div className="mx-auto w-full max-w-[900px]">
-              <div className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-900/10">
+              <div className="overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={DEMO_SLIDES[currentSlide].src}
@@ -658,13 +658,13 @@ export default function TryFlow() {
                   className="block h-auto w-full bg-white object-contain"
                 />
               </div>
-              <p className="mt-3 text-center text-xs text-slate-400">
+              <p className="mt-3 text-center text-xs text-muted-foreground">
                 Đọc trang tự nhiên — hệ thống đang ghi nhận điểm nhìn của bạn.
               </p>
             </div>
           </div>
 
-          <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-2 sm:px-6">
+          <footer className="shrink-0 border-t border-border bg-card px-4 py-2 sm:px-6">
             <div className="mx-auto flex max-w-[1000px] items-center gap-3">
               <Button
                 variant="outline"
@@ -677,9 +677,9 @@ export default function TryFlow() {
               </Button>
 
               <div className="flex min-w-0 flex-1 items-center gap-3 px-1 sm:px-3">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-cyan-700 transition-[width] duration-300"
+                    className="h-full rounded-full bg-brand-cyan transition-[width] duration-300"
                     style={{ width: `${((currentSlide + 1) / total) * 100}%` }}
                   />
                 </div>
@@ -710,7 +710,7 @@ export default function TryFlow() {
           {gazeDot && (
             <div className="pointer-events-none fixed inset-0 z-30">
               <span
-                className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-rose-500 shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
+                className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-destructive shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
                 style={{ left: `${gazeDot.x * 100}%`, top: `${gazeDot.y * 100}%` }}
               />
             </div>
@@ -722,11 +722,11 @@ export default function TryFlow() {
         <main className="flex-1 px-4 py-8 sm:px-6">
           <div className="mx-auto max-w-[1000px]">
             <div className="text-center">
-              <p className="text-sm font-bold uppercase tracking-widest text-cyan-700">Kết quả của bạn</p>
-              <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Kết quả của bạn</p>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">
                 Heatmap điểm nhìn
               </h1>
-              <p className="mt-2 text-slate-500">
+              <p className="mt-2 text-muted-foreground">
                 Vùng màu đỏ là nơi bạn nhìn lâu nhất, xanh là nơi nhìn ít hơn.
                 {calibrated ? '' : ' (Phiên này dùng dữ liệu mô phỏng vì bạn đã bỏ qua hiệu chỉnh.)'}
               </p>
@@ -738,9 +738,9 @@ export default function TryFlow() {
                 { label: 'Số trang đã xem', value: `${results.filter((r) => r.total > 0).length}/${total}` },
                 { label: 'Tỷ lệ nhìn vào trang', value: `${totalValid ? Math.round((results.reduce((s, r) => s + r.valid, 0) / Math.max(1, results.reduce((s, r) => s + r.total, 0))) * 100) : 0}%` },
               ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-sm">
-                  <p className="text-2xl font-extrabold tabular-nums text-cyan-700">{s.value}</p>
-                  <p className="mt-1 text-xs font-medium text-slate-500">{s.label}</p>
+                <div key={s.label} className="rounded-lg border border-border bg-card p-4 text-center shadow-sm">
+                  <p className="text-2xl font-bold tabular-nums text-primary">{s.value}</p>
+                  <p className="mt-1 text-xs font-medium text-muted-foreground">{s.label}</p>
                 </div>
               ))}
             </div>
@@ -748,8 +748,8 @@ export default function TryFlow() {
             <div className="mt-8 space-y-6">
               {results.map((r, i) => (
                 <div key={r.slide.id}>
-                  <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700">Trang {i + 1} · {r.slide.title}</span>
+                  <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">Trang {i + 1} · {r.slide.title}</span>
                     <span>
                       {r.valid} mẫu · nhìn vào trang {r.onSlide}%
                     </span>
@@ -764,12 +764,9 @@ export default function TryFlow() {
                 <RiRefreshLine />
                 Làm lại từ đầu
               </Button>
-              <Link
-                href="/account/login"
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cyan-700 px-6 text-sm font-semibold text-white shadow transition-colors hover:bg-cyan-800"
-              >
+              <Link href="/account/login" className={cn(buttonVariants())}>
                 Đăng nhập để dùng đầy đủ
-                <RiArrowRightLine className="h-4 w-4" />
+                <RiArrowRightLine data-icon="inline-end" />
               </Link>
             </div>
           </div>

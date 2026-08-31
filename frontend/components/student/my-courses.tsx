@@ -121,7 +121,7 @@ export default function MyCoursesPage() {
   if (isLoading) {
     return (
       <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-slate-950 sm:text-[2rem]">
+        <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-foreground sm:text-[2rem]">
           Khóa học của tôi
         </h1>
         <div role="status" className="mt-8 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm">
@@ -134,7 +134,7 @@ export default function MyCoursesPage() {
   if (isError) {
     return (
       <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-slate-950 sm:text-[2rem]">
+        <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-foreground sm:text-[2rem]">
           Khóa học của tôi
         </h1>
         <div role="alert" className="mt-8 rounded-xl border border-destructive/25 bg-destructive/10 p-5 text-sm font-medium text-destructive">
@@ -147,14 +147,14 @@ export default function MyCoursesPage() {
   return (
     <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-6 lg:px-8 lg:py-10">
       <section>
-        <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-slate-950 sm:text-[2rem]">
+        <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-foreground sm:text-[2rem]">
           Khóa học của tôi
         </h1>
       </section>
 
       {showContinueCourse && continueCourse && (
         <section className="pt-8">
-          <h2 className="flex items-center gap-3 text-lg font-bold text-slate-900 sm:text-xl">
+          <h2 className="flex items-center gap-3 text-lg font-bold text-foreground sm:text-xl">
             <span className="h-6 w-[3px] rounded-full bg-brand-cyan" aria-hidden="true" />
             Tiếp tục học
           </h2>
@@ -169,21 +169,21 @@ export default function MyCoursesPage() {
                   {courseStatusLabel(continueCourse)}
                 </span>
 
-                <h3 className="mt-4 line-clamp-2 text-xl font-bold leading-snug text-slate-950 lg:text-2xl">
+                <h3 className="mt-4 line-clamp-2 text-xl font-bold leading-snug text-foreground lg:text-2xl">
                   {continueCourse.course.title}
                 </h3>
 
-                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                   <p className="flex min-w-0 items-center gap-2">
-                    <RiUserLine className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                    <RiUserLine className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="truncate">Giáo viên: {continueCourse.course.teacherName}</span>
                   </p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <RiBookOpenLine className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                    <RiBookOpenLine className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span>{LEVEL_LABEL[continueCourse.course.level]}</span>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-muted-foreground">·</span>
                     <span>{continueCourse.course.moduleCount} chương</span>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-muted-foreground">·</span>
                     <span>{continueCourse.course.lessonCount} bài học</span>
                   </p>
                 </div>
@@ -191,8 +191,8 @@ export default function MyCoursesPage() {
 
               <div className="min-w-0 md:col-start-2 xl:col-start-auto">
                 <div className="mb-3 flex items-center justify-between gap-4 text-sm">
-                  <span className="font-medium text-slate-700">Tiến độ hiện tại</span>
-                  <span className="font-semibold tabular-nums text-slate-900">
+                  <span className="font-medium text-foreground">Tiến độ hiện tại</span>
+                  <span className="font-semibold tabular-nums text-foreground">
                     {Math.min(Math.max(continueCourse.progress, 0), 100)}%
                   </span>
                 </div>
@@ -216,11 +216,11 @@ export default function MyCoursesPage() {
       <section className={showContinueCourse ? 'pt-10' : 'pt-8'}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="flex items-center gap-3 text-lg font-bold text-slate-900 sm:text-xl">
+            <h2 className="flex items-center gap-3 text-lg font-bold text-foreground sm:text-xl">
               <span className="h-6 w-[3px] rounded-full bg-brand-cyan" aria-hidden="true" />
               Tất cả khóa học
             </h2>
-            <p className="mt-1.5 pl-4 text-sm text-slate-600">
+            <p className="mt-1.5 pl-4 text-sm text-muted-foreground">
               {effectiveQuery.trim() ? `${sortedFiltered.length} kết quả phù hợp` : `${counts.all} khóa học`}
             </p>
           </div>
@@ -229,7 +229,7 @@ export default function MyCoursesPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <label className="relative block w-full sm:w-[280px]">
                 <span className="sr-only">Tìm khóa học</span>
-                <RiSearchLine className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <RiSearchLine className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -250,14 +250,14 @@ export default function MyCoursesPage() {
                       aria-selected={active}
                       onClick={() => setTab(item.key)}
                       className={cn(
-                        'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-cyan-600/15',
+                        'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25',
                         active
                           ? 'bg-accent text-primary'
                           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                       )}
                     >
                       {item.label}
-                      <span className="text-xs tabular-nums text-slate-400">{item.count}</span>
+                      <span className="text-xs tabular-nums text-muted-foreground">{item.count}</span>
                     </button>
                   );
                 })}
@@ -297,27 +297,27 @@ export default function MyCoursesPage() {
                       {courseStatusLabel(enrollment)}
                     </span>
 
-                    <h3 className="mt-2.5 line-clamp-2 text-lg font-bold leading-snug text-slate-900 transition-colors group-hover:text-primary">
+                    <h3 className="mt-2.5 line-clamp-2 text-lg font-bold leading-snug text-foreground transition-colors group-hover:text-primary">
                       {enrollment.course.title}
                     </h3>
 
-                    <div className="mt-2.5 space-y-2 text-sm text-slate-600">
+                    <div className="mt-2.5 space-y-2 text-sm text-muted-foreground">
                       <p className="flex min-w-0 items-center gap-2">
-                        <RiUserLine className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        <RiUserLine className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="truncate">{enrollment.course.teacherName}</span>
                       </p>
                       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <RiStackLine className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        <RiStackLine className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span>{enrollment.course.moduleCount} chương</span>
-                        <span className="text-slate-300">·</span>
+                        <span className="text-muted-foreground">·</span>
                         <span>{enrollment.course.lessonCount} bài học</span>
                       </p>
                     </div>
 
                     <div className="mt-auto pt-4">
                       <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="font-medium text-slate-700">Tiến độ</span>
-                        <span className="font-semibold tabular-nums text-slate-900">{progress}%</span>
+                        <span className="font-medium text-foreground">Tiến độ</span>
+                        <span className="font-semibold tabular-nums text-foreground">{progress}%</span>
                       </div>
                       <ProgressBar progress={progress} />
 
@@ -337,10 +337,10 @@ export default function MyCoursesPage() {
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <RiBookOpenLine className="h-5 w-5" aria-hidden="true" />
               </div>
-              <h3 className="mt-3 text-sm font-semibold text-slate-900">
+              <h3 className="mt-3 text-sm font-semibold text-foreground">
                 {visibleEnrollments.length === 0 ? 'Chưa có khóa học' : 'Không tìm thấy khóa học'}
               </h3>
-              <p className="mt-1.5 text-sm leading-6 text-slate-500">
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
                 {visibleEnrollments.length === 0
                   ? 'Tài khoản của bạn chưa được ghi danh vào khóa học nào.'
                   : 'Thử đổi từ khóa tìm kiếm hoặc chọn trạng thái khóa học khác.'}

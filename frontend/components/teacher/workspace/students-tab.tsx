@@ -248,8 +248,8 @@ export function StudentsTab({
       {!embed && (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Học viên</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-xl font-bold text-foreground">Học viên</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               {students.length === 0
                 ? 'Chưa có học viên nào trong khóa học.'
                 : `${activeCount} đang học · ${completedCount} hoàn thành`}
@@ -266,13 +266,13 @@ export function StudentsTab({
       )}
 
       {addError && (
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <Icon name="ri-error-warning-line" className="text-base" />
           <span className="flex-1">{addError}</span>
           <button
             type="button"
             onClick={() => setAddError(null)}
-            className="rounded-md p-1 text-rose-400 transition hover:bg-rose-100 hover:text-rose-600"
+            className="rounded-md p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
             aria-label="Đóng thông báo lỗi"
           >
             <Icon name="ri-close-line" className="text-sm" />
@@ -284,8 +284,8 @@ export function StudentsTab({
         {embed && (
           <div className="flex flex-col gap-4 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div className="min-w-0">
-              <h3 className="text-base font-semibold text-slate-950">Học viên</h3>
-              <p className="mt-1 text-sm text-slate-500">
+              <h3 className="text-base font-semibold text-foreground">Học viên</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 {students.length === 0
                   ? 'Chưa có học viên nào trong khóa học.'
                   : `${students.length} học viên đang tham gia khóa học · ${activeCount} đang học · ${completedCount} hoàn thành`}
@@ -316,14 +316,14 @@ export function StudentsTab({
         ) : studentsError ? (
           <EmptyState
             className="py-16"
-            icon={<Icon name="ri-error-warning-line" className="text-2xl text-rose-500" />}
+            icon={<Icon name="ri-error-warning-line" className="text-2xl text-destructive" />}
             title="Không tải được danh sách học viên"
             desc={studentsErrorValue instanceof Error ? studentsErrorValue.message : 'Vui lòng thử lại sau.'}
           />
         ) : students.length === 0 ? (
           <EmptyState
             className="py-16"
-            icon={<Icon name="ri-group-line" className="text-2xl text-slate-400" />}
+            icon={<Icon name="ri-group-line" className="text-2xl text-muted-foreground" />}
             title="Chưa có học viên"
             desc={canManage ? 'Thêm học viên vào khóa học để bắt đầu theo dõi tiến độ.' : 'Bạn chưa có quyền quản lý danh sách học viên của khóa học này.'}
           >
@@ -558,7 +558,7 @@ export function StudentsTab({
         description={
           studentToRemove ? (
             <>
-              <span className="font-medium text-slate-700">{studentToRemove.name}</span> ({studentToRemove.code}) sẽ không còn nằm
+              <span className="font-medium text-foreground">{studentToRemove.name}</span> ({studentToRemove.code}) sẽ không còn nằm
               trong danh sách học viên đang học. Lịch sử học và dữ liệu đã ghi nhận vẫn được giữ lại.
             </>
           ) : null
@@ -576,32 +576,32 @@ export function StudentsTab({
           <button
             type="button"
             aria-label="Đóng cửa sổ thêm học viên"
-            className="absolute inset-0 cursor-default bg-slate-900/40 backdrop-blur-[2px]"
+            className="absolute inset-0 cursor-default bg-brand-dark/40"
             onClick={() => setShowAdd(false)}
           />
 
-          <section className="relative flex max-h-[min(680px,calc(100dvh-32px))] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+          <section className="relative flex max-h-[min(680px,calc(100dvh-32px))] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
               <div>
-                <h3 className="font-semibold text-slate-900">Thêm học viên vào khóa học</h3>
-                <p className="mt-1 text-xs text-slate-400">Tìm học viên theo tên hoặc mã sinh viên rồi thêm vào khóa học hiện tại.</p>
+                <h3 className="font-semibold text-foreground">Thêm học viên vào khóa học</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Tìm học viên theo tên hoặc mã sinh viên rồi thêm vào khóa học hiện tại.</p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAdd(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
                 aria-label="Đóng"
               >
                 <Icon name="ri-close-line" className="text-lg" />
               </button>
             </header>
 
-            <div className="border-b border-slate-100 px-5 py-3 sm:px-6">
+            <div className="border-b border-border px-5 py-3 sm:px-6">
               <div className="relative">
                 <label htmlFor="add-student-search" className="sr-only">Tìm học viên để thêm</label>
                 <Icon
                   name="ri-search-line"
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                 />
                 <input
                   id="add-student-search"
@@ -609,7 +609,7 @@ export function StudentsTab({
                   value={addQuery}
                   onChange={(event) => setAddQuery(event.target.value)}
                   placeholder="Nhập tên hoặc mã sinh viên"
-                  className="h-10 w-full rounded-lg border border-slate-200 pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                  className="h-10 w-full rounded-lg border border-border pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/25"
                 />
               </div>
             </div>
@@ -619,20 +619,20 @@ export function StudentsTab({
                 <div aria-live="polite" aria-busy="true" className="space-y-2 p-2">
                   {Array.from({ length: 4 }).map((_, index) => (
                     <div key={index} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                      <div className="h-9 w-9 rounded-full bg-slate-100" />
+                      <div className="h-9 w-9 rounded-full bg-muted" />
                       <div className="min-w-0 flex-1">
-                        <div className="h-4 w-40 max-w-full rounded bg-slate-100" />
-                        <div className="mt-2 h-3 w-20 rounded bg-slate-100" />
+                        <div className="h-4 w-40 max-w-full rounded bg-muted" />
+                        <div className="mt-2 h-3 w-20 rounded bg-muted" />
                       </div>
                     </div>
                   ))}
                 </div>
               ) : directoryError ? (
-                <div role="alert" className="px-4 py-10 text-center text-sm text-rose-600">
+                <div role="alert" className="px-4 py-10 text-center text-sm text-destructive">
                   Không tải được danh mục học viên.
                 </div>
               ) : candidates.length === 0 ? (
-                <div className="px-4 py-10 text-center text-sm text-slate-400">Không tìm thấy sinh viên phù hợp.</div>
+                <div className="px-4 py-10 text-center text-sm text-muted-foreground">Không tìm thấy sinh viên phù hợp.</div>
               ) : (
                 <ul>
                   {candidates.map((candidate) => {
@@ -640,18 +640,18 @@ export function StudentsTab({
                     return (
                       <li
                         key={candidate.id}
-                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-slate-50"
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition hover:bg-muted"
                       >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
                           {initials(candidate.name)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-900">{candidate.name}</p>
-                          <p className="mt-0.5 text-xs text-slate-400">{candidate.code}</p>
+                          <p className="truncate text-sm font-medium text-foreground">{candidate.name}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{candidate.code}</p>
                         </div>
 
                         {added ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-cyan-700">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-primary">
                             <Icon name="ri-check-line" className="text-sm" />
                             Đã thêm
                           </span>
@@ -659,7 +659,7 @@ export function StudentsTab({
                           <button
                             type="button"
                             onClick={() => addStudent(candidate)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100"
+                            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-ring hover:bg-accent hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
                           >
                             Thêm
                           </button>
@@ -680,66 +680,66 @@ export function StudentsTab({
           <button
             type="button"
             aria-label="Đóng chi tiết học viên"
-            className="absolute inset-0 cursor-default bg-slate-900/40 backdrop-blur-[2px]"
+            className="absolute inset-0 cursor-default bg-brand-dark/40"
             onClick={() => setOpenId(null)}
           />
 
-          <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl">
-            <header className="border-b border-slate-100 px-5 py-5 sm:px-6">
+          <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-border bg-card shadow-2xl">
+            <header className="border-b border-border px-5 py-5 sm:px-6">
               <div className="flex items-start gap-3">
                 <UserAvatar src={open.avatarUrl} name={open.name} className="h-11 w-11 text-sm" />
 
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-slate-900">{open.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">{open.code}</p>
+                  <p className="truncate font-semibold text-foreground">{open.name}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{open.code}</p>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setOpenId(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
                   aria-label="Đóng"
                 >
                   <Icon name="ri-close-line" className="text-lg" />
                 </button>
               </div>
 
-              <div className="mt-5 grid grid-cols-3 divide-x divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/60 py-3">
+              <div className="mt-5 grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-muted/60 py-3">
                 <div className="px-3 text-center">
-                  <p className="text-xs text-slate-400">Tiến độ</p>
-                  <p className="mt-1 text-sm font-semibold tabular-nums text-slate-800">{open.progress}%</p>
+                  <p className="text-xs text-muted-foreground">Tiến độ</p>
+                  <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">{open.progress}%</p>
                 </div>
                 <div className="px-3 text-center">
-                  <p className="text-xs text-slate-400">Quan sát</p>
-                  <p className="mt-1 text-sm font-semibold tabular-nums text-slate-800">
+                  <p className="text-xs text-muted-foreground">Quan sát</p>
+                  <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">
                     {open.attention === null ? '—' : `${open.attention}%`}
                   </p>
                 </div>
                 <div className="px-3 text-center">
-                  <p className="text-xs text-slate-400">Trạng thái</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-800">
+                  <p className="text-xs text-muted-foreground">Trạng thái</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-foreground">
                     {open.status === 'dropped' ? 'Đã gỡ' : ENROLL_LABEL[open.status]}
                   </p>
                 </div>
               </div>
 
-              <p className="mt-3 text-xs text-slate-400">Hoạt động gần nhất: {activityText(open.lastActive)}</p>
+              <p className="mt-3 text-xs text-muted-foreground">Hoạt động gần nhất: {activityText(open.lastActive)}</p>
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Tiến độ từng bài</h3>
-                  <p className="mt-0.5 text-xs text-slate-400">Chọn một bài để mở heatmap của học viên.</p>
+                  <h3 className="text-sm font-semibold text-foreground">Tiến độ từng bài</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Chọn một bài để mở heatmap của học viên.</p>
                 </div>
               </div>
 
               {open.lessons.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400">
+                <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                   Học viên chưa bắt đầu bài nào.
                 </div>
               ) : (
-                <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+                <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                   {open.lessons.map((lesson) => {
                     const pct = lesson.total > 0 ? Math.round((lesson.viewed / lesson.total) * 100) : 0;
 
@@ -747,19 +747,19 @@ export function StudentsTab({
                       <li key={lesson.lessonId}>
                         <Link
                           href={`/teacher/courses/${courseId}/lessons/${lesson.lessonId}/heatmap?student=${open.id}`}
-                          className="group flex items-center gap-3 px-3.5 py-3 transition first:rounded-t-xl last:rounded-b-xl hover:bg-slate-50"
+                          className="group flex items-center gap-3 px-3.5 py-3 transition first:rounded-t-xl last:rounded-b-xl hover:bg-muted"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3">
-                              <p className="truncate text-sm font-medium text-slate-800 group-hover:text-slate-950">
+                              <p className="truncate text-sm font-medium text-foreground group-hover:text-foreground">
                                 {lessonTitle(lesson.lessonId)}
                               </p>
-                              <span className="shrink-0 text-xs font-medium tabular-nums text-slate-500">{pct}%</span>
+                              <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">{pct}%</span>
                             </div>
 
                             <ProgressBar value={pct} label={`Tiến độ bài ${lessonTitle(lesson.lessonId)} của ${open.name}`} className="mt-2" />
 
-                            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-400">
+                            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                               <span>
                                 {lesson.viewed}/{lesson.total} trang
                               </span>
@@ -769,7 +769,7 @@ export function StudentsTab({
                             </div>
                           </div>
 
-                          <Icon name="ri-arrow-right-s-line" className="shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+                          <Icon name="ri-arrow-right-s-line" className="shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
                         </Link>
                       </li>
                     );

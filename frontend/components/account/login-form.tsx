@@ -75,7 +75,7 @@ export function LoginForm({
 
         <FieldGroup className="mt-8 gap-5">
           <Field>
-            <FieldLabel htmlFor="login-identifier" className="text-sm font-medium text-slate-700">
+            <FieldLabel htmlFor="login-identifier" className="text-sm font-medium text-foreground">
               Email
             </FieldLabel>
             <Input
@@ -99,7 +99,7 @@ export function LoginForm({
 
           <Field>
             <div className="flex items-center justify-between gap-3">
-              <FieldLabel htmlFor="login-password" className="text-sm font-medium text-slate-700">
+              <FieldLabel htmlFor="login-password" className="text-sm font-medium text-foreground">
                 Mật khẩu
               </FieldLabel>
             </div>
@@ -133,7 +133,7 @@ export function LoginForm({
         </FieldGroup>
 
         {error && (
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700">
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">
             <Icon name="ri-error-warning-line" className="mt-0.5 h-4 w-4 shrink-0" />
             <p>{error}</p>
           </div>

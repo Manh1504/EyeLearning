@@ -189,7 +189,7 @@ export default function Calibration() {
   const progress = ((step + (phase === 'training' ? 1 : 0)) / total) * 100;
 
   return (
-    <div className="relative h-dvh overflow-hidden bg-slate-100 text-slate-900 font-sans antialiased">
+    <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
       {/* Chấm đỏ hiện tại — chỉ 1 chấm một lúc; ẩn khi đang training */}
       {phase !== 'training' && (
         <button
@@ -199,9 +199,9 @@ export default function Calibration() {
           className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none disabled:cursor-default"
           style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
         >
-          <span className="absolute inset-0 rounded-full bg-rose-500/20 transition group-hover:bg-rose-500/30" />
-          <span className={`absolute inset-2 rounded-full bg-rose-500/40 transition ${busy ? 'animate-pulse' : ''}`} />
-          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-rose-500 shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
+          <span className="absolute inset-0 rounded-full bg-destructive/20 transition group-hover:bg-destructive/30" />
+          <span className={`absolute inset-2 rounded-full bg-destructive/40 transition ${busy ? 'animate-pulse' : ''}`} />
+          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-destructive shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
         </button>
       )}
 
@@ -209,36 +209,36 @@ export default function Calibration() {
           pointer-events-none ở container → bấm xuyên qua tới chấm đỏ; chỉ nút "Làm sau"
           là pointer-events-auto. bg mờ + blur → chấm phía sau vẫn nhìn thấy. */}
       <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
-        <div className="pointer-events-none w-full max-w-xs rounded-2xl border border-slate-200/70 bg-white/55 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
-          <p className="text-sm font-bold text-slate-900">Hiệu chỉnh mắt</p>
+        <div className="pointer-events-none w-full max-w-xs rounded-xl border border-border bg-card px-5 py-4 text-center shadow-lg">
+          <p className="text-sm font-bold text-foreground">Hiệu chỉnh mắt</p>
 
           {phase === 'training' ? (
-            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-slate-600">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
+            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               Đang huấn luyện bộ hiệu chỉnh…
             </p>
           ) : (
-            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-              Nhìn thẳng vào chấm đỏ rồi <span className="font-semibold text-slate-800">bấm vào chấm</span> để ghi nhận. Chấm tiếp theo sẽ hiện sau khi ghi nhận xong.
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              Nhìn thẳng vào chấm đỏ rồi <span className="font-semibold text-foreground">bấm vào chấm</span> để ghi nhận. Chấm tiếp theo sẽ hiện sau khi ghi nhận xong.
             </p>
           )}
 
           {/* Tiến độ */}
           <div className="mt-3 flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/80">
-              <div className="h-full rounded-full bg-cyan-600 transition-all duration-300" style={{ width: `${progress}%` }} />
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-brand-cyan transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <span className="shrink-0 text-xs font-semibold text-slate-600">{Math.min(step + 1, total)}/{total}</span>
+            <span className="shrink-0 text-xs font-semibold text-muted-foreground">{Math.min(step + 1, total)}/{total}</span>
           </div>
 
           {error && (
-            <p className="mt-2 rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-600">{error}</p>
+            <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
           )}
 
           <div className="mt-3 flex items-center justify-center gap-2">
             {/* Camera preview nhỏ */}
             {camOn && (
-              <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
+              <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-brand-dark">
                 <video
                   ref={(el) => {
                     videoRef.current = el;

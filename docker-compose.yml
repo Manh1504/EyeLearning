@@ -2,27 +2,30 @@
 # GazeEdu — Docker Compose (triển khai server trường)
 # ------------------------------------------------------------
 # Frontend đã deploy riêng trên Vercel. Server này chỉ chạy:
-#   postgres + backend + gaze-api, đứng sau 1 nginx reverse proxy
-#   (SSL, chỉ mở 80/443):
-#   https://api.eyelearning.id.vn    -> backend  (FastAPI :8001)
-#   https://gaze.eyelearning.id.vn   -> gaze-api (ML :8000, GPU)
+#   postgres + backend + gaze-api, đứng sau 1 nginx reverse proxy.
+# Vì cổng 80/443 trên host đã bị dịch vụ khác chiếm (không SSH được),
+# nginx publish ra 8080 (HTTP) / 8443 (HTTPS):
+#   https://api.eyelearning.id.vn:8443    -> backend  (FastAPI :8001)
+#   https://gaze.eyelearning.id.vn:8443   -> gaze-api (ML :8000, GPU)
 #
-# Frontend (Vercel) gọi trực tiếp 2 subdomain trên. Cần set trong
+# Frontend (Vercel) gọi trực tiếp 2 subdomain trên kèm :8443. Cần set trong
 # Vercel project env:
-#   NEXT_PUBLIC_API_URL=https://api.eyelearning.id.vn
-#   NEXT_PUBLIC_GAZE_URL=https://gaze.eyelearning.id.vn
+#   NEXT_PUBLIC_API_URL=https://api.eyelearning.id.vn:8443
+#   NEXT_PUBLIC_GAZE_URL=https://gaze.eyelearning.id.vn:8443
 #
 # Các service nội bộ giao tiếp qua docker network (tên service):
 #   backend -> http://gaze:8000  (AI_HTTP_URL)
 #
 # LƯU Ý (deploy qua Portainer, không có SSH):
-# - Config nginx BUILD thẳng vào image (nginx/Dockerfile + nginx/app.conf) để
-#   không bind-mount file từ host -> né lỗi "mounting a directory onto a file".
-# - Cert SSL do container certbot tự xin (Let's Encrypt, webroot) vào volume
-#   chung nginx-certs; nginx đọc tại /etc/nginx/certs/live/eyelearning/.
-#   Trước khi có cert thật, nginx sinh self-signed dự phòng (vẫn chạy được).
-#   Sau khi certbot báo "OK", restart container nginx để dùng cert thật.
-# - ./API/weights (model gaze) vẫn là bind mount thư mục, do anh tự lo.
+# - Image nginx và backend được BUILD sẵn rồi PUSH lên Docker Hub; Portainer
+#   chỉ PULL về (không build local). Config nginx nằm sẵn trong image
+#   (nginx/Dockerfile + nginx/app.conf) -> không bind-mount file từ host.
+# - Cert SSL: do cổng 80 host không dùng được, certbot (HTTP-01) KHÔNG xin được
+#   cert thật. Nginx tự sinh self-signed dự phòng (vẫn chạy HTTPS, trình duyệt
+#   báo warning). Nếu sau này mở được port 80 hoặc dùng DNS-01, certbot sẽ xin
+#   cert thật vào volume nginx-certs; lúc đó restart container nginx.
+# - Model gaze: image tự tải weights về (download_weights.py) vào volume
+#   gaze-weights; KHÔNG cần copy thủ công hay để weights trong git.
 # ============================================================
 
 services:
@@ -47,8 +50,9 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    image: leducmanh1504/eyelearning-backend:latest
     container_name: eyetracking-backend
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres:
@@ -79,35 +83,35 @@ services:
   gaze:
     image: hieunm1501/gaze-api:gpu
     container_name: eyetracking-gaze
+    pull_policy: always
     restart: unless-stopped
     environment:
       - DEVICE=cuda
     volumes:
-      # Trọng số model: phải có mặt khi clone (xem thảo luận weights ở dưới).
-      - ./API/weights:/app/weights
+      # Model được image tự tải về /app/weights khi khởi động (download_weights.py).
+      # Dùng named volume để cache lại, không phụ thuộc git hay SSH.
+      - gaze-weights:/app/weights
     gpus: all
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
 
   nginx:
-    build: ./nginx
+    image: leducmanh1504/eyelearning-nginx:latest
     container_name: eyetracking-nginx
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       - backend
       - gaze
       - certbot
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
+      - "8443:443"
     volumes:
       # Chia sẻ cert (certbot ghi, nginx đọc) và webroot ACME.
       - nginx-certs:/etc/nginx/certs
       - nginx-webroot:/var/www/certbot:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80 >/dev/null || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
+    # Healthcheck đã bake vào image (Dockerfile HEALTHCHECK), đánh /nginx-health
+    # qua 127.0.0.1 -> không phụ thuộc compose hay upstream.
 
   # Xin cert Let's Encrypt thật qua webroot (port 80 do nginx phục vụ).
   # Sau khi có cert, restart container nginx (Portainer) để dùng cert thật.
@@ -127,3 +131,4 @@ volumes:
   backend-media:
   nginx-certs:
   nginx-webroot:
+  gaze-weights:

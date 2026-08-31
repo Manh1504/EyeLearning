@@ -28,7 +28,7 @@ const FILTER_TABS: { key: Filter; label: string }[] = [
 const STATUS_BADGE: Record<CourseStatus, string> = {
   published: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   draft: 'border-amber-200 bg-amber-50 text-amber-700',
-  archived: 'border-slate-200 bg-slate-100 text-slate-600',
+  archived: 'border-border bg-muted text-muted-foreground',
 };
 
 const CREATE_HREF = '/teacher/courses/c-new?tab=content&new=1';
@@ -161,7 +161,7 @@ export default function TeacherCoursesPage() {
     <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-6 lg:px-8 lg:py-10">
       <section className="flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-slate-950 sm:text-[2rem]">
+          <h1 className="text-[1.75rem] font-bold leading-[1.2] tracking-tight text-foreground sm:text-[2rem]">
             Khóa học
           </h1>
           <p className="mt-1.5 text-sm leading-6 text-muted-foreground">

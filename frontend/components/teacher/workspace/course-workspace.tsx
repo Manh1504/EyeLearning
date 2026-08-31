@@ -16,7 +16,7 @@ type View = 'content' | 'students' | 'overview';
 function statusDot(status: string) {
   if (status === 'published') return 'bg-emerald-500';
   if (status === 'draft') return 'bg-amber-500';
-  return 'bg-slate-400';
+  return 'bg-muted-foreground';
 }
 
 function SegmentedNav({
@@ -41,7 +41,7 @@ function SegmentedNav({
   ];
 
   return (
-    <nav className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+    <nav className="flex items-center gap-1 rounded-lg bg-muted p-1">
       {items.map((item) => {
         if (isNew && item.key !== 'content') return null;
         const active = view === item.key;
@@ -50,7 +50,7 @@ function SegmentedNav({
             key={item.key}
             href={queryFor(item.key)}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {item.label}
@@ -85,21 +85,21 @@ export default function TeacherCourseWorkspace() {
   const canManage = isNew || (course?.isOwner ?? true);
 
   return (
-    <div className="min-h-[calc(100dvh-56px)] bg-slate-50">
+    <div className="min-h-[calc(100dvh-56px)] bg-muted">
       {/* Top bar */}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+      <header className="sticky top-0 z-30 border-b border-border bg-card">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6 lg:px-8">
           <Link
             href="/teacher/courses"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
             aria-label="Quay lại danh sách khóa học"
           >
             <Icon name="ri-arrow-left-line" />
           </Link>
 
           <div className="flex min-w-0 flex-[1_1_0] flex-col justify-center">
-            <p className="truncate text-sm font-semibold text-slate-900">{displayTitle}</p>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <p className="truncate text-sm font-semibold text-foreground">{displayTitle}</p>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <span className={`h-1.5 w-1.5 rounded-full ${statusDot(displayStatus)}`} />
               {STATUS_LABEL[displayStatus]}
               {!isNew && (
@@ -127,11 +127,11 @@ export default function TeacherCourseWorkspace() {
               <ContentTab isNew={isNew} embed />
 
               {isNew && (
-                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6">
-                  <Icon name="ri-group-line" className="mt-0.5 shrink-0 text-slate-400" />
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-border bg-card px-5 py-6">
+                  <Icon name="ri-group-line" className="mt-0.5 shrink-0 text-muted-foreground" />
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Học viên</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                    <h3 className="text-sm font-semibold text-foreground">Học viên</h3>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
                       Lưu khóa học trước để có thể thêm học viên ngay trên trang này.
                     </p>
                   </div>

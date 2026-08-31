@@ -7,25 +7,24 @@ import {
   RiGroupLine,
   RiGraduationCapLine,
   RiCheckboxCircleLine,
-  RiPlayLine,
-  RiFireLine,
   RiArrowRightLine,
+  RiFireLine,
   RiMenuLine,
   RiCloseLine,
   RiBarChartLine,
   RiCameraLine,
   RiNotification3Line,
-  RiLockLine,
 } from '@remixicon/react';
 
+import { BrandLogo } from '@/components/ui/brand-logo';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
 /* ============================================================
-   GazeEdu — Landing Page (v5.1)
-   Fix khoảng trắng Hero → Giải pháp:
-   - Hero: giảm padding đáy pb-24/lg:pb-36 → pb-16/lg:pb-24
-   - <Section /> nhận prop `padding` để override khi cần
-   - Giải pháp: padding đỉnh riêng pt-16/lg:pt-24 (thay vì 32)
-     + border-t mảnh tạo điểm neo thị giác giữa 2 section
-   Tổng khoảng nghỉ Hero→Giải pháp: 272px → 192px (desktop)
+   GazeEdu — Landing Page
+   Thế giới thị giác: nền trắng, cấu trúc navy, một accent cyan dành
+   riêng cho trạng thái tương tác / nhấn. Không gradient, không glass,
+   không trang trí vô nghĩa — nội dung tự biện minh cho chỗ đứng.
    ============================================================ */
 
 const roleDetails = {
@@ -38,6 +37,7 @@ const roleDetails = {
       'Tối ưu lộ trình ôn tập dựa trên các đoạn kiến thức chưa tập trung.',
     ],
     badge: 'Tối ưu tiếp thu',
+    panelTitle: 'Báo cáo cá nhân',
   },
   teacher: {
     title: 'Dành cho Giảng viên',
@@ -48,28 +48,11 @@ const roleDetails = {
       'Đăng tải và tổ chức bài giảng dễ dàng với hệ thống bài tập tương tác.',
     ],
     badge: 'Nâng cao chất lượng dạy',
+    panelTitle: 'Tổng quan lớp học',
   },
 } as const;
 
 type Role = keyof typeof roleDetails;
-
-const steps = [
-  {
-    icon: RiCameraLine,
-    title: 'Bật webcam',
-    desc: 'Chỉ cần cho phép truy cập camera — không cài đặt, không thiết bị chuyên dụng.',
-  },
-  {
-    icon: RiEyeLine,
-    title: 'AI phân tích thời gian thực',
-    desc: 'Mô hình gaze estimation xác định tọa độ điểm nhìn (x, y) ngay trên trình duyệt.',
-  },
-  {
-    icon: RiBarChartLine,
-    title: 'Nhận báo cáo & heatmap',
-    desc: 'Độ tập trung theo từng phút và bản đồ nhiệt trực quan cho từng bài giảng.',
-  },
-];
 
 const solutions = [
   {
@@ -89,27 +72,125 @@ const solutions = [
   },
 ];
 
+const steps = [
+  {
+    icon: RiCameraLine,
+    title: 'Bật webcam',
+    desc: 'Chỉ cần cho phép truy cập camera — không cài đặt, không thiết bị chuyên dụng.',
+  },
+  {
+    icon: RiEyeLine,
+    title: 'AI phân tích thời gian thực',
+    desc: 'Mô hình gaze estimation xác định tọa độ điểm nhìn (x, y) ngay trên trình duyệt.',
+  },
+  {
+    icon: RiBarChartLine,
+    title: 'Nhận báo cáo & heatmap',
+    desc: 'Độ tập trung theo từng phút và bản đồ nhiệt trực quan cho từng bài giảng.',
+  },
+];
+
 const navLinks: Array<[string, string]> = [
   ['Giải pháp', '#solutions'],
   ['Cách hoạt động', '#how-it-works'],
   ['Dành cho ai?', '#roles'],
 ];
 
-function Section({
-  id,
-  className = '',
-  padding = 'py-24 lg:py-32',
-  children,
-}: {
-  id?: string;
-  className?: string;
-  padding?: string;
-  children: React.ReactNode;
-}) {
+const trustItems = [
+  'Không cần cài đặt',
+  'Chạy trên mọi trình duyệt hiện đại',
+  'Không thu thập video webcam',
+];
+
+// Bảng màu heatmap (khớp heatColor dùng trong sản phẩm) cho minh họa hero.
+const HEAT_LEGEND = ['#2f5be8', '#3cb4fa', '#4fd782', '#fad23c', '#eb4632'];
+
+/* ---------- Hình minh họa product (hero) — thể hiện đúng sản phẩm làm gì ---------- */
+
+function ProductPreview() {
   return (
-    <section id={id} className={`scroll-mt-24 ${padding} ${className}`}>
-      {children}
-    </section>
+    <div className="relative mx-auto w-full max-w-xl">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+        {/* Window chrome */}
+        <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" aria-hidden />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" aria-hidden />
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" aria-hidden />
+          <span className="ml-3 flex-1 truncate rounded-md border border-border bg-card px-2.5 py-1 font-mono text-[10px] text-muted-foreground">
+            app.gazeedu.vn/classroom
+          </span>
+        </div>
+
+        {/* Reader + heatmap */}
+        <div className="relative aspect-[16/10] bg-muted">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/demo/slide-1.svg"
+            alt="Trang bài giảng mẫu với bản đồ nhiệt điểm nhìn"
+            className="absolute inset-0 h-full w-full object-contain"
+          />
+          <svg
+            viewBox="0 0 800 450"
+            preserveAspectRatio="none"
+            className="absolute inset-0 h-full w-full"
+            aria-hidden
+          >
+            <defs>
+              <filter id="heat-blur" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="16" />
+              </filter>
+            </defs>
+            <g filter="url(#heat-blur)" opacity="0.55">
+              <circle cx="240" cy="150" r="78" fill="#eaffd9" />
+              <circle cx="330" cy="120" r="64" fill="#c9f2b0" />
+              <circle cx="430" cy="190" r="92" fill="#ffe27a" />
+              <circle cx="540" cy="300" r="72" fill="#ff9b76" />
+              <circle cx="590" cy="240" r="52" fill="#ff6a5c" />
+            </g>
+            <g opacity="0.9">
+              <circle cx="430" cy="190" r="7" fill="#eb4632" />
+              <circle cx="540" cy="300" r="6" fill="#fad23c" />
+              <circle cx="240" cy="150" r="6" fill="#4fd782" />
+              <circle cx="330" cy="120" r="5" fill="#3cb4fa" />
+            </g>
+          </svg>
+
+          {/* Status pill */}
+          <div className="absolute left-3 top-3 flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+            Eye Tracking Active
+          </div>
+          <div className="absolute right-3 top-3 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm">
+            Độ chú ý: <span className="text-primary">94%</span>
+          </div>
+        </div>
+
+        {/* Legend + progress */}
+        <div className="space-y-3 border-t border-border bg-card px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-muted-foreground">Mức tập trung</span>
+            <span
+              className="h-1.5 flex-1 rounded-full"
+              style={{
+                backgroundImage: `linear-gradient(to right, ${HEAT_LEGEND.join(', ')})`,
+              }}
+              aria-hidden
+            />
+            <span className="text-[11px] text-muted-foreground">Thấp</span>
+            <span className="text-[11px] text-muted-foreground">Cao</span>
+          </div>
+          <div>
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Tiến độ bài giảng</span>
+              <span className="tabular-nums font-medium text-foreground">12:34 / 18:00</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full w-[65%] rounded-full bg-brand-cyan" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -124,454 +205,321 @@ export default function LMSLandingPage() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-cyan-700 selection:text-white font-sans antialiased">
-      <style>{`
-        html { scroll-behavior: smooth; }
-        @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-        @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-float { animation: float 5s ease-in-out infinite; }
-        .animate-float-delayed { animation: float 6s ease-in-out 1.4s infinite; }
-        .animate-fade-up { animation: fade-up .45s ease both; }
-      `}</style>
+  const role = roleDetails[activeTab];
 
+  return (
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <header
-        className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-all duration-300 ${
-          scrolled
-            ? 'bg-white/90 border-slate-200 shadow-sm'
-            : 'bg-white/60 border-transparent'
-        }`}
+        className={cn(
+          'sticky top-0 z-50 border-b transition-shadow',
+          scrolled ? 'border-border bg-background shadow-card' : 'border-transparent bg-background',
+        )}
       >
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between relative">
-          <Link href="/" className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-600 to-cyan-800 flex items-center justify-center text-white shadow-md shadow-cyan-700/20">
-              <RiEyeLine className="w-5 h-5" />
-            </div>
-            <span className="font-bold text-xl tracking-tight text-slate-900">
-              Gaze<span className="text-cyan-700">Edu</span>
-            </span>
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <Link href="/" className="flex items-center" aria-label="GazeEdu — Trang chủ">
+            <BrandLogo variant="light" className="h-8" priority />
           </Link>
 
-          <nav className="hidden md:flex items-center space-x-8 absolute left-1/2 -translate-x-1/2">
+          <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
             {navLinks.map(([label, href]) => (
-              <a
-                key={href}
-                href={href}
-                className="text-sm font-medium text-slate-600 hover:text-cyan-700 transition-colors"
-              >
+              <a key={href} href={href} className="transition-colors hover:text-foreground">
                 {label}
               </a>
             ))}
           </nav>
 
-          <div className="flex items-center justify-end space-x-2">
-            <Link href="/account/login" className="hidden sm:inline-flex px-3 py-2 text-sm font-medium text-slate-600 hover:text-cyan-700 hover:bg-slate-50 rounded-lg transition-colors">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/account/login"
+              className="hidden items-center rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+            >
               Đăng nhập
             </Link>
+            <Link href="/try" className={cn(buttonVariants(), 'hidden sm:inline-flex')}>
+              Dùng thử
+            </Link>
             <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
-              aria-label="Mở menu"
+              type="button"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+              aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
+              aria-expanded={mobileOpen}
             >
-              {mobileOpen ? <RiCloseLine className="w-5 h-5" /> : <RiMenuLine className="w-5 h-5" />}
+              {mobileOpen ? <RiCloseLine className="h-5 w-5" /> : <RiMenuLine className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
         {mobileOpen && (
-          <div className="md:hidden border-t border-slate-200 bg-white px-6 py-4 space-y-1 animate-fade-up">
-            {navLinks.map(([label, href]) => (
-              <a
-                key={href}
-                href={href}
-                onClick={() => setMobileOpen(false)}
-                className="block px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-cyan-700"
+          <div className="border-t border-border bg-background px-4 py-3 md:hidden">
+            <nav className="flex flex-col">
+              {navLinks.map(([label, href]) => (
+                <a
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
+            <div className="mt-2 flex gap-2 border-t border-border pt-3">
+              <Link
+                href="/account/login"
+                className={cn(buttonVariants({ variant: 'outline' }), 'flex-1')}
               >
-                {label}
-              </a>
-            ))}
-            <div className="flex gap-2 pt-2">
-              <Link href="/account/login" className="flex-1 text-sm font-medium px-4 py-2.5 rounded-lg border border-slate-200 text-slate-700">
                 Đăng nhập
+              </Link>
+              <Link href="/try" className={cn(buttonVariants(), 'flex-1')}>
+                Dùng thử
               </Link>
             </div>
           </div>
         )}
       </header>
 
-      <section className="relative overflow-hidden pt-16 pb-16 lg:pt-24 lg:pb-24">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,#000_60%,transparent_100%)]" />
-          <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-cyan-200/40 blur-3xl" />
-          <div className="absolute top-40 -left-32 w-80 h-80 rounded-full bg-teal-100/60 blur-3xl" />
-        </div>
+      {/* Hero */}
+      <section className="border-b border-border">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-16 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+              Nền tảng E-Learning · Eye Tracking
+            </p>
+            <h1 className="mt-4 text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl lg:text-[3.25rem]">
+              Biết học viên đang nhìn đâu, hiểu học viên đang nghĩ gì.
+            </h1>
+            <p className="mt-5 max-w-lg text-lg leading-relaxed text-muted-foreground">
+              Nền tảng E-Learning tích hợp AI phân tích độ tập trung theo thời gian thực —
+              chỉ cần webcam có sẵn, xử lý hoàn toàn trên thiết bị.
+            </p>
 
-        <div className="relative max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-            <div className="text-left max-w-2xl">
-              <h1 className="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold tracking-tight text-slate-900 leading-[1.08]">
-                Biết học viên đang nhìn đâu,{' '}
-                <span className="bg-gradient-to-r from-cyan-600 via-cyan-700 to-teal-600 bg-clip-text text-transparent">
-                  hiểu học viên đang nghĩ gì
-                </span>
-              </h1>
-
-              <p className="mt-6 text-lg text-slate-600 leading-relaxed max-w-lg">
-                Nền tảng E-Learning tích hợp AI phân tích độ tập trung theo thời gian thực —
-                chỉ cần webcam có sẵn, xử lý hoàn toàn trên thiết bị.
-              </p>
-
-              <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <button className="group px-7 py-3.5 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white font-semibold flex items-center justify-center space-x-2 shadow-lg shadow-cyan-700/25 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-cyan-700/30">
-                  <span>Trải nghiệm Demo miễn phí</span>
-                  <RiArrowRightLine className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </button>
-                <button className="px-7 py-3.5 rounded-xl bg-white border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50/50 text-slate-700 font-semibold flex items-center justify-center space-x-2 transition-all">
-                  <span className="w-7 h-7 rounded-full bg-cyan-700 text-white flex items-center justify-center">
-                    <RiPlayLine className="w-3.5 h-3.5 ml-0.5" />
-                  </span>
-                  <span>Xem video giới thiệu</span>
-                </button>
-              </div>
-
-              <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-500">
-                {[
-                  'Không cần cài đặt',
-                  'Chạy trên mọi trình duyệt hiện đại',
-                  'Không thu thập video webcam',
-                ].map((t) => (
-                  <span key={t} className="inline-flex items-center gap-1.5">
-                    <RiCheckboxCircleLine className="w-4 h-4 text-cyan-600" />
-                    {t}
-                  </span>
-                ))}
-              </div>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Link href="/try" className={cn(buttonVariants({ size: 'lg' }))}>
+                Trải nghiệm Demo miễn phí
+                <RiArrowRightLine data-icon="inline-end" />
+              </Link>
+              <a
+                href="#how-it-works"
+                className={cn(buttonVariants({ variant: 'outline', size: 'lg' }))}
+              >
+                Xem cách hoạt động
+              </a>
             </div>
 
-            <div className="relative mx-auto w-full max-w-lg lg:max-w-none">
-              <div className="absolute -inset-1 bg-gradient-to-tr from-cyan-200/60 via-white to-teal-100/60 rounded-[2rem] transform rotate-2 scale-[1.03]" />
+            <ul className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              {trustItems.map((item) => (
+                <li key={item} className="inline-flex items-center gap-1.5">
+                  <RiCheckboxCircleLine className="h-4 w-4 text-primary" aria-hidden />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
 
-              <div className="relative rounded-2xl bg-white border border-slate-200 shadow-2xl shadow-slate-900/10 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                  <div className="ml-3 flex-1 h-6 rounded-md bg-white border border-slate-200 text-[10px] flex items-center px-2.5 text-slate-400 font-mono">
-                    app.gazeedu.vn/classroom
-                  </div>
-                </div>
+          <ProductPreview />
+        </div>
+      </section>
 
-                <div className="relative bg-slate-50 aspect-[4/3] sm:aspect-video flex flex-col justify-between p-4 sm:p-6">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="flex items-center space-x-2 font-medium text-slate-700 bg-white px-2.5 py-1.5 rounded-lg shadow-sm border border-slate-100">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>Eye Tracking Active</span>
-                    </span>
-                    <span className="bg-white px-3 py-1.5 rounded-lg border border-slate-100 text-slate-700 shadow-sm font-semibold">
-                      Độ chú ý: <span className="text-cyan-700">94%</span>
-                    </span>
-                  </div>
+      {/* Giải pháp */}
+      <section id="solutions" className="scroll-mt-16 border-b border-border">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+              Giải pháp
+            </p>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Công nghệ thị giác, đơn giản hóa cho lớp học
+            </h2>
+            <p className="mt-3 text-lg text-muted-foreground">
+              Nâng cao chất lượng dạy và học với phân tích điểm nhìn thời gian thực.
+            </p>
+          </div>
 
-                  <div className="relative flex items-center justify-center flex-1 my-4">
-                    <div className="absolute left-[30%] top-[35%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-                      <div className="w-16 h-16 rounded-full bg-cyan-500/15 animate-ping absolute inset-0" />
-                      <div className="w-8 h-8 rounded-full border-2 border-cyan-500 bg-cyan-500/20 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-                        <div className="w-2 h-2 rounded-full bg-cyan-700" />
-                      </div>
-                      <span className="absolute left-10 top-0 text-[10px] font-mono bg-slate-900 text-white px-2 py-0.5 rounded shadow-lg whitespace-nowrap">
-                        x:540 y:320
-                      </span>
-                    </div>
+          <div className="mt-12 grid gap-10 sm:grid-cols-3 sm:gap-8">
+            {solutions.map((f) => (
+              <div key={f.title} className="max-w-sm">
+                <f.icon className="h-6 w-6 text-primary" aria-hidden />
+                <h3 className="mt-4 text-lg font-semibold text-foreground">{f.title}</h3>
+                <p className="mt-2 leading-relaxed text-muted-foreground">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-                    <div className="text-center p-6 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-xs relative overflow-hidden group cursor-pointer hover:border-cyan-300 transition-colors">
-                      <div className="w-12 h-12 mx-auto rounded-full bg-cyan-50 text-cyan-700 flex items-center justify-center mb-3 group-hover:bg-cyan-700 group-hover:text-white transition-colors">
-                        <RiPlayLine className="w-5 h-5 ml-0.5" />
-                      </div>
-                      <p className="text-sm font-bold text-slate-800 line-clamp-1">
-                        Thuật toán Gradient Descent
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">Bài giảng mẫu</p>
-                    </div>
-                  </div>
+      {/* Cách hoạt động */}
+      <section id="how-it-works" className="scroll-mt-16 border-b border-border bg-muted/50">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+              Cách hoạt động
+            </p>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Chạy trong 30 giây, không cần cài đặt
+            </h2>
+          </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="h-1.5 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-cyan-500 to-cyan-700 w-[65%] rounded-full" />
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-400">12:34 / 18:00</span>
-                  </div>
+          <ol className="mt-12 grid gap-10 sm:grid-cols-3 sm:gap-8">
+            {steps.map((s, i) => (
+              <li key={s.title} className="max-w-sm">
+                <span className="font-mono text-sm font-medium text-primary">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <h3 className="mt-3 text-lg font-semibold text-foreground">{s.title}</h3>
+                <p className="mt-2 leading-relaxed text-muted-foreground">{s.desc}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* Dành cho ai? */}
+      <section id="roles" className="scroll-mt-16 border-b border-border">
+        <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+              Đối tượng
+            </p>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Trải nghiệm chuyên biệt
+            </h2>
+            <p className="mt-3 text-lg text-muted-foreground">
+              Quy trình tối ưu cho cả người học và người dạy.
+            </p>
+          </div>
+
+          <div
+            role="tablist"
+            aria-label="Chọn đối tượng"
+            className="mt-8 inline-flex gap-1 rounded-lg border border-border bg-card p-1"
+          >
+            {(['student', 'teacher'] as Role[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === key}
+                onClick={() => setActiveTab(key)}
+                className={cn(
+                  'rounded-md px-6 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25',
+                  activeTab === key
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {key === 'student' ? 'Học sinh' : 'Giảng viên'}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-8 grid gap-8 rounded-xl border border-border bg-card p-6 sm:p-10 lg:grid-cols-2 lg:items-center">
+            <div className="max-w-lg">
+              <span className="inline-flex items-center rounded-full bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
+                {role.badge}
+              </span>
+              <h3 className="mt-4 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                {role.title}
+              </h3>
+              <p className="mt-3 text-lg leading-relaxed text-muted-foreground">{role.desc}</p>
+
+              <ul className="mt-6 space-y-4">
+                {role.points.map((pt) => (
+                  <li key={pt} className="flex items-start gap-3">
+                    <RiCheckboxCircleLine className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+                    <span className="leading-snug text-foreground">{pt}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/40">
+              <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  {activeTab === 'student' ? (
+                    <RiGraduationCapLine className="h-5 w-5" aria-hidden />
+                  ) : (
+                    <RiGroupLine className="h-5 w-5" aria-hidden />
+                  )}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{role.panelTitle}</p>
+                  <p className="text-xs text-muted-foreground">Giao diện minh họa</p>
                 </div>
               </div>
-
-              <div className="absolute -right-4 sm:-right-8 top-8 animate-float">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-xl shadow-slate-900/10 p-3.5 w-40">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-7 h-7 rounded-lg bg-cyan-50 text-cyan-700 flex items-center justify-center">
-                      <RiEyeLine className="w-4 h-4" />
+              <div className="space-y-4 px-5 py-5">
+                {[86, 72, 94].map((w, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{activeTab === 'student' ? `Buổi ${i + 1}` : `Lớp ${i + 1}`}</span>
+                      <span className="tabular-nums font-medium text-foreground">{w}% chú ý</span>
                     </div>
-                    <span className="text-[11px] font-semibold text-slate-700">Tập trung</span>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-brand-cyan" style={{ width: `${w}%` }} />
+                    </div>
                   </div>
-                  <div className="flex items-end gap-1 h-8">
-                    {[40, 65, 50, 80, 70, 94, 88].map((h, i) => (
-                      <div
-                        key={i}
-                        className="flex-1 rounded-sm bg-gradient-to-t from-cyan-600 to-cyan-400"
-                        style={{ height: `${h}%` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="absolute -left-4 sm:-left-10 bottom-10 animate-float-delayed">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-xl shadow-slate-900/10 p-3.5 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-500 flex items-center justify-center">
-                    <RiFireLine className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold text-slate-800">Heatmap bài giảng</p>
-                    <p className="text-[10px] text-slate-500">Cập nhật theo thời gian thực</p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <Section
-        id="solutions"
-        className="bg-white border-t border-slate-200/70"
-        padding="pt-16 pb-24 lg:pt-24 lg:pb-32"
-      >
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-2xl mb-16 lg:mb-20">
-            <p className="text-sm font-bold uppercase tracking-widest text-cyan-700 mb-3">
-              Giải pháp
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
-              Công nghệ thị giác, đơn giản hóa cho lớp học
-            </h2>
-            <p className="mt-4 text-slate-600 text-lg">
-              Nâng cao chất lượng dạy và học với phân tích điểm nhìn thời gian thực.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {solutions.map((f) => (
-              <div
-                key={f.title}
-                className="group relative p-8 rounded-3xl bg-white border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-cyan-900/5 hover:-translate-y-1 hover:border-cyan-200 transition-all duration-300 overflow-hidden"
-              >
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="p-3 rounded-2xl bg-cyan-50 border border-cyan-100 text-cyan-700 inline-flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-cyan-700 group-hover:text-white transition-all duration-300">
-                  <f.icon className="w-7 h-7" />
-                </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-3">{f.title}</h3>
-                <p className="text-slate-600 leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
+      {/* CTA */}
+      <section className="bg-primary">
+        <div className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6 lg:px-8 lg:py-20">
+          <h2 className="text-3xl font-bold tracking-tight text-primary-foreground sm:text-4xl">
+            Sẵn sàng nâng cao chất lượng dạy và học cho lớp học?
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-primary-foreground/80">
+            Trải nghiệm nền tảng ngay hôm nay — miễn phí, không cần cài đặt, chỉ cần webcam có sẵn.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              href="/try"
+              className={cn(
+                buttonVariants({ size: 'lg' }),
+                'w-full bg-white text-primary hover:bg-muted sm:w-auto',
+              )}
+            >
+              Trải nghiệm Demo ngay
+              <RiArrowRightLine data-icon="inline-end" />
+            </Link>
+            <Link
+              href="/account/login"
+              className={cn(
+                buttonVariants({ size: 'lg', variant: 'outline' }),
+                'w-full border-white/40 bg-transparent text-primary-foreground hover:bg-white/10 sm:w-auto',
+              )}
+            >
+              Đăng nhập
+            </Link>
           </div>
         </div>
-      </Section>
+      </section>
 
-      <Section id="how-it-works" className="bg-slate-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-2xl mx-auto mb-16 lg:mb-20">
-            <p className="text-sm font-bold uppercase tracking-widest text-cyan-700 mb-3">
-              Cách hoạt động
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
-              Chạy trong 30 giây, không cần cài đặt
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-10 relative">
-            <div className="hidden md:block absolute top-8 left-[20%] right-[20%] h-px bg-gradient-to-r from-cyan-200 via-cyan-400 to-cyan-200" />
-            {steps.map((s, i) => (
-              <div key={s.title} className="relative text-center">
-                <div className="relative inline-flex">
-                  <div className="w-16 h-16 rounded-2xl bg-white border border-cyan-100 shadow-lg shadow-cyan-900/5 text-cyan-700 flex items-center justify-center">
-                    <s.icon className="w-7 h-7" />
-                  </div>
-                  <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-cyan-700 text-white text-xs font-bold flex items-center justify-center">
-                    {i + 1}
-                  </span>
-                </div>
-                <h3 className="mt-5 text-lg font-bold text-slate-900">{s.title}</h3>
-                <p className="mt-2 text-slate-600 leading-relaxed max-w-xs mx-auto">{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Section>
-
-      <Section id="roles" className="bg-white">
-        <div className="max-w-5xl mx-auto px-6">
-          <div className="text-center mb-12 lg:mb-16">
-            <p className="text-sm font-bold uppercase tracking-widest text-cyan-700 mb-3">
-              Đối tượng
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
-              Trải nghiệm chuyên biệt
-            </h2>
-            <p className="mt-4 text-slate-600 text-lg">
-              Quy trình tối ưu cho cả người học và người dạy.
-            </p>
-
-            <div className="mt-8 inline-flex p-1.5 rounded-xl bg-white border border-slate-200 shadow-sm">
-              {(['student', 'teacher'] as Role[]).map((role) => (
-                <button
-                  key={role}
-                  onClick={() => setActiveTab(role)}
-                  className={`px-8 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 ${
-                    activeTab === role
-                      ? 'bg-cyan-700 text-white shadow-md shadow-cyan-700/25'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  {role === 'student' ? 'Học sinh' : 'Giảng viên'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div
-            key={activeTab}
-            className="animate-fade-up p-8 sm:p-12 rounded-[2rem] bg-white border border-slate-200 shadow-xl shadow-slate-900/5 relative overflow-hidden"
-          >
-            <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-cyan-100/50 blur-3xl pointer-events-none" />
-            <div className="relative flex flex-col md:flex-row items-center justify-between gap-12">
-              <div className="space-y-6 max-w-lg flex-1">
-                <span className="inline-flex items-center text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-cyan-50 border border-cyan-100 text-cyan-800">
-                  {roleDetails[activeTab].badge}
-                </span>
-                <h3 className="text-3xl font-extrabold text-slate-900">
-                  {roleDetails[activeTab].title}
-                </h3>
-                <p className="text-lg text-slate-600 leading-relaxed">
-                  {roleDetails[activeTab].desc}
-                </p>
-                <div className="pt-2 space-y-4">
-                  {roleDetails[activeTab].points.map((pt, idx) => (
-                    <div key={idx} className="flex items-start space-x-3 text-slate-700">
-                      <RiCheckboxCircleLine className="w-6 h-6 text-cyan-600 shrink-0" />
-                      <span className="text-base leading-snug">{pt}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="w-full md:w-80 shrink-0 rounded-2xl bg-slate-50 border border-slate-200 p-6 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-cyan-50/60 to-transparent pointer-events-none" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="w-11 h-11 rounded-xl bg-cyan-700 text-white flex items-center justify-center shadow-md shadow-cyan-700/25">
-                      {activeTab === 'student' ? (
-                        <RiGraduationCapLine className="w-6 h-6" />
-                      ) : (
-                        <RiGroupLine className="w-6 h-6" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">
-                        {activeTab === 'student' ? 'Báo cáo cá nhân' : 'Tổng quan lớp học'}
-                      </p>
-                      <p className="text-xs text-slate-500">Giao diện minh họa</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2.5">
-                    {[86, 72, 94].map((w, i) => (
-                      <div key={i} className="space-y-1">
-                        <div className="flex justify-between text-[10px] font-medium text-slate-400">
-                          <span>
-                            {activeTab === 'student' ? `Buổi ${i + 1}` : `Lớp ${i + 1}`}
-                          </span>
-                          <span>{w}% chú ý</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-teal-500"
-                            style={{ width: `${w}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Section>
-
-      <Section className="bg-white">
-        <div className="max-w-5xl mx-auto px-6">
-          <div className="relative rounded-[2rem] overflow-hidden bg-gradient-to-br from-cyan-700 via-cyan-800 to-teal-900 p-10 sm:p-16 text-center text-white shadow-2xl shadow-cyan-900/30">
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none" />
-            <div className="relative max-w-2xl mx-auto">
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-                Sẵn sàng nâng cao chất lượng
-                <br className="hidden sm:block" /> dạy và học cho lớp học?
-              </h2>
-              <p className="mt-4 text-lg text-cyan-100">
-                Trải nghiệm nền tảng ngay hôm nay — miễn phí, không cần cài đặt,
-                chỉ cần webcam có sẵn.
-              </p>
-              <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <button className="group w-full sm:w-auto px-8 py-4 rounded-xl bg-white text-cyan-800 font-bold flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                  <span>Trải nghiệm Demo ngay</span>
-                  <RiArrowRightLine className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </button>
-                <Link href="/account/login" className="w-full sm:w-auto px-8 py-4 rounded-xl border border-white/30 text-white font-semibold hover:bg-white/10 transition-colors">
-                  Đăng nhập
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Section>
-
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-10">
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-600 to-cyan-800 flex items-center justify-center text-white">
-                <RiEyeLine className="w-4 h-4" />
-              </div>
-              <span className="font-bold text-lg text-slate-900">
-                Gaze<span className="text-cyan-700">Edu</span>
-              </span>
-            </div>
-            <p className="mt-4 text-sm text-slate-500 leading-relaxed max-w-xs">
+      {/* Footer */}
+      <footer className="border-t border-border bg-background">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-4 lg:px-8">
+          <div className="md:col-span-1">
+            <BrandLogo variant="light" className="h-8" />
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted-foreground">
               Nền tảng E-Learning phân tích độ tập trung bằng AI gaze tracking — riêng tư
               tuyệt đối, không cần thiết bị.
             </p>
           </div>
 
           {[
-            {
-              heading: 'Sản phẩm',
-              links: ['Giải pháp', 'Cách hoạt động', 'Bảng giá', 'Demo'],
-            },
-            {
-              heading: 'Tài nguyên',
-              links: ['Tài liệu API', 'Nghiên cứu', 'Blog', 'Hỗ trợ'],
-            },
-            {
-              heading: 'Pháp lý',
-              links: ['Điều khoản', 'Cookie', 'Liên hệ'],
-            },
+            { heading: 'Sản phẩm', links: ['Giải pháp', 'Cách hoạt động', 'Bảng giá', 'Demo'] },
+            { heading: 'Tài nguyên', links: ['Tài liệu API', 'Nghiên cứu', 'Blog', 'Hỗ trợ'] },
+            { heading: 'Pháp lý', links: ['Điều khoản', 'Cookie', 'Liên hệ'] },
           ].map((col) => (
             <div key={col.heading}>
-              <p className="text-sm font-bold text-slate-900 mb-4">{col.heading}</p>
-              <ul className="space-y-2.5">
+              <p className="text-sm font-semibold text-foreground">{col.heading}</p>
+              <ul className="mt-4 space-y-2.5">
                 {col.links.map((l) => (
                   <li key={l}>
-                    <a
-                      href="#"
-                      className="text-sm text-slate-500 hover:text-cyan-700 transition-colors"
-                    >
+                    <a href="#" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                       {l}
                     </a>
                   </li>
@@ -580,11 +528,11 @@ export default function LMSLandingPage() {
             </div>
           ))}
         </div>
-        <div className="border-t border-slate-100">
-          <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+        <div className="border-t border-border">
+          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:px-6 lg:px-8">
             <span>© {new Date().getFullYear()} GazeEdu. All rights reserved.</span>
             <span className="flex items-center gap-1.5">
-              <RiLockLine className="w-3.5 h-3.5" />
+              <RiCheckboxCircleLine className="h-3.5 w-3.5 text-primary" aria-hidden />
               Xử lý on-device — không lưu video webcam
             </span>
           </div>

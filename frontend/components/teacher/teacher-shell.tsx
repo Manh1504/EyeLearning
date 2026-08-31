@@ -23,7 +23,7 @@ export function TeacherShell({ children }: { children: ReactNode }) {
     .toUpperCase() || '?';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-muted">
       <TeacherAdminHeader
         showAdminLink={Boolean(isAdmin)}
         user={{ name, initials, avatarUrl: profile?.avatarUrl, profileHref: '/teacher/profile', roleLabel: 'Giảng viên' }}

@@ -28,8 +28,8 @@ export function StudentShell({ children }: { children: ReactNode }) {
     .toUpperCase() || '?';
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-muted">
+      <header className="border-b border-border bg-card">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-6">
           <Link href="/student/my-courses" className="flex h-10 items-center" aria-label="GazeEdu">
             <BrandLogo variant="icon" className="h-8 sm:hidden" priority />
@@ -44,7 +44,7 @@ export function StudentShell({ children }: { children: ReactNode }) {
                   key={n.href}
                   href={n.href}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    active ? 'bg-accent text-primary' : 'text-slate-600 hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary focus-visible:ring-3 focus-visible:ring-ring/20'
+                    active ? 'bg-accent text-primary' : 'text-muted-foreground hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary focus-visible:ring-3 focus-visible:ring-ring/20'
                   }`}
                 >
                   <Icon name={n.icon} className="h-4 w-4" />

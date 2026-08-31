@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 type Scope = 'class' | string;
 
 const SELECT_CLS =
-  'h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100';
+  'h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition focus:border-ring focus:ring-3 focus:ring-ring/25';
 
 // Heatmap vẽ theo tọa độ VIEWPORT (0,0 = góc trên-trái viewport, toàn màn hình),
 // nên canvas đại diện cả viewport 16:9; slide là ảnh con căn giữa bên trong.
@@ -231,12 +231,12 @@ export default function HeatmapViewer() {
   const Controls = (
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-4 py-3 lg:px-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phạm vi dữ liệu</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phạm vi dữ liệu</p>
       </div>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 lg:px-5">
         <section>
-          <label htmlFor="heatmap-lesson" className="text-xs font-medium text-slate-500">
+          <label htmlFor="heatmap-lesson" className="text-xs font-medium text-muted-foreground">
             Bài học
           </label>
           <select
@@ -258,7 +258,7 @@ export default function HeatmapViewer() {
         </section>
 
         <section>
-          <p className="text-xs font-medium text-slate-500">Trang</p>
+          <p className="text-xs font-medium text-muted-foreground">Trang</p>
           <div className="mt-2 flex items-center justify-between gap-2">
             <Button
               type="button"
@@ -271,7 +271,7 @@ export default function HeatmapViewer() {
             >
               <Icon name="ri-arrow-left-s-line" />
             </Button>
-            <span className="min-w-0 flex-1 text-center text-sm font-medium tabular-nums text-slate-700">
+            <span className="min-w-0 flex-1 text-center text-sm font-medium tabular-nums text-foreground">
               Trang {activePageIdx + 1} / {pageCount}
             </span>
             <Button
@@ -289,25 +289,25 @@ export default function HeatmapViewer() {
         </section>
 
         <section>
-          <p className="text-xs font-medium text-slate-500">Đối tượng</p>
+          <p className="text-xs font-medium text-muted-foreground">Đối tượng</p>
           <div className="mt-2 space-y-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
+            <label className="flex items-center gap-2 text-sm text-foreground">
               <input
                 type="radio"
                 name="heatmap-scope"
                 checked={scope === 'class'}
                 onChange={() => setScope('class')}
-                className="h-4 w-4 accent-cyan-700"
+                className="h-4 w-4 accent-brand-cyan"
               />
               Toàn lớp
             </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
+            <label className="flex items-center gap-2 text-sm text-foreground">
               <input
                 type="radio"
                 name="heatmap-scope"
                 checked={scope !== 'class'}
                 onChange={() => setScope(students[0]?.id ?? 'class')}
-                className="h-4 w-4 accent-cyan-700"
+                className="h-4 w-4 accent-brand-cyan"
               />
               Một học viên
             </label>
@@ -335,29 +335,29 @@ export default function HeatmapViewer() {
         </section>
 
         <section>
-          <p className="text-xs font-medium text-slate-500">Hiển thị</p>
+          <p className="text-xs font-medium text-muted-foreground">Hiển thị</p>
           <div className="mt-2 space-y-2">
-            <label className="flex items-center justify-between gap-3 text-sm text-slate-700">
+            <label className="flex items-center justify-between gap-3 text-sm text-foreground">
               <span>Vùng tập trung</span>
               <input
                 type="checkbox"
                 checked={showHeatmap}
                 onChange={(event) => setShowHeatmap(event.target.checked)}
-                className="h-4 w-4 accent-cyan-700"
+                className="h-4 w-4 accent-brand-cyan"
               />
             </label>
-            <label className="flex items-center justify-between gap-3 text-sm text-slate-700">
+            <label className="flex items-center justify-between gap-3 text-sm text-foreground">
               <span>Điểm nhìn</span>
               <input
                 type="checkbox"
                 checked={showScatter}
                 onChange={(event) => setShowScatter(event.target.checked)}
-                className="h-4 w-4 accent-cyan-700"
+                className="h-4 w-4 accent-brand-cyan"
               />
             </label>
           </div>
 
-          <label className="mt-4 block text-xs font-medium text-slate-500">
+          <label className="mt-4 block text-xs font-medium text-muted-foreground">
             Độ đậm
             <input
               type="range"
@@ -367,33 +367,33 @@ export default function HeatmapViewer() {
               value={opacity}
               onChange={(event) => setOpacity(Number(event.target.value))}
               disabled={!showHeatmap && !showScatter}
-              className="mt-2 w-full accent-cyan-700 disabled:opacity-40"
+              className="mt-2 w-full accent-brand-cyan disabled:opacity-40"
             />
           </label>
         </section>
 
         <section>
-          <p className="text-xs font-medium text-slate-500">Dữ liệu</p>
+          <p className="text-xs font-medium text-muted-foreground">Dữ liệu</p>
           <dl className="mt-2 space-y-2 text-sm">
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Mẫu gaze</dt>
-              <dd className="font-medium tabular-nums text-slate-800">{Math.max(0, current.fixations * 4)}</dd>
+              <dt className="text-muted-foreground">Mẫu gaze</dt>
+              <dd className="font-medium tabular-nums text-foreground">{Math.max(0, current.fixations * 4)}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Số học viên</dt>
-              <dd className="font-medium tabular-nums text-slate-800">{scope === 'class' ? students.length : 1}</dd>
+              <dt className="text-muted-foreground">Số học viên</dt>
+              <dd className="font-medium tabular-nums text-foreground">{scope === 'class' ? students.length : 1}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Thời gian quan sát</dt>
-              <dd className="font-medium tabular-nums text-slate-800">{formatDuration(current.viewSec)}</dd>
+              <dt className="text-muted-foreground">Thời gian quan sát</dt>
+              <dd className="font-medium tabular-nums text-foreground">{formatDuration(current.viewSec)}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Tỷ lệ gaze trên trang</dt>
-              <dd className="font-medium tabular-nums text-slate-800">{current.onSlide}%</dd>
+              <dt className="text-muted-foreground">Tỷ lệ gaze trên trang</dt>
+              <dd className="font-medium tabular-nums text-foreground">{current.onSlide}%</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">Vùng tập trung</dt>
-              <dd className="font-medium tabular-nums text-slate-800">{(current.hotspots ?? []).length}</dd>
+              <dt className="text-muted-foreground">Vùng tập trung</dt>
+              <dd className="font-medium tabular-nums text-foreground">{(current.hotspots ?? []).length}</dd>
             </div>
           </dl>
         </section>
@@ -414,14 +414,14 @@ export default function HeatmapViewer() {
 
         {showHeatmap && (
           <section className="pt-1">
-            <p className="text-xs font-medium text-slate-500">Mức tập trung</p>
+            <p className="text-xs font-medium text-muted-foreground">Mức tập trung</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={legendGradient}
               alt="Thang màu mức tập trung"
               className="mt-2 h-2 w-full rounded-full object-cover"
             />
-            <div className="mt-1 flex justify-between text-[11px] text-slate-400">
+            <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
               <span>Thấp</span>
               <span>Cao</span>
             </div>
@@ -445,11 +445,11 @@ export default function HeatmapViewer() {
           </Link>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
-              <h1 className="shrink-0 text-sm font-semibold text-slate-900">Phân tích điểm nhìn</h1>
-              <span className="hidden text-slate-300 sm:inline">·</span>
-              <p className="hidden truncate text-sm text-slate-500 sm:block">{lesson.title}</p>
+              <h1 className="shrink-0 text-sm font-semibold text-foreground">Phân tích điểm nhìn</h1>
+              <span className="hidden text-muted-foreground sm:inline">·</span>
+              <p className="hidden truncate text-sm text-muted-foreground sm:block">{lesson.title}</p>
             </div>
-            <p className="truncate text-xs text-slate-400 sm:hidden">{lesson.title}</p>
+            <p className="truncate text-xs text-muted-foreground sm:hidden">{lesson.title}</p>
           </div>
         </div>
 
@@ -474,10 +474,10 @@ export default function HeatmapViewer() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-muted">
           <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 lg:px-6">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-900">{lesson.title}</p>
-              <p className="hidden truncate text-xs text-slate-400 sm:block">{moduleTitle}</p>
+              <p className="truncate text-sm font-medium text-foreground">{lesson.title}</p>
+              <p className="hidden truncate text-xs text-muted-foreground sm:block">{moduleTitle}</p>
             </div>
-            <p className="shrink-0 text-sm font-medium tabular-nums text-slate-600">
+            <p className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
               Trang {activePageIdx + 1}/{pageCount}
             </p>
           </div>
@@ -485,11 +485,11 @@ export default function HeatmapViewer() {
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4 lg:p-6">
             {noConsent ? (
               <div className="flex w-full max-w-md flex-col items-center rounded-xl border border-border bg-card p-8 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                   <Icon name="ri-eye-off-line" className="text-xl" />
                 </div>
-                <h2 className="mt-4 text-sm font-semibold text-slate-900">Không có dữ liệu điểm nhìn</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
+                <h2 className="mt-4 text-sm font-semibold text-foreground">Không có dữ liệu điểm nhìn</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {student?.name} không bật ghi nhận điểm nhìn trong các phiên học tương ứng. Bạn vẫn có thể xem tiến độ học tập của học viên.
                 </p>
                 <Link href={studentProgressHref} className={cn(buttonVariants(), 'mt-5')}>
@@ -500,7 +500,7 @@ export default function HeatmapViewer() {
               <div className="flex h-full w-full flex-col items-center justify-center gap-3">
                 <div
                   ref={stageRef}
-                  className="relative h-full w-auto max-h-full max-w-full overflow-hidden rounded-lg border border-border bg-slate-100 shadow-sm"
+                  className="relative h-full w-auto max-h-full max-w-full overflow-hidden rounded-lg border border-border bg-muted shadow-sm"
                   style={{
                     aspectRatio: VIEWPORT_ASPECT_RATIO,
                   }}
@@ -517,9 +517,9 @@ export default function HeatmapViewer() {
                     />
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-white px-[8%] text-center">
-                      <Icon name="ri-image-line" data-icon="inline-start" className="mb-2 text-3xl text-slate-200" />
-                      <p className="text-sm font-semibold leading-6 text-slate-800">{lesson.title}</p>
-                      <p className="mt-1 text-xs text-slate-400">Trang {activePageIdx + 1}</p>
+                      <Icon name="ri-image-line" data-icon="inline-start" className="mb-2 text-3xl text-muted-foreground" />
+                      <p className="text-sm font-semibold leading-6 text-foreground">{lesson.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Trang {activePageIdx + 1}</p>
                     </div>
                   )}
                   <canvas
@@ -538,7 +538,7 @@ export default function HeatmapViewer() {
                 <Icon name="ri-arrow-left-line" data-icon="inline-start" />
                 Trang trước
               </Button>
-              <span className="min-w-24 text-center text-sm font-medium tabular-nums text-slate-600">
+              <span className="min-w-24 text-center text-sm font-medium tabular-nums text-muted-foreground">
                 Trang {activePageIdx + 1} / {pageCount}
               </span>
               <Button type="button" variant="outline" size="sm" onClick={() => go(1)} disabled={activePageIdx === pageCount - 1}>

@@ -143,7 +143,7 @@ function StructureMenu({
           event.stopPropagation();
           setOpenMenu(isOpen ? null : menu);
         }}
-        className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition hover:bg-muted hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
       >
         <Icon name="ri-more-2-fill" className="text-lg" aria-hidden />
       </button>
@@ -153,7 +153,7 @@ function StructureMenu({
           <div
             ref={menuRef}
             role="menu"
-            className={`fixed z-[80] overflow-hidden rounded-xl border border-border bg-white py-1 shadow-lg ${widthClass}`}
+            className={`fixed z-[80] overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg ${widthClass}`}
             style={{ top: position.top, left: position.left }}
           >
             {actions.map((action) => (
@@ -162,8 +162,8 @@ function StructureMenu({
                 <button
                   type="button"
                   role="menuitem"
-                  className={`flex w-full px-3 py-2 text-left text-sm outline-none transition hover:bg-slate-50 focus-visible:bg-slate-50 ${
-                    action.destructive ? 'text-rose-600 hover:bg-rose-50 focus-visible:bg-rose-50' : 'text-slate-700'
+                  className={`flex w-full px-3 py-2 text-left text-sm outline-none transition hover:bg-muted focus-visible:bg-muted ${
+                    action.destructive ? 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10' : 'text-foreground'
                   }`}
                   onClick={() => {
                     closeMenu();
@@ -442,21 +442,21 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     currentStatus === 'published'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
       : currentStatus === 'archived'
-        ? 'border-slate-200 bg-slate-100 text-slate-600'
+        ? 'border-border bg-muted text-muted-foreground'
         : 'border-amber-200 bg-amber-50 text-amber-700';
 
   if (isNew) {
     // Luồng tạo mới: nhập thông tin → lưu → chuyển sang workspace thật (id real).
     return (
       <div className="mx-auto max-w-3xl py-8 sm:py-12">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-          <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+          <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
                 Khóa học mới
               </p>
-              <h2 className="mt-2 text-xl font-bold text-slate-950">Tạo khóa học mới</h2>
-              <p className="mt-1.5 text-sm leading-6 text-slate-500">
+              <h2 className="mt-2 text-xl font-bold text-foreground">Tạo khóa học mới</h2>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
                 Nhập thông tin cơ bản rồi lưu khóa học trước khi thêm chương, bài học và PDF.
               </p>
             </div>
@@ -467,8 +467,8 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
 
           <div className="mt-6 space-y-5">
           <div>
-            <label htmlFor="new-course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-              Tên khóa học <span className="text-rose-500">*</span>
+            <label htmlFor="new-course-title" className="mb-1.5 block text-sm font-medium text-foreground">
+              Tên khóa học <span className="text-destructive">*</span>
             </label>
             <input
               id="new-course-title"
@@ -477,11 +477,11 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               placeholder="Ví dụ: Lập trình Python cơ bản"
               className={INPUT_CLS}
             />
-            <p className="mt-1.5 text-xs text-slate-400">Tên này sẽ hiển thị với học viên sau khi khóa học được xuất bản.</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Tên này sẽ hiển thị với học viên sau khi khóa học được xuất bản.</p>
           </div>
 
           <div>
-            <label htmlFor="new-course-description" className="mb-1.5 block text-sm font-medium text-slate-700">
+            <label htmlFor="new-course-description" className="mb-1.5 block text-sm font-medium text-foreground">
               Mô tả
             </label>
             <textarea
@@ -494,7 +494,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
             />
           </div>
 
-          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex flex-col-reverse gap-2 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -517,7 +517,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
         </div>
 
         {statusMsg && (
-          <p aria-live="polite" className={`mt-4 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
+          <p aria-live="polite" className={`mt-4 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-destructive'}`}>
             {statusMsg.text}
           </p>
         )}
@@ -537,24 +537,24 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
       <header
         className={
           embed
-            ? 'shrink-0 rounded-xl border border-border bg-white p-4 sm:p-5'
-            : 'shrink-0 border-b border-border bg-slate-50 pb-4'
+            ? 'shrink-0 rounded-xl border border-border bg-card p-4 sm:p-5'
+            : 'shrink-0 border-b border-border bg-muted pb-4'
         }
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-950">{title || course?.title || 'Nội dung khóa học'}</h2>
+              <h2 className="text-xl font-bold text-foreground">{title || course?.title || 'Nội dung khóa học'}</h2>
               <span className={`rounded-md border px-2 py-1 text-xs font-medium ${currentStatusClass}`}>
                 {currentStatusLabel}
               </span>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               {embed
                 ? 'Quản lý thông tin khóa học, cấu trúc chương – bài học và tài liệu PDF.'
                 : 'Quản lý cấu trúc bài học và tài liệu PDF của khóa học.'}
             </p>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>{tree.length} chương</span>
               <span>{totalLessons} bài học</span>
               <span>{totalSlides} trang PDF</span>
@@ -589,7 +589,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 type="button"
                 variant="destructive"
                 size="default"
-                className="border border-rose-200 bg-white hover:bg-rose-50 sm:ml-3"
+                className="border border-destructive/25 bg-card hover:bg-destructive/10 sm:ml-3"
                 onClick={() => setConfirmDeleteCourse(true)}
               >
                 Xóa khóa học
@@ -598,25 +598,25 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
           </div>
         </div>
 
-        <section className="mt-5 rounded-lg border border-slate-100 bg-slate-50/60 p-4">
+        <section className="mt-5 rounded-lg border border-border bg-muted p-4">
           <div className="grid gap-5">
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-slate-900">Thông tin khóa học</h3>
+              <h3 className="text-sm font-semibold text-foreground">Thông tin khóa học</h3>
               <div className="mt-4 grid w-full gap-4">
                 <div>
-                  <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Tên khóa học <span className="text-rose-500">*</span>
+                  <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-foreground">
+                    Tên khóa học <span className="text-destructive">*</span>
                   </label>
                   <input
                     id="course-title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     readOnly={!isOwner}
-                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
+                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`}
                   />
                 </div>
                 <div>
-                  <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-slate-700">
+                  <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-foreground">
                     Mô tả
                   </label>
                   <textarea
@@ -625,7 +625,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                     onChange={(e) => setDescription(e.target.value)}
                     readOnly={!isOwner}
                     rows={4}
-                    className={`${INPUT_CLS} min-h-28 resize-y ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
+                    className={`${INPUT_CLS} min-h-28 resize-y ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`}
                   />
                 </div>
               </div>
@@ -634,7 +634,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
         </section>
 
         {statusMsg && (
-          <p aria-live="polite" className={`mt-3 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-rose-600'}`}>
+          <p aria-live="polite" className={`mt-3 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-destructive'}`}>
             {statusMsg.text}
           </p>
         )}
@@ -644,9 +644,9 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
         <aside className="border-b border-border lg:border-b-0 lg:border-r">
           <div className="flex flex-col lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)]">
             <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Cấu trúc khóa học
-                {treeFetching && <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />}
+                {treeFetching && <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />}
               </p>
             </div>
 
@@ -654,7 +654,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               <div className="p-5">
                 <EmptyState
                   className="py-8"
-                  icon={<Icon name="ri-git-branch-line" className="text-2xl text-slate-400" />}
+                  icon={<Icon name="ri-git-branch-line" className="text-2xl text-muted-foreground" />}
                   title="Chưa có chương nào"
                   desc="Tạo chương đầu tiên để bắt đầu xây dựng khóa học."
                 >
@@ -663,7 +663,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                       Tạo chương đầu tiên
                     </Button>
                   ) : (
-                    <p className="mt-4 text-xs text-slate-400">Bạn được phân công hỗ trợ khóa học này.</p>
+                    <p className="mt-4 text-xs text-muted-foreground">Bạn được phân công hỗ trợ khóa học này.</p>
                   )}
                 </EmptyState>
               </div>
@@ -674,16 +674,16 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                   const isExpanded = expanded[module.id] ?? true;
 
                   return (
-                    <section key={module.id} className="mb-3 rounded-lg border border-slate-100 bg-white">
+                    <section key={module.id} className="mb-3 rounded-lg border border-border bg-card">
                       <div
                         className={`group flex items-center gap-2 rounded-t-lg px-2 py-2 ${
-                          moduleActive ? 'bg-slate-100 text-slate-950' : 'text-slate-700 hover:bg-slate-50'
+                          moduleActive ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted'
                         }`}
                       >
                         <button
                           type="button"
                           onClick={() => setExpanded((prev) => ({ ...prev, [module.id]: !isExpanded }))}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-white hover:text-slate-700"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-card hover:text-foreground"
                           aria-label={isExpanded ? `Thu gọn ${module.title}` : `Mở rộng ${module.title}`}
                           title={isExpanded ? 'Thu gọn' : 'Mở rộng'}
                         >
@@ -695,7 +695,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                           onClick={() => setSelection({ type: 'module', id: module.id })}
                           className="flex min-w-0 flex-1 items-center gap-2 text-left"
                         >
-                          <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-400">
+                          <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
                             {String(moduleIndex + 1).padStart(2, '0')}
                           </span>
                           {renaming?.type === 'module' && renaming.id === module.id ? (
@@ -710,12 +710,12 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                                 if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
                                 if (event.key === 'Escape') setRenaming(null);
                               }}
-                              className="min-w-0 flex-1 rounded-md border border-cyan-300 px-2 py-1 text-sm font-medium outline-none ring-2 ring-cyan-100"
+                              className="min-w-0 flex-1 rounded-md border border-ring px-2 py-1 text-sm font-medium outline-none ring-2 ring-ring/25"
                             />
                           ) : (
                             <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={module.title}>{module.title}</span>
                           )}
-                          <span className="shrink-0 text-xs font-normal text-slate-400">
+                          <span className="shrink-0 text-xs font-normal text-muted-foreground">
                             {module.lessons.length} bài
                           </span>
                         </button>
@@ -749,9 +749,9 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                       </div>
 
                       {isExpanded && (
-                        <div className="ml-10 mt-1 space-y-0.5 border-l border-slate-100 pl-2">
+                        <div className="ml-10 mt-1 space-y-0.5 border-l border-border pl-2">
                           {module.lessons.length === 0 && (
-                            <p className="px-2 py-3 text-xs leading-5 text-slate-400">
+                            <p className="px-2 py-3 text-xs leading-5 text-muted-foreground">
                               Chương này chưa có bài học. Thêm bài đầu tiên để upload PDF.
                             </p>
                           )}
@@ -765,14 +765,14 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                                   onClick={() => setSelection({ type: 'lesson', id: lesson.id })}
                                   className={`relative flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${
                                     lessonActive
-                                      ? 'bg-cyan-50 font-medium text-cyan-700 before:absolute before:-left-[9px] before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-cyan-700'
-                                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                      ? 'bg-accent font-medium text-primary before:absolute before:-left-[9px] before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-primary'
+                                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                                   }`}
                                 >
-                                  <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                                     {lessonIndex + 1}
                                   </span>
-                                  <Icon name="ri-book-open-line" className="shrink-0 text-sm text-slate-400" />
+                                  <Icon name="ri-book-open-line" className="shrink-0 text-sm text-muted-foreground" />
                                   {renaming?.type === 'lesson' && renaming.id === lesson.id ? (
                                     <input
                                       autoFocus
@@ -785,13 +785,13 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                                         if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
                                         if (event.key === 'Escape') setRenaming(null);
                                       }}
-                                      className="min-w-0 flex-1 rounded-md border border-cyan-300 px-2 py-1 text-sm outline-none ring-2 ring-cyan-100"
+                                      className="min-w-0 flex-1 rounded-md border border-ring px-2 py-1 text-sm outline-none ring-2 ring-ring/25"
                                     />
                                   ) : (
                                     <span className="min-w-0 flex-1 truncate" title={lesson.title}>{lesson.title}</span>
                                   )}
                                   {lesson.slides > 0 && (
-                                    <span className="shrink-0 text-xs font-normal text-slate-400">{lesson.slides} trang</span>
+                                    <span className="shrink-0 text-xs font-normal text-muted-foreground">{lesson.slides} trang</span>
                                   )}
                                 </button>
 
@@ -825,7 +825,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                             type="button"
                             variant="ghost"
                             size="xs"
-                            className="mt-1 w-full justify-start text-slate-500"
+                            className="mt-1 w-full justify-start text-muted-foreground"
                             onClick={() => addLesson(module.id)}
                             disabled={saving}
                           >
@@ -854,7 +854,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
           {!selectedLessonContext && !selectedModule && (
             <EmptyState
               className="min-h-[420px] justify-center p-10"
-              icon={<Icon name="ri-book-open-line" className="text-2xl text-slate-400" />}
+              icon={<Icon name="ri-book-open-line" className="text-2xl text-muted-foreground" />}
               title="Chọn một chương hoặc bài học"
               desc="Chọn nội dung ở danh sách bên trái để bắt đầu chỉnh sửa."
             />
@@ -862,11 +862,11 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
 
           {selectedModule && !selectedLessonContext && (
             <div className="mx-auto max-w-2xl p-5 sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Chương {String(tree.findIndex((m) => m.id === selectedModule.id) + 1).padStart(2, '0')}
               </p>
-              <h3 className="mt-2 text-xl font-semibold text-slate-900">{selectedModule.title}</h3>
-              <p className="mt-2 text-sm text-slate-500">
+              <h3 className="mt-2 text-xl font-semibold text-foreground">{selectedModule.title}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
                 {selectedModule.lessons.length > 0
                   ? `${selectedModule.lessons.length} bài học trong chương này.`
                   : 'Chương này chưa có bài học.'}
@@ -882,24 +882,24 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
 
           {selectedLessonContext && (
             <div className="mx-auto max-w-5xl p-5 sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Bài học / PDF</p>
-              <h3 className="mt-2 text-xl font-semibold text-slate-900">{selectedLessonContext.lesson.title}</h3>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bài học / PDF</p>
+              <h3 className="mt-2 text-xl font-semibold text-foreground">{selectedLessonContext.lesson.title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Chương {tree.findIndex((m) => m.id === selectedLessonContext.module.id) + 1} · {selectedLessonContext.module.title}
               </p>
 
               <section className="mt-8 border-b border-border pb-8">
-                  <h4 className="text-sm font-semibold text-slate-900">Thông tin bài học</h4>
+                  <h4 className="text-sm font-semibold text-foreground">Thông tin bài học</h4>
                 <div className="mt-4">
-                  <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Tên bài <span className="text-rose-500">*</span>
+                  <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-foreground">
+                    Tên bài <span className="text-destructive">*</span>
                   </label>
                   <input
                     key={selectedLessonContext.lesson.id}
                     id="lesson-title"
                     defaultValue={selectedLessonContext.lesson.title}
                     readOnly={!isOwner}
-                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-slate-50 text-slate-500'}`}
+                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`}
                     onBlur={(event) => {
                       const value = event.target.value.trim();
                       if (!value || value === selectedLessonContext?.lesson.title) return;
@@ -917,8 +917,8 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               <section className="py-8">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h4 className="text-base font-semibold text-slate-900">PDF bài học</h4>
-                    <p className="mt-1.5 text-sm leading-6 text-slate-500">
+                    <h4 className="text-base font-semibold text-foreground">PDF bài học</h4>
+                    <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
                       Upload PDF — backend render từng trang thành ảnh slide cho học viên xem.
                       File mới sẽ thay thế toàn bộ slide cũ của bài.
                     </p>
@@ -953,14 +953,14 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                     }}
                     className={`mt-5 flex min-h-[260px] w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-8 py-14 text-center transition ${
                       dragOverZone
-                        ? 'border-cyan-500 bg-cyan-50 text-cyan-700'
-                        : 'border-border bg-muted/60 text-slate-500 hover:border-cyan-400 hover:bg-cyan-50/40'
+                        ? 'border-ring bg-accent text-primary'
+                        : 'border-border bg-muted/60 text-muted-foreground hover:border-ring hover:bg-accent/50'
                     }`}
                   >
                     <Icon name="ri-upload-cloud-2-line" className="text-4xl" />
-                    <p className="mt-4 text-base font-semibold text-slate-800">Chưa có PDF</p>
-                    <p className="mt-1.5 text-sm text-slate-500">Kéo file vào đây hoặc chọn từ máy.</p>
-                    <p className="mt-1 text-xs text-slate-400">PDF · tối đa {MAX_UPLOAD_LABEL}</p>
+                    <p className="mt-4 text-base font-semibold text-foreground">Chưa có PDF</p>
+                    <p className="mt-1.5 text-sm text-muted-foreground">Kéo file vào đây hoặc chọn từ máy.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">PDF · tối đa {MAX_UPLOAD_LABEL}</p>
                     <span className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">
                       {uploading ? 'Đang render slide…' : 'Chọn file PDF'}
                     </span>
@@ -969,8 +969,8 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                   <div className="mt-5 flex flex-col gap-4 rounded-xl border border-border bg-background p-5">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
-                        <p className="truncate text-base font-semibold text-slate-900">PDF bài học</p>
-                        <p className="mt-1 text-sm text-slate-500">{selectedLessonContext.lesson.slides} trang đã render thành slide</p>
+                        <p className="truncate text-base font-semibold text-foreground">PDF bài học</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{selectedLessonContext.lesson.slides} trang đã render thành slide</p>
                       </div>
                       <div className="flex shrink-0 gap-2">
                         <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
@@ -983,14 +983,14 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
 
                 <div className="mt-5 rounded-xl border border-border bg-muted/40 p-5">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-slate-700">Trang trong tài liệu</p>
-                    <p className="text-xs tabular-nums text-slate-500">{selectedLessonContext.lesson.slides} trang</p>
+                    <p className="text-sm font-medium text-foreground">Trang trong tài liệu</p>
+                    <p className="text-xs tabular-nums text-muted-foreground">{selectedLessonContext.lesson.slides} trang</p>
                   </div>
                   <div className="mt-4 grid grid-cols-6 gap-2.5 sm:grid-cols-8 md:grid-cols-10 xl:grid-cols-12">
                     {Array.from({ length: selectedLessonContext.lesson.slides }, (_, i) => i + 1).map((page) => (
                       <div
                         key={page}
-                        className="flex h-10 items-center justify-center rounded-md border border-border bg-white text-xs font-medium tabular-nums text-slate-500"
+                        className="flex h-10 items-center justify-center rounded-md border border-border bg-card text-xs font-medium tabular-nums text-muted-foreground"
                         title={`Trang ${page}`}
                       >
                         {page}
@@ -1031,7 +1031,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
         title="Xóa khóa học này?"
         description={
           <>
-            Khóa học <span className="font-medium text-slate-700">{title || course?.title || 'này'}</span> cùng
+            Khóa học <span className="font-medium text-foreground">{title || course?.title || 'này'}</span> cùng
             toàn bộ nội dung và đăng ký liên quan sẽ bị xóa. Đây là hành động có mức rủi ro cao và không thể hoàn tác.
           </>
         }

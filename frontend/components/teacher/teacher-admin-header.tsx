@@ -32,7 +32,7 @@ export function TeacherAdminHeader({
   ];
 
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="border-b border-border bg-card">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-6">
         <Link href="/teacher/courses" className="flex h-10 items-center" aria-label="GazeEdu">
           <BrandLogo variant="icon" className="h-8 sm:hidden" priority />
@@ -49,7 +49,7 @@ export function TeacherAdminHeader({
                 'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition focus-visible:ring-3 focus-visible:ring-ring/20',
                 item.active
                   ? 'bg-accent text-primary'
-                  : 'text-slate-600 hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary',
+                  : 'text-muted-foreground hover:bg-accent hover:text-primary focus-visible:bg-accent focus-visible:text-primary',
               )}
             >
               <Icon name={item.icon} className="h-4 w-4 shrink-0" aria-hidden />
