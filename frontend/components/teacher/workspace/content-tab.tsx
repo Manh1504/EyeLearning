@@ -10,25 +10,172 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ConfirmDialog, EmptyState, INPUT_CLS } from './workspace-ui';
 import { useCourseTree, useTeacherCourses } from '@/hooks/use-teacher';
 import {
+  addCourseStudents,
   createCourse,
   createLesson,
   createModule,
   deleteCourse,
   deleteLesson,
   deleteModule,
+  fetchStudentDirectory,
   updateCourse,
   updateLesson,
   updateModule,
   uploadLessonPdf,
 } from '@/lib/api/teacher';
-import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from '@/lib/api/client';
-import type { CourseStatus, LessonNode, ModuleNode } from '@/lib/types/domain';
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, resolveMediaUrl } from '@/lib/api/client';
+import { LEVEL_LABEL } from '@/lib/mock/teacher';
+import type { CourseStatus, LessonNode, Level, ModuleNode } from '@/lib/types/domain';
+
+// ---- State cho form tạo mới 1 trang (chương → bài → PDF + học viên) ----
+interface NewLessonDraft {
+  key: number;
+  title: string;
+  file: File | null;
+}
+
+interface NewChapterDraft {
+  key: number;
+  title: string;
+  lessons: NewLessonDraft[];
+}
+
+function slideImageUrl(lessonId: string, page: number) {
+  return resolveMediaUrl(`/media/lessons/${lessonId}/slide_${String(page).padStart(3, '0')}.jpg`);
+}
+
+// Xem trước slide vừa upload: thumbnail từng trang + lightbox phóng to.
+// URL ảnh suy từ quy ước backend render PDF (`slide_{NNN}.jpg`), không cần
+// endpoint riêng nên giáo viên được phân công cũng xem được.
+function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: number }) {
+  // Component được remount theo key={lessonId} từ phía cha nên state
+  // khởi tạo mới cho mỗi bài học, không cần reset trong effect.
+  const [failed, setFailed] = useState<Record<number, boolean>>({});
+  const [preview, setPreview] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (preview === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreview(null);
+      if (event.key === 'ArrowLeft') setPreview((v) => (v === null ? v : (v - 1 + slideCount) % slideCount));
+      if (event.key === 'ArrowRight') setPreview((v) => (v === null ? v : (v + 1) % slideCount));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [preview, slideCount]);
+
+  if (slideCount === 0) return null;
+
+  return (
+    <>
+      <div className="mt-4 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
+        {Array.from({ length: slideCount }, (_, i) => i + 1).map((page) => {
+          const url = slideImageUrl(lessonId, page);
+          if (!url || failed[page]) {
+            return (
+              <div
+                key={page}
+                className="flex aspect-[4/3] items-center justify-center rounded-md border border-border bg-card text-xs font-medium tabular-nums text-muted-foreground"
+                title={`Trang ${page}`}
+              >
+                {page}
+              </div>
+            );
+          }
+          return (
+            <button
+              key={page}
+              type="button"
+              onClick={() => setPreview(page)}
+              title={`Xem trước trang ${page}`}
+              aria-label={`Xem trước trang ${page}`}
+              className="group overflow-hidden rounded-md border border-border bg-white outline-none transition hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt={`Trang ${page}`}
+                loading="lazy"
+                onError={() => setFailed((prev) => ({ ...prev, [page]: true }))}
+                className="aspect-[4/3] w-full object-contain transition group-hover:scale-[1.02]"
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {preview !== null && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" role="presentation">
+          <button
+            type="button"
+            aria-label="Đóng xem trước"
+            className="absolute inset-0 cursor-default bg-brand-dark/70"
+            onClick={() => setPreview(null)}
+          />
+          <div className="relative flex max-h-full w-full max-w-4xl flex-col rounded-xl border border-border bg-card p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold tabular-nums text-foreground">
+                Trang {preview} / {slideCount}
+              </p>
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                aria-label="Đóng xem trước"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                <Icon name="ri-close-line" className="text-lg" />
+              </button>
+            </div>
+            {(() => {
+              const url = slideImageUrl(lessonId, preview);
+              return url ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  key={preview}
+                  src={url}
+                  alt={`Trang ${preview}`}
+                  className="mt-3 max-h-[70dvh] w-full rounded-lg bg-white object-contain"
+                />
+              ) : (
+                <p className="mt-3 rounded-lg bg-muted px-3 py-8 text-center text-sm text-muted-foreground">
+                  Không tải được ảnh trang {preview}.
+                </p>
+              );
+            })()}
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPreview((v) => (v === null ? v : (v - 2 + slideCount) % slideCount + 1))}
+                disabled={slideCount <= 1}
+              >
+                <Icon name="ri-arrow-left-line" data-icon="inline-start" />
+                Trang trước
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPreview((v) => (v === null ? v : (v % slideCount) + 1))}
+                disabled={slideCount <= 1}
+              >
+                Trang sau
+                <Icon name="ri-arrow-right-line" data-icon="inline-end" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 type Selection =
   | { type: 'module'; id: string }
@@ -198,6 +345,22 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [level, setLevel] = useState<Level>('beginner');
+  // Form tạo mới 1 trang: danh sách chương, mỗi chương có bài + file PDF.
+  const [newChapters, setNewChapters] = useState<NewChapterDraft[]>([
+    { key: 0, title: '', lessons: [{ key: 0, title: '', file: null }] },
+  ]);
+  const [draftKey, setDraftKey] = useState(1);
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [studentQuery, setStudentQuery] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createStep, setCreateStep] = useState<string | null>(null);
+
+  const { data: studentDirectory = [] } = useQuery({
+    queryKey: ['teacher', 'student-directory'],
+    queryFn: () => fetchStudentDirectory(),
+    enabled: isNew,
+  });
   const [selection, setSelection] = useState<Selection>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<{ type: 'module' | 'lesson'; id: string } | null>(null);
@@ -289,7 +452,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
         const created = await createCourse({
           title: title.trim(),
           description: description.trim() || undefined,
-          level: 'beginner',
+          level,
           status,
         });
         router.replace(`/teacher/courses/${created.id}?tab=content`);
@@ -317,6 +480,131 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     } catch (e) {
       flash('err', `Không xóa được khóa học: ${errText(e)}`);
       setConfirmDeleteCourse(false);
+    }
+  };
+
+  // ---- Form tạo mới 1 trang: chương → bài → PDF + học viên ----
+  const patchNewChapter = (key: number, patch: Partial<NewChapterDraft>) => {
+    setNewChapters((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  };
+
+  const addNewChapter = () => {
+    const key = draftKey;
+    setDraftKey((v) => v + 1);
+    setNewChapters((prev) => [
+      ...prev,
+      { key, title: '', lessons: [{ key: 0, title: '', file: null }] },
+    ]);
+  };
+
+  const removeNewChapter = (key: number) => {
+    setNewChapters((prev) => (prev.length <= 1 ? prev : prev.filter((c) => c.key !== key)));
+  };
+
+  const addNewLesson = (chapterKey: number) => {
+    const key = draftKey;
+    setDraftKey((v) => v + 1);
+    setNewChapters((prev) =>
+      prev.map((c) =>
+        c.key === chapterKey
+          ? { ...c, lessons: [...c.lessons, { key, title: '', file: null }] }
+          : c,
+      ),
+    );
+  };
+
+  const patchNewLesson = (chapterKey: number, lessonKey: number, patch: Partial<NewLessonDraft>) => {
+    setNewChapters((prev) =>
+      prev.map((c) =>
+        c.key === chapterKey
+          ? {
+              ...c,
+              lessons: c.lessons.map((l) => (l.key === lessonKey ? { ...l, ...patch } : l)),
+            }
+          : c,
+      ),
+    );
+  };
+
+  const removeNewLesson = (chapterKey: number, lessonKey: number) => {
+    setNewChapters((prev) =>
+      prev.map((c) =>
+        c.key === chapterKey && c.lessons.length > 1
+          ? { ...c, lessons: c.lessons.filter((l) => l.key !== lessonKey) }
+          : c,
+      ),
+    );
+  };
+
+  const toggleNewStudent = (id: string) => {
+    setSelectedStudents((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+  };
+
+  // Validate toàn form: tên khóa học + mỗi chương có tên & ≥1 bài có tên & mỗi bài có PDF.
+  const newFormIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!title.trim()) issues.push('Tên khóa học');
+    if (newChapters.length === 0 || newChapters.some((c) => !c.title.trim())) {
+      issues.push('Tên từng chương');
+    }
+    if (newChapters.some((c) => c.lessons.length === 0 || c.lessons.some((l) => !l.title.trim()))) {
+      issues.push('Tên từng bài học');
+    }
+    if (newChapters.some((c) => c.lessons.some((l) => !l.file))) {
+      issues.push('File PDF cho từng bài học');
+    }
+    return issues;
+  }, [title, newChapters]);
+
+  const filteredDirectory = useMemo(() => {
+    const q = studentQuery.trim().toLowerCase();
+    if (!q) return studentDirectory;
+    return studentDirectory.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q),
+    );
+  }, [studentDirectory, studentQuery]);
+
+  // Tạo tất cả trong 1 lần bấm: khóa học → chương → bài → PDF → học viên → xuất bản.
+  const createFullCourse = async () => {
+    if (newFormIssues.length > 0) {
+      flash('err', `Còn thiếu: ${newFormIssues.join(', ')}.`);
+      return;
+    }
+    setCreating(true);
+    setCreateStep(null);
+    try {
+      setCreateStep('Đang tạo khóa học…');
+      const created = await createCourse({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        level,
+        status: 'draft',
+      });
+      for (const chapter of newChapters) {
+        setCreateStep(`Đang tạo chương "${chapter.title.trim()}"…`);
+        const mod = await createModule(created.id, chapter.title.trim());
+        for (const lesson of chapter.lessons) {
+          setCreateStep(`Đang tải PDF cho bài "${lesson.title.trim()}"…`);
+          const createdLesson = await createLesson(mod.id, lesson.title.trim());
+          const pdf = lesson.file as File;
+          if (pdf.size > MAX_UPLOAD_BYTES) {
+            throw new Error(`File "${pdf.name}" vượt quá ${MAX_UPLOAD_LABEL} cho phép.`);
+          }
+          await uploadLessonPdf(createdLesson.id, pdf, pdf.name);
+        }
+      }
+      if (selectedStudents.length > 0) {
+        setCreateStep('Đang thêm học viên…');
+        await addCourseStudents(created.id, selectedStudents);
+      }
+      setCreateStep('Đang xuất bản…');
+      await updateCourse(created.id, { status: 'published' });
+      queryClient.invalidateQueries({ queryKey: ['teacher', 'courses'] });
+      router.replace(`/teacher/courses/${created.id}?tab=content`);
+    } catch (e) {
+      flash('err', `Không tạo được khóa học: ${errText(e)}`);
+      setCreating(false);
+      setCreateStep(null);
     }
   };
 
@@ -446,9 +734,10 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
         : 'border-amber-200 bg-amber-50 text-amber-700';
 
   if (isNew) {
-    // Luồng tạo mới: nhập thông tin → lưu → chuyển sang workspace thật (id real).
+    // Luồng tạo mới 1 trang: điền toàn bộ tên khóa học → chương → bài → PDF
+    // (+ học viên tùy chọn) rồi bấm 1 nút duy nhất để tạo và xuất bản.
     return (
-      <div className="mx-auto max-w-3xl py-8 sm:py-12">
+      <div className="mx-auto max-w-4xl py-8 sm:py-12">
         <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
           <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
@@ -457,7 +746,8 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
               </p>
               <h2 className="mt-2 text-xl font-bold text-foreground">Tạo khóa học mới</h2>
               <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
-                Nhập thông tin cơ bản rồi lưu khóa học trước khi thêm chương, bài học và PDF.
+                Điền đầy đủ thông tin trong cùng một trang rồi bấm “Tạo và xuất bản”.
+                Trường có dấu <span className="font-semibold text-destructive">*</span> là bắt buộc.
               </p>
             </div>
             <span className="inline-flex w-fit rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
@@ -465,54 +755,247 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
             </span>
           </div>
 
-          <div className="mt-6 space-y-5">
-          <div>
-            <label htmlFor="new-course-title" className="mb-1.5 block text-sm font-medium text-foreground">
-              Tên khóa học <span className="text-destructive">*</span>
-            </label>
+          {/* 1. Thông tin khóa học */}
+          <section className="mt-6">
+            <h3 className="text-sm font-semibold text-foreground">1. Thông tin khóa học</h3>
+            <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
+              <div>
+                <label htmlFor="new-course-title" className="mb-1.5 block text-sm font-medium text-foreground">
+                  Tên khóa học <span className="text-destructive">*</span>
+                </label>
+                <input
+                  id="new-course-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ví dụ: Lập trình Python cơ bản"
+                  className={INPUT_CLS}
+                />
+              </div>
+              <div>
+                <label htmlFor="new-course-level" className="mb-1.5 block text-sm font-medium text-foreground">
+                  Trình độ
+                </label>
+                <select
+                  id="new-course-level"
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value as Level)}
+                  className={INPUT_CLS}
+                >
+                  {(Object.keys(LEVEL_LABEL) as Level[]).map((lv) => (
+                    <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label htmlFor="new-course-description" className="mb-1.5 block text-sm font-medium text-foreground">
+                Mô tả
+              </label>
+              <textarea
+                id="new-course-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                placeholder="Tóm tắt nội dung, mục tiêu khóa học..."
+                className={`${INPUT_CLS} min-h-28 resize-y`}
+              />
+            </div>
+          </section>
+
+          {/* 2. Chương + bài + PDF */}
+          <section className="mt-8 border-t border-border pt-6">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-foreground">2. Chương, bài học và slide</h3>
+              <Button type="button" variant="outline" size="sm" onClick={addNewChapter} disabled={creating}>
+                <Icon name="ri-add-line" data-icon="inline-start" />
+                Thêm chương
+              </Button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {newChapters.map((chapter, ci) => (
+                <div key={chapter.key} className="rounded-xl border border-border bg-muted/40 p-4">
+                  <div className="flex items-start gap-2">
+                    <span className="mt-2 shrink-0 rounded-md bg-primary px-2 py-0.5 text-xs font-semibold tabular-nums text-primary-foreground">
+                      {String(ci + 1).padStart(2, '0')}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <label
+                        htmlFor={`new-chapter-${chapter.key}`}
+                        className="mb-1.5 block text-sm font-medium text-foreground"
+                      >
+                        Tên chương <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        id={`new-chapter-${chapter.key}`}
+                        value={chapter.title}
+                        onChange={(e) => patchNewChapter(chapter.key, { title: e.target.value })}
+                        placeholder={`Chương ${ci + 1}: nhập tên chương`}
+                        disabled={creating}
+                        className={INPUT_CLS}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeNewChapter(chapter.key)}
+                      disabled={creating || newChapters.length <= 1}
+                      title="Xóa chương"
+                      aria-label={`Xóa chương ${ci + 1}`}
+                      className="mt-7 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Icon name="ri-delete-bin-line" />
+                    </button>
+                  </div>
+
+                  <div className="ml-0 mt-4 space-y-3 border-l-2 border-border pl-3 sm:ml-4">
+                    {chapter.lessons.map((lesson, li) => (
+                      <div key={lesson.key} className="rounded-lg border border-border bg-card p-3">
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <label
+                              htmlFor={`new-lesson-${chapter.key}-${lesson.key}`}
+                              className="mb-1.5 block text-sm font-medium text-foreground"
+                            >
+                              Tên bài <span className="text-destructive">*</span>
+                            </label>
+                            <input
+                              id={`new-lesson-${chapter.key}-${lesson.key}`}
+                              value={lesson.title}
+                              onChange={(e) => patchNewLesson(chapter.key, lesson.key, { title: e.target.value })}
+                              placeholder={`Bài ${li + 1}: nhập tên bài`}
+                              disabled={creating}
+                              className={INPUT_CLS}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeNewLesson(chapter.key, lesson.key)}
+                            disabled={creating || chapter.lessons.length <= 1}
+                            title="Xóa bài"
+                            aria-label={`Xóa bài ${li + 1}`}
+                            className="mt-7 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Icon name="ri-delete-bin-line" />
+                          </button>
+                        </div>
+                        <div className="mt-3">
+                          <label
+                            htmlFor={`new-pdf-${chapter.key}-${lesson.key}`}
+                            className="mb-1.5 block text-sm font-medium text-foreground"
+                          >
+                            File PDF slide <span className="text-destructive">*</span>
+                          </label>
+                          <input
+                            id={`new-pdf-${chapter.key}-${lesson.key}`}
+                            type="file"
+                            accept="application/pdf"
+                            disabled={creating}
+                            onChange={(e) => patchNewLesson(chapter.key, lesson.key, {
+                              file: e.target.files?.[0] ?? null,
+                            })}
+                            className="block w-full cursor-pointer rounded-lg border border-dashed border-border bg-background px-3 py-2 text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground hover:border-ring disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            {lesson.file
+                              ? `${lesson.file.name} (${(lesson.file.size / (1024 * 1024)).toFixed(1)}MB · tối đa ${MAX_UPLOAD_LABEL})`
+                              : `PDF · tối đa ${MAX_UPLOAD_LABEL} — mỗi trang PDF thành 1 slide.`}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => addNewLesson(chapter.key)}
+                      disabled={creating}
+                      className="w-full justify-start text-muted-foreground"
+                    >
+                      <Icon name="ri-add-line" data-icon="inline-start" />
+                      Thêm bài học vào chương này
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 3. Học viên (tùy chọn) */}
+          <section className="mt-8 border-t border-border pt-6">
+            <h3 className="text-sm font-semibold text-foreground">
+              3. Học viên <span className="font-normal text-muted-foreground">(tùy chọn{selectedStudents.length > 0 ? ` · đã chọn ${selectedStudents.length}` : ''})</span>
+            </h3>
             <input
-              id="new-course-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ví dụ: Lập trình Python cơ bản"
-              className={INPUT_CLS}
+              value={studentQuery}
+              onChange={(e) => setStudentQuery(e.target.value)}
+              placeholder="Tìm theo tên hoặc mã sinh viên…"
+              disabled={creating}
+              className={`${INPUT_CLS} mt-3`}
+              aria-label="Tìm học viên"
             />
-            <p className="mt-1.5 text-xs text-muted-foreground">Tên này sẽ hiển thị với học viên sau khi khóa học được xuất bản.</p>
-          </div>
+            <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-border">
+              {filteredDirectory.length === 0 ? (
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  {studentDirectory.length === 0 ? 'Chưa có học viên trong danh mục.' : 'Không tìm thấy học viên phù hợp.'}
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {filteredDirectory.slice(0, 50).map((s) => {
+                    const checked = selectedStudents.includes(s.id);
+                    return (
+                      <li key={s.id}>
+                        <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 transition hover:bg-muted/60">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={creating}
+                            onChange={() => toggleNewStudent(s.id)}
+                            className="h-4 w-4 shrink-0 accent-brand-cyan"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-foreground">{s.name}</span>
+                            <span className="block text-xs text-muted-foreground">{s.code}</span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
 
-          <div>
-            <label htmlFor="new-course-description" className="mb-1.5 block text-sm font-medium text-foreground">
-              Mô tả
-            </label>
-            <textarea
-              id="new-course-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={5}
-              placeholder="Tóm tắt nội dung, mục tiêu khóa học..."
-              className={`${INPUT_CLS} min-h-32 resize-y`}
-            />
-          </div>
+          {newFormIssues.length > 0 && (
+            <p className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
+              Còn thiếu để xuất bản: {newFormIssues.join(' · ')}.
+            </p>
+          )}
+          {createStep && (
+            <p aria-live="polite" className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              {createStep}
+            </p>
+          )}
 
-          <div className="flex flex-col-reverse gap-2 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-end">
+          <div className="mt-6 flex flex-col-reverse gap-2 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-end">
             <Button
               type="button"
               variant="outline"
               size="default"
-              disabled={saving || !title.trim()}
+              disabled={creating || saving || !title.trim()}
               onClick={() => saveCourse('draft')}
             >
-              {saving ? 'Đang lưu…' : 'Lưu nháp'}
+              {saving ? 'Đang lưu…' : 'Lưu nháp (bổ sung sau)'}
             </Button>
             <Button
               type="button"
               size="default"
-              disabled={saving || !title.trim()}
-              onClick={() => saveCourse('published')}
+              disabled={creating || saving || newFormIssues.length > 0}
+              title={newFormIssues.length > 0 ? `Còn thiếu: ${newFormIssues.join(', ')}` : undefined}
+              onClick={createFullCourse}
             >
-              Tạo và xuất bản
+              {creating ? 'Đang tạo…' : 'Tạo và xuất bản'}
             </Button>
-          </div>
           </div>
         </div>
 
@@ -984,19 +1467,13 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
                 <div className="mt-5 rounded-xl border border-border bg-muted/40 p-5">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-foreground">Trang trong tài liệu</p>
-                    <p className="text-xs tabular-nums text-muted-foreground">{selectedLessonContext.lesson.slides} trang</p>
+                    <p className="text-xs tabular-nums text-muted-foreground">{selectedLessonContext.lesson.slides} trang · bấm để xem trước</p>
                   </div>
-                  <div className="mt-4 grid grid-cols-6 gap-2.5 sm:grid-cols-8 md:grid-cols-10 xl:grid-cols-12">
-                    {Array.from({ length: selectedLessonContext.lesson.slides }, (_, i) => i + 1).map((page) => (
-                      <div
-                        key={page}
-                        className="flex h-10 items-center justify-center rounded-md border border-border bg-card text-xs font-medium tabular-nums text-muted-foreground"
-                        title={`Trang ${page}`}
-                      >
-                        {page}
-                      </div>
-                    ))}
-                  </div>
+                  <SlidePreview
+                    key={selectedLessonContext.lesson.id}
+                    lessonId={selectedLessonContext.lesson.id}
+                    slideCount={selectedLessonContext.lesson.slides}
+                  />
                 </div>
               </section>
             </div>

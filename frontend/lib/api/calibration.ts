@@ -153,14 +153,42 @@ export function clearStoredGazeSession(): void {
 }
 
 // WebSocket stream (nối thẳng AI service — không qua proxy, không cần CORS).
-// Suy ra từ NEXT_PUBLIC_GAZE_URL: https://... -> wss://..., http://... -> ws://
-const GAZE_WS_BASE =
-  process.env.NEXT_PUBLIC_GAZE_URL?.trim() || "http://localhost:8000";
-export const GAZE_WS_ORIGIN = GAZE_WS_BASE.replace(/^http:/, "ws:").replace(
-  /^https:/,
-  "wss:",
-);
+// Production phải dùng wss:// (TLS). Suy ra từ NEXT_PUBLIC_GAZE_URL:
+//   https://... -> wss://..., http://... -> ws://
+// Tự động nâng lên wss:// nếu trang đang chạy trên https: (tránh Mixed Content).
+function getGazeWsOrigin(): string {
+  // Hỗ trợ cả biến cũ NEXT_PUBLIC_EYE_TRACKING_WS_URL (đã set dạng ws(s)://)
+  const raw = (
+    process.env.NEXT_PUBLIC_GAZE_URL?.trim() ||
+    (process.env as Record<string, string | undefined>).NEXT_PUBLIC_EYE_TRACKING_WS_URL?.trim() ||
+    "http://localhost:8000"
+  ).replace(/\/+$/, "");
+
+  let origin: string;
+  if (/^wss?:\/\//i.test(raw)) {
+    origin = raw;
+  } else if (/^https:\/\//i.test(raw)) {
+    origin = raw.replace(/^https:/i, "wss:");
+  } else if (/^http:\/\//i.test(raw)) {
+    origin = raw.replace(/^http:/i, "ws:");
+  } else {
+    // Bare host (vd: gaze.eyelearning.id.vn) — suy ra scheme theo page protocol
+    const isHttps =
+      typeof window !== "undefined"
+        ? window.location.protocol === "https:"
+        : raw.includes("eyelearning.id.vn") || raw.includes("api.nmhieu.online");
+    origin = `${isHttps ? "wss" : "ws"}://${raw.replace(/^\/+/, "")}`;
+  }
+
+  // Enforce wss khi page là https (browser chặn ws trên https)
+  if (typeof window !== "undefined" && window.location.protocol === "https:" && origin.startsWith("ws://")) {
+    origin = origin.replace(/^ws:/, "wss:");
+  }
+  return origin;
+}
+
+export const GAZE_WS_ORIGIN = getGazeWsOrigin();
 
 export function gazeStreamUrl(sessionId: string): string {
-  return `${GAZE_WS_ORIGIN}/session/${sessionId}/stream`;
+  return `${getGazeWsOrigin()}/session/${sessionId}/stream`;
 }

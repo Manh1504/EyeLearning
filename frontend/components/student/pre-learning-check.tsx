@@ -483,11 +483,12 @@ export default function PreLearningCheck() {
                   {primaryLabel}
                 </Button>
 
-                {isCalibrated && faceState === 'ready' && (
+                {isCalibrated && (
                   <Link
                     href={calibrationHref}
-                    className="mt-3 flex h-8 items-center justify-center text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
+                    className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-ring/40 bg-accent px-3 text-sm font-semibold text-primary transition hover:border-ring hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   >
+                    <RiRefreshLine className="h-4 w-4" />
                     Hiệu chỉnh lại điểm nhìn
                   </Link>
                 )}

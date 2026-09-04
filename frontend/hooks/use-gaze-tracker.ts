@@ -25,6 +25,8 @@ export interface UseGazeTrackerOptions {
   enabled: boolean;
   calibrated: boolean;
   onPoint: (x: number, y: number, source: GazeSource) => void;
+  /** false = không dùng dữ liệu mô phỏng; khi không có camera/session thật thì source='off'. Mặc định true để tương thích luồng học cũ. */
+  allowSimulation?: boolean;
 }
 
 export interface GazeTrackerState {
@@ -44,6 +46,7 @@ export function useGazeTracker({
   enabled,
   calibrated,
   onPoint,
+  allowSimulation = true,
 }: UseGazeTrackerOptions): GazeTrackerState {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [source, setSource] = useState<GazeSource>('off');
@@ -59,7 +62,13 @@ export function useGazeTracker({
     let simTimer = 0;
     let streamCleanup: (() => void) | null = null;
 
+    // Khi allowSimulation=false: không sinh điểm giả, báo source='off'
+    // để UI hiển thị cảnh báo thay vì vẽ heatmap từ dữ liệu mô phỏng.
     const startSimulation = () => {
+      if (!allowSimulation) {
+        setSource('off');
+        return;
+      }
       simTimer = window.setInterval(() => {
         const x = 0.12 + Math.random() * 0.76;
         const y = 0.14 + Math.random() * 0.68;
@@ -232,7 +241,7 @@ export function useGazeTracker({
       window.clearInterval(simTimer);
       streamCleanup?.();
     };
-  }, [enabled, calibrated]);
+  }, [enabled, calibrated, allowSimulation]);
 
   return { stream, source };
 }

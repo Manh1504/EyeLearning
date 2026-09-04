@@ -45,7 +45,7 @@ export function UserMenu({
 
   const logout = () => {
     void apiLogout();
-    router.replace('/account/login');
+    router.replace('/');
   };
 
   return (

@@ -724,6 +724,19 @@ export function StudentsTab({
               </div>
 
               <p className="mt-3 text-xs text-muted-foreground">Hoạt động gần nhất: {activityText(open.lastActive)}</p>
+
+              {(() => {
+                const target = open.lessons.find((lesson) => lesson.viewed > 0) ?? open.lessons[0];
+                return target ? (
+                  <Link
+                    href={`/teacher/courses/${courseId}/lessons/${target.lessonId}/heatmap?student=${open.id}`}
+                    className={cn(buttonVariants(), 'mt-4 w-full')}
+                  >
+                    <Icon name="ri-fire-line" data-icon="inline-start" />
+                    Xem heatmap của học viên
+                  </Link>
+                ) : null;
+              })()}
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">

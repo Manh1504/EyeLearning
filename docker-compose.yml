@@ -1,33 +1,3 @@
-# ============================================================
-# GazeEdu — Docker Compose (triển khai server trường)
-# ------------------------------------------------------------
-# Frontend đã deploy riêng trên Vercel. Server này chỉ chạy:
-#   postgres + backend + gaze-api, đứng sau 1 nginx reverse proxy.
-# Vì cổng 80/443 trên host đã bị dịch vụ khác chiếm (không SSH được),
-# nginx publish ra 8080 (HTTP) / 8443 (HTTPS):
-#   https://api.eyelearning.id.vn:8443    -> backend  (FastAPI :8001)
-#   https://gaze.eyelearning.id.vn:8443   -> gaze-api (ML :8000, GPU)
-#
-# Frontend (Vercel) gọi trực tiếp 2 subdomain trên kèm :8443. Cần set trong
-# Vercel project env:
-#   NEXT_PUBLIC_API_URL=https://api.eyelearning.id.vn:8443
-#   NEXT_PUBLIC_GAZE_URL=https://gaze.eyelearning.id.vn:8443
-#
-# Các service nội bộ giao tiếp qua docker network (tên service):
-#   backend -> http://gaze:8000  (AI_HTTP_URL)
-#
-# LƯU Ý (deploy qua Portainer, không có SSH):
-# - Image nginx và backend được BUILD sẵn rồi PUSH lên Docker Hub; Portainer
-#   chỉ PULL về (không build local). Config nginx nằm sẵn trong image
-#   (nginx/Dockerfile + nginx/app.conf) -> không bind-mount file từ host.
-# - Cert SSL: do cổng 80 host không dùng được, certbot (HTTP-01) KHÔNG xin được
-#   cert thật. Nginx tự sinh self-signed dự phòng (vẫn chạy HTTPS, trình duyệt
-#   báo warning). Nếu sau này mở được port 80 hoặc dùng DNS-01, certbot sẽ xin
-#   cert thật vào volume nginx-certs; lúc đó restart container nginx.
-# - Model gaze: image tự tải weights về (download_weights.py) vào volume
-#   gaze-weights; KHÔNG cần copy thủ công hay để weights trong git.
-# ============================================================
-
 services:
   postgres:
     image: postgres:16
@@ -39,7 +9,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: UTC
     ports:
-      - "5435:5432"   # chỉ để tool ngoài truy cập; app dùng service name `postgres:5432`
+      - "127.0.0.1:5435:5432"   # prod: chỉ tool trên host truy cập; app dùng service name `postgres:5432`
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -57,7 +27,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Trong docker: dùng tên service cho nội bộ (không dùng localhost).
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER}
       AI_HTTP_URL: http://gaze:8000
@@ -88,8 +57,6 @@ services:
     environment:
       - DEVICE=cuda
     volumes:
-      # Model được image tự tải về /app/weights khi khởi động (download_weights.py).
-      # Dùng named volume để cache lại, không phụ thuộc git hay SSH.
       - gaze-weights:/app/weights
     gpus: all
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
@@ -102,33 +69,18 @@ services:
     depends_on:
       - backend
       - gaze
-      - certbot
-    ports:
-      - "8080:80"
-      - "8443:443"
-    volumes:
-      # Chia sẻ cert (certbot ghi, nginx đọc) và webroot ACME.
-      - nginx-certs:/etc/nginx/certs
-      - nginx-webroot:/var/www/certbot:ro
-    # Healthcheck đã bake vào image (Dockerfile HEALTHCHECK), đánh /nginx-health
-    # qua 127.0.0.1 -> không phụ thuộc compose hay upstream.
-
-  # Xin cert Let's Encrypt thật qua webroot (port 80 do nginx phục vụ).
-  # Sau khi có cert, restart container nginx (Portainer) để dùng cert thật.
-  certbot:
-    image: certbot/certbot:latest
-    container_name: eyetracking-certbot
+  # Public hostnames trong tunnel:
+  #   api.eyelearning.id.vn  -> http://nginx:80
+  #   gaze.eyelearning.id.vn -> http://nginx:80
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: eyetracking-cloudflared
     restart: unless-stopped
-    volumes:
-      - nginx-certs:/etc/letsencrypt
-      - nginx-webroot:/var/www/certbot
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - "while ! certbot certonly --webroot -w /var/www/certbot -d api.eyelearning.id.vn -d gaze.eyelearning.id.vn --cert-name eyelearning --email admin@eyelearning.id.vn --agree-tos --non-interactive; do echo '[certbot] chua xin duoc cert, thu lai sau 30s (hay kiem tra DNS + port 80)'; sleep 30; done; echo '[certbot] OK - co cert that'; while :; do sleep 12h; certbot renew --webroot -w /var/www/certbot; done"
+    depends_on:
+      - nginx
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
 
 volumes:
   pgdata:
   backend-media:
-  nginx-certs:
-  nginx-webroot:
   gaze-weights:

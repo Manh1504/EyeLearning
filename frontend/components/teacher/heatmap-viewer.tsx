@@ -13,7 +13,8 @@ import { Icon } from '@/components/ui/icon';
 import { useCourseStudents, useCourseTree, useHeatmap } from '@/hooks/use-teacher';
 import { useLessonSlides } from '@/hooks/use-student';
 import { resolveMediaUrl } from '@/lib/api/client';
-import { buildHeatLegendGradient, heatColor } from '@/lib/heatmap-colors';
+import { buildHeatLegendGradient } from '@/lib/heatmap-colors';
+import { drawKdeHeatmap, HEATMAP_DEFAULT_OPACITY } from '@/components/heatmap/heatmap-canvas';
 import { cn } from '@/lib/utils';
 
 type Scope = 'class' | string;
@@ -32,14 +33,10 @@ function formatDuration(seconds: number) {
   return mins > 0 ? `${mins}m${String(secs).padStart(2, '0')}s` : `${secs}s`;
 }
 
-// Biểu diễn "vùng tập trung" (fixation clusters từ backend hotspots {x,y,r,w}):
-// vẽ từng cụm thành hình tròn rõ nét + chấm trung tâm + nhãn hạng & tỉ trọng,
-// thay cho heatmap KDE mờ loang.
-const SCATTER_RADIUS = 2;          // bán kính chấm "Điểm nhìn" (CSS px)
-const ZONE_MIN_RADIUS = 0.008;     // tối thiểu = height*factor
-const ZONE_MAX_RADIUS = 0.28;      // tối đa = height*factor (tránh nuốt cả slide)
-const CENTER_DOT_RADIUS = 0.006;   // chấm tâm = height*factor
-const ZONE_RING_WIDTH = 2;         // độ dày vòng viền (px)
+// Bản nhiệt KDE dùng chung với luồng dùng thử (/try): density SCALE=6 +
+// colorize gain 255/maxAlpha, point nhỏ, độ đậm mặc định thấp để vẫn đọc
+// được nội dung slide bên dưới.
+const SCATTER_RADIUS = 2; // bán kính chấm "Điểm nhìn" (CSS px)
 
 export default function HeatmapViewer() {
   const routeParams = useParams();
@@ -49,7 +46,7 @@ export default function HeatmapViewer() {
   const [lessonId, setLessonId] = useState(() => String(routeParams?.lessonId ?? 'l8'));
   const [scope, setScope] = useState<Scope>(searchParams.get('student') ?? 'class');
   const [pageIdx, setPageIdx] = useState(0);
-  const [opacity, setOpacity] = useState(0.88);
+  const [opacity, setOpacity] = useState(HEATMAP_DEFAULT_OPACITY);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showScatter, setShowScatter] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -138,94 +135,46 @@ export default function HeatmapViewer() {
     const stage = stageRef.current;
     if (!canvas || !stage) return;
 
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-
     const width = stage.clientWidth;
     const height = stage.clientHeight;
-    const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = Math.max(1, Math.round(width * dpr));
-    canvas.height = Math.max(1, Math.round(height * dpr));
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    // Bản nhiệt KDE dùng chung với luồng dùng thử; độ đậm điều chỉnh
+    // bằng thanh trượt (style opacity trên canvas).
+    if (showHeatmap && !noConsent) {
+      const points = (current.points ?? []).filter(
+        ([x, y]) => x >= 0 && x <= 1 && y >= 0 && y <= 1,
+      );
+      drawKdeHeatmap(canvas, width, height, points);
+    } else {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+    }
 
     if (noConsent) return;
 
-    const points = current.points ?? [];
-
-    // Chế độ "Điểm nhìn": vẽ scatter gaze thô (không đổi theo độ đậm heatmap).
+    // Chế độ "Điểm nhìn": vẽ scatter gaze thô lên trên bản nhiệt.
     if (showScatter) {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.save();
       ctx.fillStyle = `rgba(30, 30, 60, ${0.5 + (1 - opacity) * 0.3})`;
-      for (const [x, y] of points) {
+      for (const [x, y] of current.points ?? []) {
+        if (x < 0 || x > 1 || y < 0 || y > 1) continue;
         ctx.beginPath();
         ctx.arc(x * width, y * height, SCATTER_RADIUS, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
     }
-
-    if (!showHeatmap) return;
-
-    // ---- "Vùng tập trung": vẽ từng fixation cluster rõ nét (không loang) ----
-    const hotspots = current.hotspots ?? [];
-    ctx.save();
-    ctx.globalAlpha = opacity; // opacity hiện vẫn dùng chung cho các vùng
-
-    const minZone = Math.max(4, height * ZONE_MIN_RADIUS);
-    const maxZone = Math.max(minZone, height * ZONE_MAX_RADIUS);
-
-    hotspots.forEach((h, i) => {
-      const cx = h.x * width;
-      const cy = h.y * height;
-      const radius = Math.min(maxZone, Math.max(minZone, h.r * height));
-      const t = Math.min(1, Math.max(0, h.w));
-      const [r, g, b] = heatColor(t);
-      const color = `rgb(${r},${g},${b})`;
-
-      // Vùng mờ nhẹ trong vòng giới hạn, alpha theo tỉ trọng.
-      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-      glow.addColorStop(0, `rgba(${r},${g},${b},${0.28 + t * 0.32})`);
-      glow.addColorStop(0.7, `rgba(${r},${g},${b},${0.06 + t * 0.1})`);
-      glow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Vòng viền sắc nét xác định run rõ biên vùng.
-      ctx.strokeStyle = color;
-      ctx.lineWidth = ZONE_RING_WIDTH;
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Chấm trung tâm: vị trí chính xác người dùng nhắm vào.
-      const dotR = Math.max(2, height * CENTER_DOT_RADIUS);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Nhãn: "#hạng · %" đặt lệch khỏi tâm (trên-giữa), có halo trắng dễ đọc.
-      const label = `#${i + 1} ${Math.round(t * 100)}%`;
-      const fontSize = Math.max(11, Math.round(height * 0.02));
-      ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      const lx = cx;
-      const ly = cy - dotR - radius * 0.16;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.strokeText(label, lx, ly);
-      ctx.fillStyle = 'rgba(20,24,40,0.92)';
-      ctx.fillText(label, lx, ly);
-    });
-
-    ctx.restore();
   }, [current, noConsent, opacity, showHeatmap, showScatter, stageSize]);
 
   const Controls = (
@@ -289,56 +238,29 @@ export default function HeatmapViewer() {
         </section>
 
         <section>
-          <p className="text-xs font-medium text-muted-foreground">Đối tượng</p>
-          <div className="mt-2 space-y-2">
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="heatmap-scope"
-                checked={scope === 'class'}
-                onChange={() => setScope('class')}
-                className="h-4 w-4 accent-brand-cyan"
-              />
-              Toàn lớp
-            </label>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="heatmap-scope"
-                checked={scope !== 'class'}
-                onChange={() => setScope(students[0]?.id ?? 'class')}
-                className="h-4 w-4 accent-brand-cyan"
-              />
-              Một học viên
-            </label>
-          </div>
-
-          {scope !== 'class' && (
-            <div className="mt-3">
-              <label htmlFor="heatmap-student" className="sr-only">
-                Chọn học viên
-              </label>
-              <select
-                id="heatmap-student"
-                value={scope}
-                onChange={(event) => setScope(event.target.value)}
-                className={SELECT_CLS}
-              >
-                {students.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}{item.attention === null ? ' (không ghi nhận)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <label htmlFor="heatmap-scope" className="text-xs font-medium text-muted-foreground">
+            Đối tượng
+          </label>
+          <select
+            id="heatmap-scope"
+            value={scope}
+            onChange={(event) => setScope(event.target.value)}
+            className={`${SELECT_CLS} mt-2`}
+          >
+            <option value="class">Toàn lớp ({students.length} học viên)</option>
+            {students.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}{item.attention === null ? ' (không ghi nhận)' : ''}
+              </option>
+            ))}
+          </select>
         </section>
 
         <section>
           <p className="text-xs font-medium text-muted-foreground">Hiển thị</p>
           <div className="mt-2 space-y-2">
             <label className="flex items-center justify-between gap-3 text-sm text-foreground">
-              <span>Vùng tập trung</span>
+              <span>Bản nhiệt</span>
               <input
                 type="checkbox"
                 checked={showHeatmap}
@@ -358,10 +280,11 @@ export default function HeatmapViewer() {
           </div>
 
           <label className="mt-4 block text-xs font-medium text-muted-foreground">
-            Độ đậm
+            Độ đậm nhạt của heatmap
+            <span className="ml-1 font-semibold tabular-nums text-foreground">{Math.round(opacity * 100)}%</span>
             <input
               type="range"
-              min={0.3}
+              min={0.1}
               max={1}
               step={0.05}
               value={opacity}

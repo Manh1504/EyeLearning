@@ -21,6 +21,7 @@ import {
 } from '@remixicon/react';
 
 import { Button, buttonVariants } from '@/components/ui/button';
+import { HeatmapCanvas } from '@/components/heatmap/heatmap-canvas';
 import { useGazeTracker } from '@/hooks/use-gaze-tracker';
 import {
   buildCalibrationPoints,
@@ -47,34 +48,6 @@ interface GazeRecord {
   y: number;
 }
 
-// ---------- Bảng màu heatmap (giống heatmap-viewer.tsx) ----------
-
-const HEAT_STOPS: Array<[number, [number, number, number]]> = [
-  [0.0, [30, 60, 200]],
-  [0.25, [60, 180, 250]],
-  [0.5, [80, 215, 120]],
-  [0.75, [250, 210, 60]],
-  [1.0, [235, 70, 50]],
-];
-
-function heatColor(t: number): [number, number, number] {
-  if (t <= 0) return HEAT_STOPS[0][1];
-  if (t >= 1) return HEAT_STOPS[HEAT_STOPS.length - 1][1];
-  for (let i = 1; i < HEAT_STOPS.length; i++) {
-    if (t <= HEAT_STOPS[i][0]) {
-      const [t0, c0] = HEAT_STOPS[i - 1];
-      const [t1, c1] = HEAT_STOPS[i];
-      const u = (t - t0) / (t1 - t0);
-      return [
-        Math.round(c0[0] + (c1[0] - c0[0]) * u),
-        Math.round(c0[1] + (c1[1] - c0[1]) * u),
-        Math.round(c0[2] + (c1[2] - c0[2]) * u),
-      ];
-    }
-  }
-  return HEAT_STOPS[HEAT_STOPS.length - 1][1];
-}
-
 // ---------- Bước 2: hiệu chỉnh (khách) — logic như student/calibration.tsx ----------
 
 const SAMPLES_PER_POINT = 5;
@@ -90,7 +63,7 @@ const CALIB_ERROR_TEXT: Record<string, string> = {
 
 type CalPhase = 'calibrating' | 'sending' | 'training';
 
-function GuestCalibration({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
+function GuestCalibration({ onDone }: { onDone: () => void }) {
   const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
   const total = points.length;
 
@@ -296,142 +269,16 @@ function GuestCalibration({ onDone, onSkip }: { onDone: () => void; onSkip: () =
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onSkip}
-            className="pointer-events-auto mt-3 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
-          >
-            Bỏ qua hiệu chỉnh — dùng dữ liệu mô phỏng
-          </button>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Cần hoàn tất hiệu chỉnh để hệ thống theo dõi điểm nhìn thật của bạn.
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-// ---------- Bước 4: heatmap local (canvas giống heatmap-viewer.tsx) ----------
-
-function HeatmapSlide({
-  src,
-  title,
-  points,
-}: {
-  src: string;
-  title: string;
-  points: Array<[number, number]>;
-}) {
-  const stageRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const updateSize = () => setStageSize({ width: stage.clientWidth, height: stage.clientHeight });
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(stage);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const stage = stageRef.current;
-    if (!canvas || !stage) return;
-
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-
-    const width = stage.clientWidth;
-    const height = stage.clientHeight;
-    const dpr = window.devicePixelRatio || 1;
-
-    canvas.width = Math.max(1, Math.round(width * dpr));
-    canvas.height = Math.max(1, Math.round(height * dpr));
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    if (points.length === 0) return;
-
-    const SCALE = 6;
-    const dw = Math.max(12, Math.round(width / SCALE));
-    const dh = Math.max(12, Math.round(height / SCALE));
-    const density = document.createElement('canvas');
-    density.width = dw;
-    density.height = dh;
-    const dctx = density.getContext('2d');
-    if (!dctx) return;
-    dctx.globalCompositeOperation = 'lighter';
-
-    const pointR = Math.max(6, dw * 0.11);
-    for (const [x, y] of points) {
-      const cx = x * dw;
-      const cy = y * dh;
-      const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, pointR);
-      gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
-      gradient.addColorStop(0.35, 'rgba(255,255,255,0.45)');
-      gradient.addColorStop(0.7, 'rgba(255,255,255,0.15)');
-      gradient.addColorStop(1, 'rgba(255,255,255,0)');
-      dctx.fillStyle = gradient;
-      dctx.beginPath();
-      dctx.arc(cx, cy, pointR, 0, Math.PI * 2);
-      dctx.fill();
-    }
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(density, 0, 0, dw, dh, 0, 0, width, height);
-
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = img.data;
-
-    let maxAlpha = 0;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] > maxAlpha) maxAlpha = data[i];
-    }
-    if (maxAlpha < 1) return;
-    const gain = 255 / maxAlpha;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const a = data[i + 3] / 255;
-      if (a < 0.02) {
-        data[i + 3] = 0;
-        continue;
-      }
-      const t = Math.min(1, Math.pow(a * gain, 0.6));
-      const [r, g, b] = heatColor(t);
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = Math.round(85 + t * 170);
-    }
-
-    ctx.putImageData(img, 0, 0);
-  }, [points, stageSize]);
-
-  return (
-    <div
-      ref={stageRef}
-      className="relative w-full overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-      style={{ aspectRatio: '16 / 9' }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={title} className="absolute inset-0 h-full w-full bg-white object-contain" />
-      <canvas
-        ref={canvasRef}
-        className="pointer-events-none absolute inset-0 h-full w-full"
-        style={{ opacity: 0.88 }}
-      />
-      <span className="absolute bottom-2 left-2 rounded-md bg-brand-dark/70 px-2 py-1 text-[11px] font-medium text-white">
-        {title}
-      </span>
-    </div>
-  );
-}
-
-// ---------- Luồng chính ----------
+// ---------- Luồng chính (heatmap vẽ bằng HeatmapCanvas dùng chung) ----------
 
 const STEP_LABELS: Array<{ key: Step; label: string }> = [
   { key: 'calibrate', label: 'Hiệu chỉnh' },
@@ -441,7 +288,6 @@ const STEP_LABELS: Array<{ key: Step; label: string }> = [
 
 export default function TryFlow() {
   const [step, setStep] = useState<Step>('intro');
-  const [calibrated, setCalibrated] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [gazeDot, setGazeDot] = useState<{ x: number; y: number } | null>(null);
   // Snapshot gaze tại thời điểm bấm "Xem heatmap" để tính kết quả (ref không đọc trong render).
@@ -465,10 +311,12 @@ export default function TryFlow() {
     }
   }, []);
 
+  // Luồng dùng thử bắt buộc hiệu chỉnh thật — không dùng dữ liệu mô phỏng.
   const { source: gazeSource } = useGazeTracker({
     enabled: step === 'view',
-    calibrated,
+    calibrated: true,
     onPoint: handlePoint,
+    allowSimulation: false,
   });
 
   const results = useMemo(() => {
@@ -497,7 +345,6 @@ export default function TryFlow() {
     setResultRecords([]);
     setValidCount(0);
     setGazeDot(null);
-    setCalibrated(false);
     setCurrentSlide(0);
     setStep('intro');
   };
@@ -513,11 +360,6 @@ export default function TryFlow() {
     return (
       <GuestCalibration
         onDone={() => {
-          setCalibrated(true);
-          setStep('view');
-        }}
-        onSkip={() => {
-          setCalibrated(false);
           setStep('view');
         }}
       />
@@ -598,17 +440,6 @@ export default function TryFlow() {
                 Bắt đầu hiệu chỉnh
                 <RiArrowRightLine data-icon="inline-end" />
               </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => {
-                  setCalibrated(false);
-                  setStep('view');
-                }}
-                className="w-full sm:w-auto"
-              >
-                Bỏ qua — dùng dữ liệu mô phỏng
-              </Button>
             </div>
 
             <p className="mt-6 flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -640,9 +471,9 @@ export default function TryFlow() {
                   Đang theo dõi
                 </span>
               ) : (
-                <span className="hidden items-center gap-1.5 text-xs font-medium text-amber-600 sm:flex">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  Mô phỏng
+                <span className="hidden items-center gap-1.5 text-xs font-medium text-destructive sm:flex">
+                  <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                  Chưa kết nối theo dõi
                 </span>
               )}
             </div>
@@ -661,6 +492,11 @@ export default function TryFlow() {
               <p className="mt-3 text-center text-xs text-muted-foreground">
                 Đọc trang tự nhiên — hệ thống đang ghi nhận điểm nhìn của bạn.
               </p>
+              {gazeSource === 'off' && (
+                <p className="mx-auto mt-3 max-w-[900px] rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-center text-xs font-medium text-destructive">
+                  Chưa kết nối được camera hoặc dịch vụ theo dõi — hãy kiểm tra camera rồi tải lại trang. Heatmap sẽ trống nếu không có dữ liệu điểm nhìn.
+                </p>
+              )}
             </div>
           </div>
 
@@ -728,7 +564,6 @@ export default function TryFlow() {
               </h1>
               <p className="mt-2 text-muted-foreground">
                 Vùng màu đỏ là nơi bạn nhìn lâu nhất, xanh là nơi nhìn ít hơn.
-                {calibrated ? '' : ' (Phiên này dùng dữ liệu mô phỏng vì bạn đã bỏ qua hiệu chỉnh.)'}
               </p>
             </div>
 
@@ -754,7 +589,7 @@ export default function TryFlow() {
                       {r.valid} mẫu · nhìn vào trang {r.onSlide}%
                     </span>
                   </div>
-                  <HeatmapSlide src={r.slide.src} title={r.slide.title} points={r.points} />
+                  <HeatmapCanvas src={r.slide.src} title={r.slide.title} points={r.points} />
                 </div>
               ))}
             </div>

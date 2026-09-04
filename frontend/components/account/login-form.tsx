@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 
-import { BrandLogo } from '@/components/ui/brand-logo';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icon';
@@ -63,9 +62,7 @@ export function LoginForm({
     <div className={cn('w-full', className)} {...props}>
       <form onSubmit={handleSubmit} className="relative rounded-xl border border-border bg-card px-6 py-8 shadow-sm shadow-brand-navy/5 sm:px-8 sm:py-9">
         <div className="flex flex-col items-center text-center">
-          <BrandLogo variant="light" className="h-11" priority />
-
-          <h1 className="mt-7 text-2xl font-bold tracking-tight text-primary">
+          <h1 className="text-2xl font-bold tracking-tight text-primary">
             Chào mừng trở lại
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
