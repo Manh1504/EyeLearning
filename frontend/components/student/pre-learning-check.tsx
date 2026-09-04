@@ -16,7 +16,14 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useCourseOutline } from '@/hooks/use-student';
-import { checkFace, getStoredCalibration } from '@/lib/api/calibration';
+import {
+  checkFace,
+  clearStoredGazeSession,
+  getGazeSessionStatus,
+  getStoredCalibration,
+  getStoredGazeSessionId,
+  isCalibrationScreenStale,
+} from '@/lib/api/calibration';
 import { cn } from '@/lib/utils';
 
 type CameraState = 'idle' | 'checking' | 'ready' | 'error';
@@ -92,16 +99,49 @@ export default function PreLearningCheck() {
   const [error, setError] = useState<string | null>(null);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [calibratedAt, setCalibratedAt] = useState<string | null>(null);
+  const [sessionIssue, setSessionIssue] = useState<string | null>(null);
+  const [screenStale, setScreenStale] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     // Đọc localStorage qua setTimeout để tránh setState đồng bộ trong effect
     // (quy tắc react-hooks) và tránh hydration mismatch khi SSR.
+    // Đồng thời VALIDATE session với AI service: session hết TTL 30' / bị xóa /
+    // chưa train đều coi như chưa hiệu chỉnh — chặn học bằng session xác chết
+    // rồi rơi vào điểm mô phỏng trong im lặng (nguyên nhân lệch máy 2/3).
     const timer = window.setTimeout(() => {
-      const stored = getStoredCalibration();
-      if (cancelled) return;
-      setIsCalibrated(stored.calibrated);
-      setCalibratedAt(stored.calibratedAt);
+      void (async () => {
+        const stored = getStoredCalibration();
+        if (cancelled) return;
+        if (!stored.calibrated) {
+          setIsCalibrated(false);
+          setCalibratedAt(null);
+          return;
+        }
+        const sid = getStoredGazeSessionId();
+        if (!sid) {
+          setIsCalibrated(false);
+          setCalibratedAt(null);
+          return;
+        }
+        const status = await getGazeSessionStatus(sid);
+        if (cancelled) return;
+        if (!status.ready) {
+          clearStoredGazeSession();
+          setIsCalibrated(false);
+          setCalibratedAt(null);
+          setScreenStale(false);
+          setSessionIssue(
+            status.error === 'network_error'
+              ? 'Không kết nối được dịch vụ theo dõi để kiểm tra phiên hiệu chỉnh — hãy hiệu chỉnh lại trước khi học.'
+              : 'Phiên hiệu chỉnh cũ đã hết hạn trên máy chủ — vui lòng hiệu chỉnh lại trước khi học.',
+          );
+          return;
+        }
+        setIsCalibrated(true);
+        setCalibratedAt(stored.calibratedAt);
+        setScreenStale(isCalibrationScreenStale());
+      })();
     }, 0);
 
     return () => {
@@ -466,6 +506,23 @@ export default function PreLearningCheck() {
                 <div className="mt-5 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">
                   <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
                   <p>{error}</p>
+                </div>
+              )}
+
+              {sessionIssue && (
+                <div className="mt-5 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">
+                  <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{sessionIssue}</p>
+                </div>
+              )}
+
+              {screenStale && isCalibrated && (
+                <div className="mt-5 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
+                  <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>
+                    Kích thước màn hình/cửa sổ đã đổi so với lúc hiệu chỉnh — điểm nhìn có thể bị lệch.
+                    Nên bấm “Hiệu chỉnh lại điểm nhìn” bên dưới trước khi học.
+                  </p>
                 </div>
               )}
 

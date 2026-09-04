@@ -27,6 +27,8 @@ import {
   buildCalibrationPoints,
   clearStoredGazeSession,
   createGazeSession,
+  formatMaePercent,
+  MAX_TRAIN_MAE,
   storeGazeSession,
   submitCalibrationSample,
   trainGazeSession,
@@ -141,7 +143,16 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
       );
       return;
     }
-    storeGazeSession(sessionId);
+    // Từ chối model kém giống luồng học viên — lệch hệ thống nếu dùng tiếp.
+    if (trained.maePx != null && trained.maePx > MAX_TRAIN_MAE) {
+      setPhase('calibrating');
+      setIdx(total - 1);
+      setError(
+        `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${formatMaePercent(trained.maePx)} màn hình, cho phép ${formatMaePercent(MAX_TRAIN_MAE)}). Hãy làm lại và giữ mắt nhìn chằm chằm vào từng chấm đỏ.`,
+      );
+      return;
+    }
+    storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
     onDone();
   }, [sessionId, total, onDone]);
 
@@ -153,7 +164,7 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
     }
     setPhase('sending');
     setError(null);
-    await new Promise((r) => setTimeout(r, 250));
+    // Chụp frame NGAY khi bấm (không delay) — mắt rời chấm chỉ sau ~200-300ms.
 
     if (!camOn) {
       setPhase('calibrating');
@@ -182,7 +193,7 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
         break;
       }
       if (accepted < SAMPLES_PER_POINT) {
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 100));
       }
     }
 
@@ -231,7 +242,7 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
             </p>
           ) : (
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-              Nhìn thẳng vào chấm đỏ rồi <span className="font-semibold text-foreground">bấm vào chấm</span> để ghi nhận. Chấm tiếp theo hiện sau khi ghi nhận xong.
+              Nhìn chằm chằm vào chấm đỏ rồi <span className="font-semibold text-foreground">bấm vào chấm và GIỮ mắt nhìn chấm</span> tới khi chấm tiếp theo hiện ra. Nhìn đi chỗ khác lúc này sẽ làm lệch toàn bộ kết quả.
             </p>
           )}
 

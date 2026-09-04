@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import { heatColor } from '@/lib/heatmap-colors';
 
 export const HEATMAP_DEFAULT_OPACITY = 0.6;
-export const HEATMAP_POINT_RADIUS_FACTOR = 0.07;
+// Bán kính splat nhỏ: tâm đỏ chỉ nhỉnh hơn chấm điểm nhìn (2px) một chút,
+// vòng xanh ngoài gọn để vẫn đọc được nội dung slide bên dưới.
+export const HEATMAP_POINT_RADIUS_FACTOR = 0.035;
 const HEATMAP_BASE_ALPHA = 50;
 const HEATMAP_ALPHA_RANGE = 150;
 const HEATMAP_MIN_ALPHA = 0.02;
@@ -45,14 +47,15 @@ export function drawKdeHeatmap(
   if (!dctx) return false;
   dctx.globalCompositeOperation = 'lighter';
 
-  const pointR = Math.max(4, dw * pointRadiusFactor);
+  const pointR = Math.max(3, dw * pointRadiusFactor);
   for (const [x, y] of points) {
     const cx = x * dw;
     const cy = y * dh;
     const gradient = dctx.createRadialGradient(cx, cy, 0, cx, cy, pointR);
-    gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
-    gradient.addColorStop(0.35, 'rgba(255,255,255,0.45)');
-    gradient.addColorStop(0.7, 'rgba(255,255,255,0.15)');
+    // Lõi đặc hẹp (→ tâm đỏ nhỏ), tàn nhanh (→ vòng xanh ngoài bé).
+    gradient.addColorStop(0, 'rgba(255,255,255,0.95)');
+    gradient.addColorStop(0.25, 'rgba(255,255,255,0.4)');
+    gradient.addColorStop(0.55, 'rgba(255,255,255,0.1)');
     gradient.addColorStop(1, 'rgba(255,255,255,0)');
     dctx.fillStyle = gradient;
     dctx.beginPath();

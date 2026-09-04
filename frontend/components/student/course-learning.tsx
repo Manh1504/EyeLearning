@@ -140,11 +140,14 @@ export default function CourseLearningPage() {
   }, [activeLessonId, courseId, enrollments, learningSessionIds]);
 
   // Gaze stream: thu thầm, tuyệt đối không render con trỏ gaze lên nội dung.
+  // allowSimulation=false: session hiệu chỉnh chết thì BÁO RÕ (source 'off')
+  // thay vì bơm điểm giả làm nhiễu heatmap trong im lặng.
   const learningSessionId = learningSessionIds[activeLessonId];
 
   const { stream: gazeStream, source: gazeSource } = useGazeTracker({
     enabled: Boolean(activeLessonId && total > 0),
     calibrated: gazeCalibrated,
+    allowSimulation: false,
     onPoint: useCallback(
       (x: number, y: number) => {
         setGazePoint({ x, y });
@@ -359,15 +362,10 @@ export default function CourseLearningPage() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
               Đang theo dõi điểm nhìn
             </div>
-          ) : gazeSource === 'simulated' ? (
-            <div className="hidden items-center gap-1.5 pr-2 text-xs text-amber-600 sm:flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              Điểm nhìn mô phỏng
-            </div>
           ) : (
-            <div className="hidden items-center gap-1.5 pr-2 text-xs text-muted-foreground sm:flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-              Theo dõi điểm nhìn
+            <div className="hidden items-center gap-1.5 pr-2 text-xs text-destructive sm:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+              Mất kết nối điểm nhìn
             </div>
           )}
 
@@ -455,6 +453,25 @@ export default function CourseLearningPage() {
               </div>
             </div>
           </div>
+
+          {/* Mất phiên theo dõi (session hết hạn/khác máy/đổi mạng): báo rõ + lối
+              hiệu chỉnh lại, không ghi điểm giả vào heatmap. */}
+          {gazeSource === 'off' && total > 0 && (
+            <div className="shrink-0 border-b border-destructive/25 bg-destructive/10 px-4 py-2.5 sm:px-6 lg:px-8">
+              <div className="mx-auto flex max-w-[1280px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs leading-5 text-destructive">
+                  Không kết nối được phiên theo dõi điểm nhìn (phiên hiệu chỉnh có thể đã hết hạn).
+                  Bài học vẫn xem được, nhưng dữ liệu gaze sẽ không được ghi nhận.
+                </p>
+                <Link
+                  href={`/student/courses/${courseId}/prepare${activeLessonId ? `?lesson=${encodeURIComponent(activeLessonId)}` : ''}`}
+                  className="shrink-0 rounded-lg border border-destructive/30 bg-card px-3 py-1.5 text-center text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-white"
+                >
+                  Kiểm tra & hiệu chỉnh lại
+                </Link>
+              </div>
+            </div>
+          )}
 
           {/* Reader — 1 slide / trang, cuộn dọc để đọc hết nội dung */}
           <div className="min-h-0 flex-1 overflow-y-auto bg-muted px-3 py-6 sm:px-6 lg:px-8">
