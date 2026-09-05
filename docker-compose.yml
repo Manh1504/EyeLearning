@@ -12,12 +12,27 @@ services:
       - "127.0.0.1:5435:5432"   # prod: chỉ tool trên host truy cập; app dùng service name `postgres:5432`
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Chạy migration một lần mỗi lần deploy (idempotent) — thay cho bind mount
+  # ./db/migrations (không hoạt động khi Portainer deploy từ Git/web-editor).
+  migrate:
+    image: ghcr.io/manh1504/eyelearning-migrations:latest
+    container_name: eyetracking-migrate
+    pull_policy: always
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGDATABASE: ${POSTGRES_DB}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
 
   backend:
     image: ghcr.io/manh1504/eyelearning-backend:latest
@@ -25,8 +40,8 @@ services:
     pull_policy: always
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER}
       AI_HTTP_URL: http://gaze:8000
