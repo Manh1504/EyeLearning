@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eyetracking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eyetracking_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Apply migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in db/migrations/*.sql; do
+            echo "=== $f ==="
+            psql -h localhost -U postgres -d eyetracking_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+      - name: Run tests
+        working-directory: backend
+        env:
+          TESTING: "1"
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/eyetracking_test
+        run: python -m pytest tests -v
+
+  frontend:
+    name: Frontend lint + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Build
+        working-directory: frontend
+        run: npm run build

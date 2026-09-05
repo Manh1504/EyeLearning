@@ -20,7 +20,7 @@ services:
       retries: 10
 
   backend:
-    image: leducmanh1504/eyelearning-backend:latest
+    image: ghcr.io/manh1504/eyelearning-backend:latest
     container_name: eyetracking-backend
     pull_policy: always
     restart: unless-stopped
@@ -62,16 +62,15 @@ services:
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
 
   nginx:
-    image: leducmanh1504/eyelearning-nginx:latest
+    image: ghcr.io/manh1504/eyelearning-nginx:latest
     container_name: eyetracking-nginx
     pull_policy: always
     restart: unless-stopped
     depends_on:
-      - backend
-      - gaze
-  # Public hostnames trong tunnel:
-  #   api.eyelearning.id.vn  -> http://nginx:80
-  #   gaze.eyelearning.id.vn -> http://nginx:80
+      backend:
+        condition: service_healthy
+      gaze:
+        condition: service_started
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: eyetracking-cloudflared

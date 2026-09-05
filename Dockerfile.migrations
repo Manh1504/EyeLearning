@@ -1,0 +1,9 @@
+# One-shot migrations runner — dùng khi bind mount ./db/migrations không tới
+# được container postgres (vd Portainer paste-compose stack).
+# Chạy 1 lần trên cùng compose network rồi xóa container.
+# Env: PGHOST (mặc định postgres), PGUSER (postgres), PGDATABASE (eyetracking), PGPASSWORD (bắt buộc).
+FROM postgres:16
+
+COPY db/migrations /migrations
+
+CMD ["bash", "-c", "for f in 001_init 002_seed 003_gaze_partitions 004_analytics 005_calibration_model 006_course_teachers; do echo \"=== $f ===\"; psql -h \"${PGHOST:-postgres}\" -U \"${PGUSER:-postgres}\" -d \"${PGDATABASE:-eyetracking}\" -f /migrations/$f.sql || exit 1; done"]
