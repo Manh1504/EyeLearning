@@ -7,21 +7,14 @@
 //   2. Hiển thị từng chấm; người dùng nhìn vào chấm → BẤM → chụp nhiều frame gửi
 //      POST /session/{sid}/calibrate (image + point_id) — server tự gom mẫu.
 //   3. Đủ 5 mẫu × 16 điểm → POST /session/{sid}/train → model sẵn sàng.
-//   4. Lưu session_id vào localStorage để phiên học sau mở WS /session/{sid}/stream.
+//   4. Pass (MAE ≤ ngưỡng) → vào thẳng bài học; không pass → hiệu chỉnh lại.
+//   5. Lưu session_id vào localStorage để phiên học sau mở WS /session/{sid}/stream.
 //
 // no_face/invalid_image/network_error → báo bấm lại ở cùng chấm.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import {
-  RiArrowRightLine,
-  RiCheckboxCircleFill,
-  RiErrorWarningLine,
-  RiRefreshLine,
-} from '@remixicon/react';
 
-import { Button } from '@/components/ui/button';
-import { useGazeTracker } from '@/hooks/use-gaze-tracker';
 import {
   buildCalibrationPoints,
   clearStoredGazeSession,
@@ -38,7 +31,7 @@ const SAMPLES_PER_POINT = 5;       // server yêu cầu tối thiểu MIN_SAMPLE
 const MAX_CAPTURES_PER_POINT = 10; // giới hạn số frame chụp lại mỗi điểm
 const CAPTURE_GAP_MS = 100;        // burst nhanh để mắt chưa kịp rời chấm
 
-type Phase = 'calibrating' | 'sending' | 'training' | 'verify';
+type Phase = 'calibrating' | 'sending' | 'training';
 
 const ERROR_TEXT: Record<string, string> = {
   no_face: 'Không phát hiện khuôn mặt — hãy nhìn thẳng vào chấm đỏ rồi bấm lại.',
@@ -68,7 +61,7 @@ export default function Calibration() {
   const [camOn, setCamOn] = useState(false);
 
   // Tạo session gaze ngay khi mount (server giữ mẫu theo session này).
-  // sessionNonce để tạo lại session mới khi user bấm "Hiệu chỉnh lại" ở màn verify.
+  // sessionNonce để tạo lại session mới khi hiệu chỉnh lại (model cũ đã kém thì bỏ hẳn).
   useEffect(() => {
     let cancelled = false;
     const screenWidth = typeof window !== 'undefined' ? (window.innerWidth || 1280) : 1280;
@@ -83,7 +76,7 @@ export default function Calibration() {
     };
   }, [points, sessionNonce]);
 
-  // Làm lại từ đầu với session mới (model cũ đã kém thì bỏ hẳn).
+  // Làm lại từ đầu với session mới (khi train fail / MAE quá cao).
   const resetCalibration = useCallback(() => {
     clearStoredGazeSession();
     setSessionId(null);
@@ -137,31 +130,32 @@ export default function Calibration() {
     if (!sessionId) return;
     setPhase('training');
     const trained = await trainGazeSession(sessionId);
-    if (!trained.ok) {
-      setPhase('calibrating');
-      setIdx(total - 1); // bấm lại điểm cuối rồi train lại
-      setError(
-        trained.error === 'insufficient_samples'
+    const maeLabel = trained.maePx != null ? formatMaePercent(trained.maePx) : null;
+
+    const failed = !trained.ok || (trained.maePx != null && trained.maePx > MAX_TRAIN_MAE);
+    if (failed) {
+      const message = !trained.ok
+        ? trained.error === 'insufficient_samples'
           ? ERROR_TEXT.insufficient
           : trained.error === 'network_error'
-            ? 'Không kết nối được dịch vụ AI khi huấn luyện — bấm lại điểm cuối để thử.'
-            : 'Không huấn luyện được bộ hiệu chỉnh — bấm lại điểm cuối để thử.',
-      );
+            ? 'Không kết nối được dịch vụ AI khi huấn luyện — hãy hiệu chỉnh lại.'
+            : 'Không huấn luyện được bộ hiệu chỉnh — hãy hiệu chỉnh lại.'
+        : `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${maeLabel} màn hình, cho phép ${formatMaePercent(MAX_TRAIN_MAE)}). Hãy hiệu chỉnh lại và giữ mắt nhìn chằm chằm vào từng chấm đỏ.`;
+      console.log('[calibration] FAIL', {
+        error: trained.error ?? null,
+        maePx: trained.maePx ?? null,
+        maePct: maeLabel,
+        max: MAX_TRAIN_MAE,
+      });
+      resetCalibration();
+      setError(message);
       return;
     }
-    // Từ chối model kém (dù server báo ok): MAE cao nghĩa là lúc thu mẫu mắt
-    // không nhìn đúng chấm → dùng tiếp sẽ lệch có hệ thống trên mọi máy.
-    if (trained.maePx != null && trained.maePx > MAX_TRAIN_MAE) {
-      setPhase('calibrating');
-      setIdx(total - 1);
-      setError(
-        `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${formatMaePercent(trained.maePx)} màn hình, cho phép ${formatMaePercent(MAX_TRAIN_MAE)}). Hãy làm lại và giữ mắt nhìn chằm chằm vào từng chấm đỏ.`,
-      );
-      return;
-    }
+
+    console.log('[calibration] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel });
     storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
-    setPhase('verify');
-  }, [sessionId, total]);
+    goToCourse();
+  }, [sessionId, resetCalibration, goToCourse]);
 
   const handleDotClick = async () => {
     if (phase !== 'calibrating') return;
@@ -224,15 +218,9 @@ export default function Calibration() {
   const busy = phase !== 'calibrating';
   const progress = ((step + (phase === 'training' ? 1 : 0)) / total) * 100;
 
-  // Màn kiểm chứng sau train: user tự thấy con trỏ có bám mắt không
-  // trước khi vào học — bắt lệch ngay tại chỗ thay vì đổ lên heatmap.
-  if (phase === 'verify' && sessionId) {
-    return <CalibrationVerify onPass={goToCourse} onRetry={resetCalibration} />;
-  }
-
   return (
     <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
-      {/* Chấm đỏ hiện tại — chỉ 1 chấm một lúc; ẩn khi đang training/verify */}
+      {/* Chấm đỏ hiện tại — chỉ 1 chấm một lúc; ẩn khi đang training */}
       {(phase === 'calibrating' || phase === 'sending') && (
         <button
           onClick={handleDotClick}
@@ -248,8 +236,7 @@ export default function Calibration() {
       )}
 
       {/* Thông báo OVERLAY MỜ giữa màn hình — không chiếm đất, không chặn bấm chấm.
-          pointer-events-none ở container → bấm xuyên qua tới chấm đỏ; chỉ nút "Làm sau"
-          là pointer-events-auto. bg mờ + blur → chấm phía sau vẫn nhìn thấy. */}
+          pointer-events-none ở container → bấm xuyên qua tới chấm đỏ. bg mờ + blur → chấm phía sau vẫn nhìn thấy. */}
       <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
         <div className="pointer-events-none w-full max-w-xs rounded-xl border border-border bg-card px-5 py-4 text-center shadow-lg">
           <p className="text-sm font-bold text-foreground">Hiệu chỉnh mắt</p>
@@ -299,92 +286,6 @@ export default function Calibration() {
                 </span>
               </div>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------- Màn kiểm chứng sau hiệu chỉnh ----------
-
-// 5 mốc cố định để user đối chiếu: nhìn vào từng mốc, con trỏ đỏ phải bám
-// theo mắt. Lệch rõ → bấm "Hiệu chỉnh lại" (tạo session mới, bỏ model cũ).
-const VERIFY_TARGETS = [
-  { x: 0.12, y: 0.15, label: '1' },
-  { x: 0.88, y: 0.15, label: '2' },
-  { x: 0.5, y: 0.5, label: '3' },
-  { x: 0.12, y: 0.85, label: '4' },
-  { x: 0.88, y: 0.85, label: '5' },
-];
-
-function CalibrationVerify({ onPass, onRetry }: { onPass: () => void; onRetry: () => void }) {
-  const [gazeDot, setGazeDot] = useState<{ x: number; y: number } | null>(null);
-
-  const { source } = useGazeTracker({
-    enabled: true,
-    calibrated: true,
-    allowSimulation: false,
-    onPoint: (x, y) => {
-      if (x >= 0 && x <= 1 && y >= 0 && y <= 1) setGazeDot({ x, y });
-    },
-  });
-
-  const connected = source === 'real';
-
-  return (
-    <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
-      {VERIFY_TARGETS.map((t) => (
-        <div
-          key={t.label}
-          aria-hidden
-          className="absolute z-10 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-dashed border-primary/70 bg-card/80 text-sm font-bold text-primary"
-          style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }}
-        >
-          {t.label}
-        </div>
-      ))}
-
-      {gazeDot && (
-        <div className="pointer-events-none fixed inset-0 z-30">
-          <span
-            className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-destructive shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
-            style={{ left: `${gazeDot.x * 100}%`, top: `${gazeDot.y * 100}%` }}
-          />
-        </div>
-      )}
-
-      <div className="pointer-events-none absolute inset-0 z-40 flex items-end justify-center p-4 sm:items-center">
-        <div className="pointer-events-auto w-full max-w-sm rounded-xl border border-border bg-card px-5 py-4 text-center shadow-lg">
-          <p className="flex items-center justify-center gap-1.5 text-sm font-bold text-foreground">
-            {connected ? (
-              <RiCheckboxCircleFill className="h-4 w-4 text-emerald-500" />
-            ) : (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            )}
-            {connected ? 'Kiểm chứng điểm nhìn' : 'Đang kết nối theo dõi…'}
-          </p>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-            Lần lượt nhìn vào từng vòng tròn đánh số 1–5. Chấm đỏ phải bám theo mắt bạn.
-            Nếu chấm đứng yên một chỗ hoặc lệch hẳn — hãy hiệu chỉnh lại.
-          </p>
-
-          {!connected && (
-            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-destructive/10 px-3 py-1.5 text-left text-xs font-medium text-destructive">
-              <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
-              Chưa kết nối được phiên theo dõi (có thể session đã hết hạn). Hãy hiệu chỉnh lại.
-            </p>
-          )}
-
-          <div className="mt-4 flex flex-col gap-2">
-            <Button size="lg" onClick={onPass} disabled={!connected} className="w-full">
-              Chính xác — bắt đầu học
-              <RiArrowRightLine data-icon="inline-end" />
-            </Button>
-            <Button variant="outline" onClick={onRetry} className="w-full">
-              <RiRefreshLine data-icon="inline-start" />
-              Hiệu chỉnh lại
-            </Button>
           </div>
         </div>
       </div>

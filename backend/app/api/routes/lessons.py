@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import rmtree
@@ -167,8 +168,23 @@ def _clear_lesson_media(lesson_id: str) -> None:
     rmtree(_lesson_media_dir(lesson_id), ignore_errors=True)
 
 
-def _render_pdf_slides(lesson_id: str, data: bytes) -> int:
-    """Render PDF thành JPEG từng trang; trả về số trang. Lỗi PDF gọi HTTPException(400)."""
+def _prune_lesson_versions(lesson_id: str, keep_version: str) -> None:
+    """Xóa các thư mục version cũ của bài, giữ lại `keep_version`.
+
+    Mỗi lần upload render vào thư mục version mới (cache-bust); sau khi commit
+    thành công thì dọn bản cũ để không tích tụ file mồ côi trên đĩa."""
+    lesson_dir = _lesson_media_dir(lesson_id)
+    if not lesson_dir.exists():
+        return
+    for child in lesson_dir.iterdir():
+        if child.is_dir() and child.name != keep_version:
+            rmtree(child, ignore_errors=True)
+
+
+def _render_pdf_slides(lesson_id: str, data: bytes) -> tuple[int, str]:
+    """Render PDF thành JPEG từng trang vào thư mục version riêng; trả về (số trang, version).
+    Lỗi PDF gọi HTTPException(400). Version đổi mỗi lần upload để bust cache trình duyệt/CDN
+    (tránh lỗi thay file mới nhưng vẫn hiện slide 1 của file cũ do trùng URL)."""
     if len(data) > settings.max_pdf_bytes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File PDF quá lớn")
     if not data.startswith(b"%PDF"):
@@ -189,7 +205,7 @@ def _render_pdf_slides(lesson_id: str, data: bytes) -> int:
             detail="PDF đang bị bảo vệ bằng mật khẩu — hãy gỡ mật khẩu trước khi tải lên",
         )
 
-    out_dir = _lesson_media_dir(lesson_id)
+    out_dir = _lesson_media_dir(lesson_id) / uuid.uuid4().hex[:12]
     out_dir.mkdir(parents=True, exist_ok=True)
     # Render ~144dpi (matrix 2×2), đủ nét cho màn hình mà không quá nặng.
     zoom = pymupdf.Matrix(2, 2)
@@ -204,7 +220,7 @@ def _render_pdf_slides(lesson_id: str, data: bytes) -> int:
         ) from exc
     finally:
         doc.close()
-    return count
+    return count, out_dir.name
 
 
 @router.post(
@@ -225,7 +241,7 @@ async def upload_lesson_pdf(
     await _check_course_access(db, lesson, user)
 
     data = await pdf.read()
-    count = _render_pdf_slides(lesson_id, data)
+    count, version = _render_pdf_slides(lesson_id, data)
 
     from sqlalchemy import delete
 
@@ -236,17 +252,20 @@ async def upload_lesson_pdf(
             LessonContent(
                 lesson_id=lesson_id,
                 order_index=page_no + 1,
-                image_url=f"/media/lessons/{lesson_id}/slide_{page_no + 1:03d}.jpg",
+                image_url=f"/media/lessons/{lesson_id}/{version}/slide_{page_no + 1:03d}.jpg",
                 content_json={"title": f"Slide {page_no + 1}"},
             )
         )
     try:
         await db.commit()
     except Exception as exc:
+        # Commit lỗi (bài đã có dữ liệu quan sát) → dọn bản render mới, khôi phục nguyên trạng.
+        rmtree(_lesson_media_dir(lesson_id) / version, ignore_errors=True)
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="Không thay thế được slide — bài học đã có dữ liệu quan sát",
         ) from exc
+    _prune_lesson_versions(lesson_id, version)
     return {"ok": True, "slides": count, "filename": pdf.filename or "lesson.pdf"}
 
 
