@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.core.ratelimit import _BUCKETS
 from app.core.security import hash_password
 from app.db.session import SessionLocal, engine
 from app.main import app
@@ -143,6 +144,7 @@ def client():
     if not DB_AVAILABLE:
         pytest.skip("PostgreSQL chưa chạy")
     asyncio.run(_reset_db())
+    _BUCKETS.clear()
     with TestClient(app) as c:
         yield c
 
