@@ -51,6 +51,9 @@ jobs:
         env:
           TESTING: "1"
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/eyetracking_test
+          JWT_SECRET: ci-test-secret
+          CORS_ORIGINS: http://localhost:3000
+          AI_HTTP_URL: http://localhost:8000
         run: python -m pytest tests -v
 
   frontend:
