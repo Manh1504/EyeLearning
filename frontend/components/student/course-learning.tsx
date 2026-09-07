@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
@@ -22,7 +22,7 @@ import {
   patchLessonProgress,
   postGazeSamples,
 } from '@/lib/api/student';
-import { getStoredGazeSessionId } from '@/lib/api/calibration';
+import { getStoredGazeSessionId, screenGazeToSlide } from '@/lib/api/calibration';
 import { resolveMediaUrl } from '@/lib/api/client';
 
 const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
@@ -36,6 +36,8 @@ const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
       `</g></svg>`,
   );
 
+let lastGazeDebugLog = 0;
+
 export default function CourseLearningPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -48,6 +50,7 @@ export default function CourseLearningPage() {
   const [activeLessonId, setActiveLessonId] = useState(requestedLessonId ?? '');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [gazePoint, setGazePoint] = useState<{ x: number; y: number } | null>(null);
+  const slideImgRef = useRef<HTMLImageElement>(null);
   // Có model calibration trên backend cho (user, device) chưa → tracker quyết
   // định stream thật hay mô phỏng.
   const [gazeCalibrated, setGazeCalibrated] = useState(false);
@@ -144,20 +147,49 @@ export default function CourseLearningPage() {
   // thay vì bơm điểm giả làm nhiễu heatmap trong im lặng.
   const learningSessionId = learningSessionIds[activeLessonId];
 
-  const { stream: gazeStream, source: gazeSource } = useGazeTracker({
+  const { source: gazeSource } = useGazeTracker({
     enabled: Boolean(activeLessonId && total > 0),
     calibrated: gazeCalibrated,
     allowSimulation: false,
     onPoint: useCallback(
       (x: number, y: number) => {
-        setGazePoint({ x, y });
-
         const slide = slides[currentSlide];
+        const img = slideImgRef.current;
+        const rect = img?.getBoundingClientRect();
+
+        let mapped: { x: number; y: number } | null = null;
+        if (rect && rect.width > 0 && rect.height > 0) {
+          mapped = screenGazeToSlide(x, y, {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          });
+        }
+        setGazePoint(mapped);
+
         if (!slide || !learningSessionId) return;
+
+        if (Date.now() - lastGazeDebugLog > 1000) {
+          lastGazeDebugLog = Date.now();
+          console.log('[gaze]', {
+            raw: { x, y },
+            innerW: window.innerWidth,
+            dpr: window.devicePixelRatio,
+            mapped,
+          });
+        }
 
         postGazeSamples(
           activeLessonId,
-          [{ lessonContentId: slide.id, x, y, ts: Date.now() }],
+          [
+            {
+              lessonContentId: slide.id,
+              x: mapped ? mapped.x : -1,
+              y: mapped ? mapped.y : -1,
+              ts: Date.now(),
+            },
+          ],
           learningSessionId,
         ).catch(() => {});
       },
@@ -326,11 +358,11 @@ export default function CourseLearningPage() {
     </>
   );
 
-  // Điểm nhìn chiếu theo KHÔNG GIAN TOÀN MÀN HÌNH — AI trả x/y chuẩn hóa theo
-  // viewport (calibration phủ full màn hình) nên không nên ràng vào vùng reader.
+  // Điểm nhìn đã chiếu sang toạ độ trang slide (screenGazeToSlide) → vẽ trong
+  // khung slide bằng toạ độ tương đối, không còn `fixed inset-0` theo màn hình.
   const gazeDot =
     gazePoint && gazePoint.x >= 0 && gazePoint.x <= 1 && gazePoint.y >= 0 && gazePoint.y <= 1 ? (
-      <div className="pointer-events-none fixed inset-0 z-30">
+      <div className="pointer-events-none absolute inset-0 z-10">
         <span
           className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-destructive shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
           style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%` }}
@@ -477,9 +509,10 @@ export default function CourseLearningPage() {
           <div className="min-h-0 flex-1 overflow-y-auto bg-muted px-3 py-6 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-[900px]">
               {slideImageUrl ? (
-                <div className="overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
+                <div className="relative overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
+                    ref={slideImgRef}
                     src={slideImageUrl}
                     alt={currentContent.title}
                     onError={(event) => {
@@ -490,6 +523,7 @@ export default function CourseLearningPage() {
                     }}
                     className="block h-auto w-full bg-card object-contain"
                   />
+                  {gazeDot}
                 </div>
               ) : (
                 <div className="flex min-h-[60vh] flex-col items-center justify-center rounded-lg bg-card p-8 text-center shadow-sm ring-1 ring-border">
@@ -506,25 +540,6 @@ export default function CourseLearningPage() {
               )}
             </div>
           </div>
-
-          {gazeStream && gazeSource === 'real' && (
-            <div
-              className="pointer-events-none fixed bottom-20 right-4 z-30 h-28 w-20 overflow-hidden rounded-xl border-2 border-white shadow-lg ring-1 ring-border"
-              title="Camera đang theo dõi điểm nhìn"
-            >
-              <video
-                autoPlay
-                playsInline
-                muted
-                ref={(element) => {
-                  if (element && element.srcObject !== gazeStream) {
-                    element.srcObject = gazeStream;
-                  }
-                }}
-                className="h-full w-full scale-x-[-1] object-cover"
-              />
-            </div>
-          )}
 
           {/* Reader controls */}
           <footer className="shrink-0 border-t border-border bg-card px-4 py-2 sm:px-6 lg:px-8">
@@ -576,7 +591,6 @@ export default function CourseLearningPage() {
           </footer>
         </main>
       </div>
-      {gazeDot}
     </div>
   );
 }

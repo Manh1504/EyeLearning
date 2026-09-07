@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     gaze_downsample_hz: float = 4.0
     gaze_batch_max: int = 2000
 
+    # Redis (tùy chọn). Dùng cho rate-limit + cache analytics. Để trống → fallback
+    # in-memory (1 process, dev/test). Ví dụ: redis://localhost:6379/0
+    redis_url: str = ""
+    # TTL (giây) cho cache heatmap analytics.
+    heatmap_cache_ttl_seconds: int = 60
+    # Khoảng cách tối thiểu (giây) giữa 2 lần refresh_aggregates cho cùng 1 lesson.
+    aggregate_refresh_throttle_seconds: int = 10
+
     # Thư mục lưu slide ảnh render từ PDF (mount StaticFiles tại /media).
     media_dir: str = "media"
     # Dung lượng tối đa một file PDF upload (bytes).

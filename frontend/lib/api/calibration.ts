@@ -14,6 +14,9 @@
 
 const SESSION_KEY = 'gaze_session_id';
 const CALIBRATED_AT_KEY = 'gaze_calibrated_at';
+const SCREEN_W_KEY = 'gaze_screen_w';
+const SCREEN_H_KEY = 'gaze_screen_h';
+const DPR_KEY = 'gaze_dpr';
 
 export interface CalPoint {
   id: string;
@@ -185,17 +188,58 @@ export async function checkFace(imageBlob: Blob): Promise<{ ok: boolean; error?:
 export function storeGazeSession(sessionId: string, screenWidth?: number, screenHeight?: number): void {
   globalThis.localStorage?.setItem(SESSION_KEY, sessionId);
   globalThis.localStorage?.setItem(CALIBRATED_AT_KEY, new Date().toISOString());
+  globalThis.localStorage?.setItem(DPR_KEY, String(globalThis.devicePixelRatio || 1));
   if (screenWidth && screenHeight) {
-    globalThis.localStorage?.setItem('gaze_screen_w', String(Math.round(screenWidth)));
-    globalThis.localStorage?.setItem('gaze_screen_h', String(Math.round(screenHeight)));
+    globalThis.localStorage?.setItem(SCREEN_W_KEY, String(Math.round(screenWidth)));
+    globalThis.localStorage?.setItem(SCREEN_H_KEY, String(Math.round(screenHeight)));
   }
 }
 
 export function getStoredCalibrationScreen(): { w: number; h: number } | null {
-  const w = Number(globalThis.localStorage?.getItem('gaze_screen_w') ?? '');
-  const h = Number(globalThis.localStorage?.getItem('gaze_screen_h') ?? '');
+  const w = Number(globalThis.localStorage?.getItem(SCREEN_W_KEY) ?? '');
+  const h = Number(globalThis.localStorage?.getItem(SCREEN_H_KEY) ?? '');
   if (!w || !h) return null;
   return { w, h };
+}
+
+/** devicePixelRatio tại thời điểm hiệu chỉnh (để bù tỷ lệ khi user zoom trang). */
+export function getStoredCalibrationDpr(): number {
+  const dpr = Number(globalThis.localStorage?.getItem(DPR_KEY) ?? '');
+  return dpr > 0 ? dpr : 1;
+}
+
+export interface SlideRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+// Chuyển điểm nhìn màn hình (x,y ∈ [0,1] — AI chuẩn hóa theo khung hiệu chỉnh
+// W0×H0 cố định, KHÔNG phải viewport live) sang toạ độ trang slide [0,1] trong
+// rect hiển thị hiện tại. Bù tỷ lệ khi zoom (dpr) và tịnh tiến khi cuộn/resize.
+// Trả null khi điểm nằm ngoài vùng slide (on_slide = false).
+export function screenGazeToSlide(
+  x: number,
+  y: number,
+  rect: SlideRect,
+): { x: number; y: number } | null {
+  if (!(x >= 0 && x <= 1) || !(y >= 0 && y <= 1) || rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+  const dpr = globalThis.devicePixelRatio || 1;
+  const dpr0 = getStoredCalibrationDpr();
+  const screen = getStoredCalibrationScreen();
+  const W0 = screen?.w || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+  const H0 = screen?.h || (typeof window !== 'undefined' ? window.innerHeight : 720);
+
+  const gx = x * W0 * (dpr0 / dpr);
+  const gy = y * H0 * (dpr0 / dpr);
+
+  const sx = (gx - rect.left) / rect.width;
+  const sy = (gy - rect.top) / rect.height;
+  if (sx < 0 || sx > 1 || sy < 0 || sy > 1) return null;
+  return { x: sx, y: sy };
 }
 
 /** true khi viewport hiện tại lệch >10% so với lúc hiệu chỉnh → nên làm lại. */
@@ -222,8 +266,9 @@ export function getStoredCalibration(): { calibrated: boolean; calibratedAt: str
 export function clearStoredGazeSession(): void {
   globalThis.localStorage?.removeItem(SESSION_KEY);
   globalThis.localStorage?.removeItem(CALIBRATED_AT_KEY);
-  globalThis.localStorage?.removeItem('gaze_screen_w');
-  globalThis.localStorage?.removeItem('gaze_screen_h');
+  globalThis.localStorage?.removeItem(SCREEN_W_KEY);
+  globalThis.localStorage?.removeItem(SCREEN_H_KEY);
+  globalThis.localStorage?.removeItem(DPR_KEY);
 }
 
 // WebSocket stream (nối thẳng AI service — không qua proxy, không cần CORS).

@@ -18,12 +18,15 @@ from app.api.routes import (
     users,
 )
 from app.core.config import settings
+from app.db.redis import close_redis, init_redis
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.media_path.mkdir(parents=True, exist_ok=True)
+    await init_redis()
     yield
+    await close_redis()
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)

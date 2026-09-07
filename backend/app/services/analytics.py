@@ -4,12 +4,62 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import rediscache
+from app.core.config import settings
 from app.models.analytics import EngagementScore, HeatmapAggregate
 from app.models.course import Enrollment, LessonContent
 from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
 from app.schemas.analytics import HotspotOut, SlideStatOut
 
 FIXATION_RADIUS = 0.03
+HEATMAP_KEY_PREFIX = "heatmap"
+
+# Cache heatmap dùng "generation" thay vì DEL để khép kín race read-before-write:
+#   reader đọc gen G -> miss -> tính toán (snapshot DB) -> ghi vào key chứa G.
+#   Nếu giữa chừng writer bump gen lên G+1, entry G của reader trở thành "mồ côi"
+#   (không ai đọc vì reader sau dùng G+1), tự TTL xóa. Không bao giờ trả stale.
+#   Invalidation chỉ là INCR gen — nhẹ, không cần SCAN/DEL.
+
+
+def _heatmap_gen_key(lesson_id: str) -> str:
+    return f"{HEATMAP_KEY_PREFIX}:{lesson_id}:gen"
+
+
+def _heatmap_data_key(lesson_id: str, student_id: str | None, gen: int) -> str:
+    scope = f"student:{student_id}" if student_id else "class"
+    return f"{HEATMAP_KEY_PREFIX}:{lesson_id}:{scope}:{gen}"
+
+
+async def get_cached_slide_stats(
+    lesson_id: str, student_id: str | None
+) -> list | None:
+    """Trả về slides đã cache (list[dict] camelCase) hoặc None nếu miss/chưa có Redis.
+
+    gen missing (chưa từng invalidate) => coi là gen 0; khi Redis vắng mặt thì
+    json_get bên dưới cũng trả None nên kết quả vẫn là miss.
+    """
+    gen = await rediscache.get_int(_heatmap_gen_key(lesson_id))
+    if gen is None:
+        gen = 0
+    return await rediscache.json_get(_heatmap_data_key(lesson_id, student_id, gen))
+
+
+async def cache_slide_stats(
+    lesson_id: str, student_id: str | None, stats: list[SlideStatOut]
+) -> None:
+    gen = await rediscache.get_int(_heatmap_gen_key(lesson_id))
+    if gen is None:
+        gen = 0
+    await rediscache.json_set(
+        _heatmap_data_key(lesson_id, student_id, gen),
+        [s.model_dump(by_alias=True, mode="json") for s in stats],
+        settings.heatmap_cache_ttl_seconds,
+    )
+
+
+async def invalidate_heatmap_cache(lesson_id: str) -> None:
+    """Bump generation của lesson → toàn bộ cache (class + từng học viên) hết hiệu lực."""
+    await rediscache.increment(_heatmap_gen_key(lesson_id))
 MIN_FIXATION_POINTS = 2
 HOTSPOT_TOP_N = 5
 GRID_CELLS = 24

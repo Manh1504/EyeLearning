@@ -34,7 +34,12 @@ async def get_lesson_heatmap(
     db: AsyncSession = Depends(get_db),
 ):
     await _lesson_with_owner_check(db, lesson_id, user)
-    stats = await analytics.compute_slide_stats(db, lesson_id, student_id)
+    cached = await analytics.get_cached_slide_stats(lesson_id, student_id)
+    if cached is not None:
+        stats = [SlideStatOut.model_validate(item) for item in cached]
+    else:
+        stats = await analytics.compute_slide_stats(db, lesson_id, student_id)
+        await analytics.cache_slide_stats(lesson_id, student_id, stats)
     if content_id:
         slides = (
             await db.execute(
@@ -73,4 +78,6 @@ async def recompute_course_analytics(
     for lid in lesson_ids:
         total += await analytics.recompute_lesson_aggregates(db, lid)
     await db.commit()
+    for lid in lesson_ids:
+        await analytics.invalidate_heatmap_cache(lid)
     return {"ok": True, "aggregates": total}

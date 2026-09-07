@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core import rediscache
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.auth import User
@@ -299,13 +300,20 @@ async def post_gaze_samples(
 
     # Tự cập nhật heatmap_aggregates + engagement_scores GẦN THỜI GIAN THỰC để
     # dashboard giáo viên thấy số mới ngay, không cần bấm recompute thủ công.
+    # Throttle bằng Redis lock để không chạy lại aggregates ở mỗi batch (~4Hz).
     if session and session.tracking_consent and raw_counts:
-        await analytics.refresh_aggregates(
-            db,
-            lesson_id,
-            content_ids=sorted(raw_counts.keys()),
-            enrollment_id=session.enrollment_id,
-        )
-        await db.commit()
+        if await rediscache.try_acquire_lock(
+            f"agg:throttle:{lesson_id}", settings.aggregate_refresh_throttle_seconds
+        ):
+            await analytics.refresh_aggregates(
+                db,
+                lesson_id,
+                content_ids=sorted(raw_counts.keys()),
+                enrollment_id=session.enrollment_id,
+            )
+            await db.commit()
+
+    # Dữ liệu gaze mới → heatmap cache của lesson đã cũ (bump generation).
+    await analytics.invalidate_heatmap_cache(lesson_id)
 
     return GazeBatchOut(ok=True, inserted=len(events))

@@ -99,6 +99,10 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
       .then((stream) => {
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => undefined);
+        }
         setCamOn(true);
       })
       .catch(() => setCamOn(false));
@@ -217,6 +221,21 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
+      {/* Camera capture (ẩn) — vẫn cần để chụp frame gửi hiệu chỉnh, không hiển thị lên màn hình */}
+      <video
+        ref={(el) => {
+          videoRef.current = el;
+          if (el && streamRef.current && !el.srcObject) {
+            el.srcObject = streamRef.current;
+          }
+        }}
+        autoPlay
+        playsInline
+        muted
+        aria-hidden="true"
+        className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px opacity-0"
+      />
+
       {phase !== 'training' && (
         <button
           onClick={handleDotClick}
@@ -256,29 +275,6 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
           {error && (
             <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
           )}
-
-          <div className="mt-3 flex items-center justify-center gap-2">
-            {camOn && (
-              <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-brand-dark">
-                <video
-                  ref={(el) => {
-                    videoRef.current = el;
-                    if (el && streamRef.current && !el.srcObject) {
-                      el.srcObject = streamRef.current;
-                    }
-                  }}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="h-full w-full scale-x-[-1] object-cover"
-                />
-                <span className="absolute right-1 top-1 flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                </span>
-              </div>
-            )}
-          </div>
 
           <p className="mt-3 text-xs text-muted-foreground">
             Cần hoàn tất hiệu chỉnh để hệ thống theo dõi điểm nhìn thật của bạn.
