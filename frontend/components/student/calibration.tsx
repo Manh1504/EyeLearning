@@ -191,7 +191,7 @@ export default function Calibration() {
       screenHeight: window.innerHeight,
     });
     goToCourse();
-  }, [sessionId, resetCalibration, goToCourse]);
+  }, [sessionId, resetCalibration, goToCourse, scoringEnabled, threshold]);
 
   const handleDotClick = async () => {
     if (phase !== 'calibrating') return;

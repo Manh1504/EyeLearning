@@ -28,6 +28,7 @@ export default function CalibrationSettings() {
 
   useEffect(() => {
     if (data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEnabled(data.enabled);
       setThresholdPct(String(Math.round(data.threshold * 100)));
     }
