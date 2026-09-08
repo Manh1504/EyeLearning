@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 // Một biến duy nhất: origin của backend (vd https://api.yourdomain.com).
 // Tất cả rewrite (api, media, gaze) và URL都 suy ra từ đây.
@@ -9,6 +10,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://api.yourdomain.com";
 const GAZE_URL = process.env.NEXT_PUBLIC_GAZE_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // Sửa cảnh báo Turbopack: repo có 2 lockfiles (root dummy + frontend).
+  // Ép root về thư mục frontend để alias @/* và build hoạt động đúng.
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
   async headers() {
     return [
       {
