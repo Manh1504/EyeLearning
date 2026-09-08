@@ -1,12 +1,12 @@
 'use client';
 
-// components/student/calibration.tsx — Hiệu chỉnh mắt (16 điểm, 5 mẫu/điểm).
+// components/student/calibration.tsx — Hiệu chỉnh mắt (16 điểm, 2 mẫu/điểm).
 //
 // Luồng (khớp AI service /session — server giữ model theo session):
 //   1. Tạo session POST /session (16 điểm chuẩn hóa [0,1]) → session_id.
 //   2. Hiển thị từng chấm; người dùng nhìn vào chấm → BẤM → chụp nhiều frame gửi
 //      POST /session/{sid}/calibrate (image + point_id) — server tự gom mẫu.
-//   3. Đủ 5 mẫu × 16 điểm → POST /session/{sid}/train → model sẵn sàng.
+//   3. Đủ 2 mẫu × 16 điểm → POST /session/{sid}/train → model sẵn sàng.
 //   4. Pass (MAE ≤ ngưỡng) → vào thẳng bài học; không pass → hiệu chỉnh lại.
 //   5. Lưu session_id vào localStorage để phiên học sau mở WS /session/{sid}/stream.
 //
@@ -29,8 +29,8 @@ import {
 } from '@/lib/api/calibration';
 import { getDeviceFingerprint } from '@/lib/api/student';
 
-const SAMPLES_PER_POINT = 5;       // server yêu cầu tối thiểu MIN_SAMPLES=5/điểm
-const MAX_CAPTURES_PER_POINT = 10; // giới hạn số frame chụp lại mỗi điểm
+const SAMPLES_PER_POINT = 2;       // giảm 5→2 để rút ngắn thời gian cali (AI MIN_SAMPLES phải =2)
+const MAX_CAPTURES_PER_POINT = 5; // giới hạn số frame chụp lại mỗi điểm
 const CAPTURE_GAP_MS = 100;        // burst nhanh để mắt chưa kịp rời chấm
 
 type Phase = 'calibrating' | 'sending' | 'training';

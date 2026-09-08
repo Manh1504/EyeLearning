@@ -226,13 +226,14 @@ export default function CourseLearningPage() {
     return () => window.clearTimeout(timer);
   }, [activeLessonId, currentSlide, total]);
 
-  // Hiện dialog "Học tiếp?" khi có lịch sử
+  // Hiện dialog "Học tiếp?" khi có lịch sử — defer để tránh setState đồng bộ trong effect (eslint react-hooks/set-state-in-effect)
   useEffect(() => {
     if (!activeLessonId || !progress || total === 0) return;
     if (resumeHandled === activeLessonId) return;
     if (progress.completed) return;
     if (progress.lastSlide > 0 && progress.lastSlide < total) {
-      setShowResume(true);
+      const id = setTimeout(() => setShowResume(true), 0);
+      return () => clearTimeout(id);
     }
   }, [activeLessonId, progress, total, resumeHandled]);
 
