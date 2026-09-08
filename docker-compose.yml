@@ -85,7 +85,7 @@ services:
     # Không publish 8001 ra host — chỉ nginx truy cập nội bộ.
 
   gaze:
-    image: hieunm1501/gaze-api:gpu
+    image: hieunm1501/gaze-api:gpu-v2
     container_name: eyetracking-gaze
     pull_policy: always
     restart: unless-stopped
