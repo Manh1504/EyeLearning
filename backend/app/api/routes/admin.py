@@ -8,6 +8,8 @@ from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, CourseTeacher
 from app.models.profile import TeacherProfile, UserProfile
+from app.models.calibration import CalibrationSettings
+from app.schemas.calibration import CalibrationSettingsIn, CalibrationSettingsOut
 from app.schemas.course import CourseTeacherOut, TeacherAssignIn, TeacherDirectoryOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -179,3 +181,42 @@ async def unassign_teacher(
     await db.delete(assignment)
     await db.commit()
     return {"ok": True}
+
+
+# ------------------------------------------------------------------
+# Calibration settings — admin điều chỉnh ngưỡng MAE & bật/tắt tính điểm
+# ------------------------------------------------------------------
+async def _get_or_init_settings(db: AsyncSession) -> CalibrationSettings:
+    row = await db.get(CalibrationSettings, 1)
+    if row is None:
+        row = CalibrationSettings(id=1, enabled=True, threshold=0.12)
+        db.add(row)
+        await db.flush()
+    return row
+
+
+@router.get("/calibration-settings", response_model=CalibrationSettingsOut)
+async def get_calibration_settings(
+    _: User = Depends(require_roles("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_or_init_settings(db)
+    return CalibrationSettingsOut(enabled=row.enabled, threshold=float(row.threshold), updated_at=row.updated_at)
+
+
+@router.put("/calibration-settings", response_model=CalibrationSettingsOut)
+async def update_calibration_settings(
+    body: CalibrationSettingsIn,
+    user: User = Depends(require_roles("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime, timezone
+
+    row = await _get_or_init_settings(db)
+    row.enabled = body.enabled
+    row.threshold = float(body.threshold)
+    row.updated_at = datetime.now(timezone.utc)
+    row.updated_by = user.id
+    await db.commit()
+    await db.refresh(row)
+    return CalibrationSettingsOut(enabled=row.enabled, threshold=float(row.threshold), updated_at=row.updated_at)

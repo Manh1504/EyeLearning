@@ -19,8 +19,10 @@ import {
   buildCalibrationPoints,
   clearStoredGazeSession,
   createGazeSession,
+  DEFAULT_MAX_TRAIN_MAE,
+  deleteGazeSession,
+  fetchCalibrationConfig,
   formatMaePercent,
-  MAX_TRAIN_MAE,
   saveCalibrationToBackend,
   storeGazeSession,
   submitCalibrationSample,
@@ -56,11 +58,21 @@ export default function Calibration() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionNonce, setSessionNonce] = useState(0);
+  const [threshold, setThreshold] = useState(DEFAULT_MAX_TRAIN_MAE);
+  const [scoringEnabled, setScoringEnabled] = useState(true);
 
   // Camera preview (ảnh thu nhỏ, đặt trong card mờ giữa màn hình — không chiếm đất vùng chấm).
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [camOn, setCamOn] = useState(false);
+
+  // Lấy cấu hình ngưỡng từ admin (fallback 12%)
+  useEffect(() => {
+    fetchCalibrationConfig().then((cfg) => {
+      setThreshold(cfg.threshold);
+      setScoringEnabled(cfg.enabled);
+    }).catch(() => {});
+  }, []);
 
   // Tạo session gaze ngay khi mount (server giữ mẫu theo session này).
   // sessionNonce để tạo lại session mới khi hiệu chỉnh lại (model cũ đã kém thì bỏ hẳn).
@@ -78,15 +90,16 @@ export default function Calibration() {
     };
   }, [points, sessionNonce]);
 
-  // Làm lại từ đầu với session mới (khi train fail / MAE quá cao).
+  // Làm lại từ đầu với session mới (khi train fail / MAE quá cao) — ép cali lại từ p0, không chỉ bấm lại điểm cuối.
   const resetCalibration = useCallback(() => {
+    if (sessionId) deleteGazeSession(sessionId);
     clearStoredGazeSession();
     setSessionId(null);
     setError(null);
     setIdx(0);
     setPhase('calibrating');
     setSessionNonce((v) => v + 1);
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,33 +145,43 @@ export default function Calibration() {
     router.replace(`/student/courses/${courseId}`);
   }, [courseId, router]);
 
+  const handleStop = useCallback(() => {
+    if (sessionId) deleteGazeSession(sessionId);
+    // không xóa calibration cũ đã pass — chỉ dừng phiên hiện tại
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    router.replace(`/student/courses/${courseId}`);
+  }, [sessionId, courseId, router]);
+
   const finish = useCallback(async () => {
     if (!sessionId) return;
     setPhase('training');
     const trained = await trainGazeSession(sessionId);
     const maeLabel = trained.maePx != null ? formatMaePercent(trained.maePx) : null;
 
-    const failed = !trained.ok || (trained.maePx != null && trained.maePx > MAX_TRAIN_MAE);
+    // Nếu admin tắt tính điểm -> luôn pass khi train ok
+    const maeFail = scoringEnabled && trained.maePx != null && trained.maePx > threshold;
+    const failed = !trained.ok || maeFail;
     if (failed) {
       const message = !trained.ok
         ? trained.error === 'insufficient_samples'
-          ? ERROR_TEXT.insufficient
+          ? ERROR_TEXT.insufficient + ' — sẽ làm lại từ đầu.'
           : trained.error === 'network_error'
-            ? 'Không kết nối được dịch vụ AI khi huấn luyện — hãy hiệu chỉnh lại.'
-            : 'Không huấn luyện được bộ hiệu chỉnh — hãy hiệu chỉnh lại.'
-        : `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${maeLabel} màn hình, cho phép ${formatMaePercent(MAX_TRAIN_MAE)}). Hãy hiệu chỉnh lại và giữ mắt nhìn chằm chằm vào từng chấm đỏ.`;
+            ? 'Không kết nối được dịch vụ AI khi huấn luyện — sẽ làm lại từ đầu.'
+            : 'Không huấn luyện được bộ hiệu chỉnh — sẽ làm lại từ đầu.'
+        : `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${maeLabel} màn hình, cho phép ${formatMaePercent(threshold)}). Sẽ làm lại từ đầu — hãy giữ mắt nhìn chằm chằm vào từng chấm đỏ.`;
       console.log('[calibration] FAIL', {
         error: trained.error ?? null,
         maePx: trained.maePx ?? null,
         maePct: maeLabel,
-        max: MAX_TRAIN_MAE,
+        max: threshold,
+        enabled: scoringEnabled,
       });
       resetCalibration();
       setError(message);
       return;
     }
 
-    console.log('[calibration] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel });
+    console.log('[calibration] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel, threshold, enabled: scoringEnabled });
     storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
     // Lưu lên Postgres để tái sử dụng 20-30 ngày (không phụ thuộc AI RAM 30p)
     void saveCalibrationToBackend({
@@ -233,6 +256,14 @@ export default function Calibration() {
 
   return (
     <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
+      {/* Nút dừng — học: quay về trang khóa học, xóa session tạm */}
+      <button
+        onClick={handleStop}
+        aria-label="Dừng hiệu chỉnh và quay về khóa học"
+        className="absolute left-4 top-4 z-40 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3.5 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        ✕ Dừng
+      </button>
       {/* Camera capture (ẩn) — vẫn cần để chụp frame gửi hiệu chỉnh, không hiển thị lên màn hình */}
       <video
         ref={(el) => {

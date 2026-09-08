@@ -80,3 +80,13 @@ class CalibrationParam(Base):
     @property
     def has_params(self) -> bool:
         return bool(self.params)
+
+
+class CalibrationSettings(Base):
+    __tablename__ = "calibration_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, server_default=text("1"))
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    threshold: Mapped[float] = mapped_column(REAL, server_default=text("0.12"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

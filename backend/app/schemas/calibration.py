@@ -43,3 +43,14 @@ class CalibrationCreateIn(CamelModel):
             if not isinstance(value, (int, float)):
                 raise ValueError("params phải là số")
         return v
+
+
+class CalibrationSettingsOut(CamelModel):
+    enabled: bool
+    threshold: float  # 0.01-0.30 (0.12 = 12%)
+    updated_at: datetime | None = None
+
+
+class CalibrationSettingsIn(CamelModel):
+    enabled: bool
+    threshold: float = Field(ge=0.01, le=0.30)

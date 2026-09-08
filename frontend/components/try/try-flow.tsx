@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   RiArrowLeftSLine,
   RiArrowRightLine,
@@ -27,6 +28,7 @@ import {
   buildCalibrationPoints,
   clearStoredGazeSession,
   createGazeSession,
+  deleteGazeSession,
   formatMaePercent,
   MAX_TRAIN_MAE,
   storeGazeSession,
@@ -52,8 +54,8 @@ interface GazeRecord {
 
 // ---------- Bước 2: hiệu chỉnh (khách) — logic như student/calibration.tsx ----------
 
-const SAMPLES_PER_POINT = 5;
-const MAX_CAPTURES_PER_POINT = 10;
+const SAMPLES_PER_POINT = 2; // đồng bộ với student (đã giảm 5→2) — 16×2=32 request thay vì 16×5=80
+const MAX_CAPTURES_PER_POINT = 5;
 
 const CALIB_ERROR_TEXT: Record<string, string> = {
   no_face: 'Không phát hiện khuôn mặt — hãy nhìn thẳng vào chấm đỏ rồi bấm lại.',
@@ -65,7 +67,7 @@ const CALIB_ERROR_TEXT: Record<string, string> = {
 
 type CalPhase = 'calibrating' | 'sending' | 'training';
 
-function GuestCalibration({ onDone }: { onDone: () => void }) {
+function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () => void }) {
   const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
   const total = points.length;
 
@@ -73,11 +75,13 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
   const [phase, setPhase] = useState<CalPhase>('calibrating');
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionNonce, setSessionNonce] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [camOn, setCamOn] = useState(false);
 
+  // Tạo session mới mỗi khi mount hoặc khi phải làm lại từ đầu (train fail)
   useEffect(() => {
     let cancelled = false;
     const screenWidth = typeof window !== 'undefined' ? (window.innerWidth || 1280) : 1280;
@@ -90,7 +94,24 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [points]);
+  }, [points, sessionNonce]);
+
+  // Làm lại từ đầu với session mới — khi train fail / MAE quá cao thì ep cali lại từ p0
+  const resetCalibration = useCallback(() => {
+    if (sessionId) deleteGazeSession(sessionId);
+    clearStoredGazeSession();
+    setSessionId(null);
+    setError(null);
+    setIdx(0);
+    setPhase('calibrating');
+    setSessionNonce((v) => v + 1);
+  }, [sessionId]);
+
+  const handleStop = useCallback(() => {
+    if (sessionId) deleteGazeSession(sessionId);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    onStop();
+  }, [sessionId, onStop]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,30 +156,30 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
     if (!sessionId) return;
     setPhase('training');
     const trained = await trainGazeSession(sessionId);
-    if (!trained.ok) {
-      setPhase('calibrating');
-      setIdx(total - 1);
-      setError(
+    const maeLabel = trained.maePx != null ? formatMaePercent(trained.maePx) : null;
+    // Luồng thử: KHÔNG tính điểm — luôn cho qua nếu train ok (kể cả MAE cao)
+    const failed = !trained.ok;
+    if (failed) {
+      const message =
         trained.error === 'insufficient_samples'
-          ? CALIB_ERROR_TEXT.insufficient
+          ? CALIB_ERROR_TEXT.insufficient + ' — sẽ làm lại từ đầu.'
           : trained.error === 'network_error'
-            ? 'Không kết nối được dịch vụ AI khi huấn luyện — bấm lại điểm cuối để thử.'
-            : 'Không huấn luyện được bộ hiệu chỉnh — bấm lại điểm cuối để thử.',
-      );
+            ? 'Không kết nối được dịch vụ AI khi huấn luyện — sẽ làm lại từ đầu.'
+            : 'Không huấn luyện được bộ hiệu chỉnh — sẽ làm lại từ đầu.';
+      console.log('[calibration:try] FAIL', { error: trained.error ?? null, maePx: trained.maePx ?? null, maePct: maeLabel });
+      resetCalibration();
+      setError(message);
       return;
     }
-    // Từ chối model kém giống luồng học viên — lệch hệ thống nếu dùng tiếp.
+    // Mae cao vẫn pass — chỉ log cảnh báo để debug
     if (trained.maePx != null && trained.maePx > MAX_TRAIN_MAE) {
-      setPhase('calibrating');
-      setIdx(total - 1);
-      setError(
-        `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${formatMaePercent(trained.maePx)} màn hình, cho phép ${formatMaePercent(MAX_TRAIN_MAE)}). Hãy làm lại và giữ mắt nhìn chằm chằm vào từng chấm đỏ.`,
-      );
-      return;
+      console.log('[calibration:try] PASS (high MAE allowed for try)', { maePx: trained.maePx ?? null, maePct: maeLabel });
+    } else {
+      console.log('[calibration:try] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel });
     }
     storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
     onDone();
-  }, [sessionId, total, onDone]);
+  }, [sessionId, resetCalibration, onDone]);
 
   const handleDotClick = async () => {
     if (phase !== 'calibrating') return;
@@ -221,6 +242,13 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
+      <button
+        onClick={handleStop}
+        aria-label="Dừng hiệu chỉnh và quay về trang chủ"
+        className="absolute left-4 top-4 z-40 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3.5 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        ✕ Dừng
+      </button>
       {/* Camera capture (ẩn) — vẫn cần để chụp frame gửi hiệu chỉnh, không hiển thị lên màn hình */}
       <video
         ref={(el) => {
@@ -294,6 +322,7 @@ const STEP_LABELS: Array<{ key: Step; label: string }> = [
 ];
 
 export default function TryFlow() {
+  const router = useRouter();
   const [step, setStep] = useState<Step>('intro');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [gazeDot, setGazeDot] = useState<{ x: number; y: number } | null>(null);
@@ -369,6 +398,7 @@ export default function TryFlow() {
         onDone={() => {
           setStep('view');
         }}
+        onStop={() => router.push('/')}
       />
     );
   }

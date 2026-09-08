@@ -18,8 +18,8 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=()" },
-          // CSP nới lỏng cho Tailwind inline style; siết thêm nếu cần
-          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.eyelearning.id.vn https://gaze.eyelearning.id.vn wss://gaze.eyelearning.id.vn http://localhost:* ws://localhost:*; media-src 'self' blob:" },
+          // CSP: cho phép gaze wss với port 8443 (prod) + api
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.eyelearning.id.vn https://gaze.eyelearning.id.vn https://gaze.eyelearning.id.vn:8443 wss://gaze.eyelearning.id.vn wss://gaze.eyelearning.id.vn:8443 http://localhost:* ws://localhost:*; media-src 'self' blob:" },
         ],
       },
     ];

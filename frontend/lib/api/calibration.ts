@@ -108,8 +108,12 @@ export interface TrainResult {
   error?: string;
 }
 
-/** Ngưỡng MAE train chấp nhận được (đơn vị chuẩn hóa [0,1]). VD 0.05 ≈ lệch 5% màn hình. */
-export const MAX_TRAIN_MAE = 0.05;
+/** Ngưỡng MAE train chấp nhận được (đơn vị chuẩn hóa [0,1]). VD 0.12 ≈ lệch 12% màn hình.
+ *  Đã tăng 0.05→0.12 cho nhanh pass (theo yêu cầu 10-15%). Admin có thể chỉnh
+ *  động qua /admin/calibration-settings (enabled + threshold).
+ *  Dùng fetchCalibrationConfig() để lấy ngưỡng hiện tại trước khi train. */
+export const MAX_TRAIN_MAE = 0.12;
+export const DEFAULT_MAX_TRAIN_MAE = 0.12;
 
 export function formatMaePercent(mae: number): string {
   return `${(mae * 100).toFixed(1)}%`;
@@ -308,6 +312,39 @@ export async function fetchActiveCalibration(deviceFingerprint: string): Promise
   } catch {
     return null;
   }
+}
+
+// Admin chỉnh ngưỡng & bật/tắt tính điểm (persist DB). Dùng cho student flow.
+export interface CalibrationSettings {
+  enabled: boolean;
+  threshold: number; // 0.01-0.30
+  updatedAt?: string | null;
+}
+
+export async function fetchCalibrationConfig(): Promise<CalibrationSettings> {
+  try {
+    const { apiFetch } = await import('./client');
+    const data = await apiFetch<{ enabled: boolean; threshold: number }>(
+      '/api/calibrations/config',
+    );
+    return { enabled: data.enabled, threshold: data.threshold };
+  } catch {
+    // fallback khi chưa đăng nhập / chưa có DB
+    return { enabled: true, threshold: DEFAULT_MAX_TRAIN_MAE };
+  }
+}
+
+export async function fetchAdminCalibrationSettings(): Promise<CalibrationSettings> {
+  const { apiFetch } = await import('./client');
+  return apiFetch<CalibrationSettings>('/api/admin/calibration-settings');
+}
+
+export async function updateAdminCalibrationSettings(patch: { enabled: boolean; threshold: number }): Promise<CalibrationSettings> {
+  const { apiFetch } = await import('./client');
+  return apiFetch<CalibrationSettings>('/api/admin/calibration-settings', {
+    method: 'PUT',
+    body: { enabled: patch.enabled, threshold: patch.threshold },
+  });
 }
 
 // WebSocket stream (nối thẳng AI service — không qua proxy, không cần CORS).

@@ -9,7 +9,7 @@ from app.models.auth import (
     UserRole,
     UserStatus,
 )
-from app.models.calibration import CalibrationParam, CalibrationSession, Device
+from app.models.calibration import CalibrationParam, CalibrationSession, CalibrationSettings, Device
 from app.models.course import (
     Course,
     CourseStatus,
@@ -29,6 +29,7 @@ __all__ = [
     "AuthSession",
     "CalibrationParam",
     "CalibrationSession",
+    "CalibrationSettings",
     "Course",
     "CourseStatus",
     "CourseTeacher",

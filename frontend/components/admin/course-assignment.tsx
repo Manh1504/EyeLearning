@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import CalibrationSettings from '@/components/admin/calibration-settings';
 import {
   assignTeachers,
   fetchCourseTeachers,
@@ -370,8 +371,19 @@ export default function CourseAssignment() {
     <main className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 sm:py-9 lg:py-10">
       <section className="border-b border-border pb-6">
         <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">
-          Phân công giảng viên
+          Quản trị
         </h1>
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+          Quản lý cấu hình hệ thống và phân công giảng viên.
+        </p>
+      </section>
+
+      <section className="pt-6">
+        <CalibrationSettings />
+      </section>
+
+      <section className="border-b border-border pb-6 pt-8">
+        <h2 className="text-xl font-bold tracking-tight text-foreground">Phân công giảng viên</h2>
         <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
           Chọn khóa học để xem chủ sở hữu và quản lý giảng viên được phân công.
         </p>

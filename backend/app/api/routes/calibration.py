@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.models.calibration import CalibrationSettings
 from app.api.routes.gaze import _upsert_device
 from app.db.session import get_db
 from app.models.auth import User
@@ -15,6 +16,7 @@ from app.schemas.calibration import (
     CalibrationCreateIn,
     CalibrationOut,
     CalibrationParamsOut,
+    CalibrationSettingsOut,
 )
 
 router = APIRouter(prefix="/api/calibrations", tags=["calibrations"])
@@ -148,3 +150,15 @@ async def get_active_calibration_params(
     return CalibrationParamsOut(
         params=[_to_float(v) for v in param.params],
     )
+
+
+@router.get("/config", response_model=CalibrationSettingsOut)
+async def get_calibration_config(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Học viên/try-flow đọc ngưỡng hiện tại để quyết định pass/fail. Public cho mọi role đã đăng nhập."""
+    row = await db.get(CalibrationSettings, 1)
+    if row is None:
+        return CalibrationSettingsOut(enabled=True, threshold=0.12, updated_at=None)
+    return CalibrationSettingsOut(enabled=row.enabled, threshold=float(row.threshold), updated_at=row.updated_at)

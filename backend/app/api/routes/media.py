@@ -76,3 +76,67 @@ async def get_lesson_slide(
     if not file_path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file")
     return FileResponse(str(file_path), media_type="image/jpeg")
+
+
+# Fallback cho dữ liệu cũ: image_url dạng /media/lessons/{id}/slide_xxx.jpg (không có version)
+# Nếu file legacy tồn tại thì phục vụ luôn, nếu không thì quét các version con để tìm file.
+@router.get("/media/lessons/{lesson_id}/{filename}")
+async def get_lesson_slide_legacy(
+    lesson_id: str,
+    filename: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        uuid.UUID(lesson_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+    if not _SLIDE_RE.match(filename):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file")
+
+    lesson = await db.get(Lesson, lesson_id)
+    if lesson is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+    module = await db.get(Module, lesson.module_id)
+    if module is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+    course = await db.get(Course, module.course_id)
+    if course is None or course.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khóa học")
+
+    from app.api.deps import can_access_course
+
+    is_owner = await can_access_course(db, course, user)
+    if not is_owner:
+        enrolled = (
+            await db.execute(
+                select(Enrollment).where(
+                    Enrollment.course_id == course.id, Enrollment.student_id == user.id, Enrollment.status != "dropped"
+                )
+            )
+        ).scalar_one_or_none()
+        if enrolled is None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Chưa đăng ký khóa học")
+
+    # 1. Thử file legacy trực tiếp: media/lessons/{id}/slide_*.jpg
+    legacy_path = settings.media_path / "lessons" / lesson_id / filename
+    legacy_path = _ensure_media_in_root(legacy_path)
+    if legacy_path.is_file():
+        return FileResponse(str(legacy_path), media_type="image/jpeg")
+
+    # 2. Quét các thư mục version con (12 hex) để tìm file — lấy bản mới nhất
+    lesson_dir = settings.media_path / "lessons" / lesson_id
+    lesson_dir = _ensure_media_in_root(lesson_dir)
+    if lesson_dir.is_dir():
+        candidates: list[Path] = []
+        for child in lesson_dir.iterdir():
+            if child.is_dir() and _VERSION_RE.match(child.name):
+                p = child / filename
+                if p.is_file():
+                    candidates.append(p)
+        if candidates:
+            # Ưu tiên file mới nhất (mtime lớn nhất) để khớp version hiện tại trong DB
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return FileResponse(str(candidates[0]), media_type="image/jpeg")
+
+    raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy file")
