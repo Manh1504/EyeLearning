@@ -1,0 +1,10 @@
+services:
+  gaze:
+    image: hieunm1501/gaze-api:cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./weights:/app/weights
+    environment:
+      - DEVICE=cpu
+    restart: unless-stopped

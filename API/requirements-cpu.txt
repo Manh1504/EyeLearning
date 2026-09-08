@@ -1,0 +1,14 @@
+torch==2.7.0
+torchvision==0.22.0
+
+numpy
+pillow
+opencv-python
+scikit-learn
+mediapipe
+unigaze
+
+fastapi
+uvicorn[standard]
+python-multipart
+py-ubjson

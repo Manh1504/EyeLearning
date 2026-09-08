@@ -1,26 +1,5 @@
 # Gaze API — Tài liệu tích hợp cho Backend
 
-> ⚠️ **CẢNH BÁO PROTOCOL KHÔNG KHỚP**: Tài liệu dưới đây mô tả protocol `/session`
-> (POST `/session`, `/session/{sid}/calibrate`, `/train`, `/model`, `/import`,
-> `/session/{sid}/stream`) được THIẾT KẾ nhưng CHƯA BAO GIỜ được xây dựng.
-> Image thực tế đang chạy trong Docker (`hieunm1501/gaze-api:gpu`, xem
-> `API/docker-compose.yml`) implement protocol CŨ — client lấy từng mẫu khớp
-> riêng. Các endpoint thật được dùng bởi frontend hiện tại:
->
-> - `POST /calibrate/point` — multipart `image` (JPEG) + `x`, `y` (float, chuẩn hóa
->   `[0,1]`) → `{ok, sample: [pitch, yaw, rvec(3), tvec(3), x, y]}` (10 số) hoặc
->   `{ok:false, error: no_face|invalid_image}` (HTTP 503 nếu pipeline chưa sẵn sàng).
-> - `POST /calibrate/fit` — JSON `{samples: [[10 số] × 16-25]}` → `{ok, params: [6]}`
->   (a1,a2,b1,a3,a4,b2), 422 nếu sai số lượng/độ dài mẫu.
-> - `WS /infer` — message TEXT đầu tiên `{"params":[6],"smooth":true}` để cấu hình,
->   sau đó gửi **binary JPEG** từng frame → nhận JSON `{ok,x,y}` (chuẩn hóa `[0,1]`;
->   có thể âm/>1) hoặc `{ok:false, error: no_face}`.
->
-> Client chịu trách nhiệm TỰ tích lũy mẫu (10 số) sau mỗi `/calibrate/point`, gọi
-> `/calibrate/fit` khi đủ, rồi lưu 6 `params` lên backend (`POST /api/calibrations`).
-> Khi stream lại chỉ cần gửi 6 `params` vào WS `/infer` — không tạo session,
-> không calibrate lại.
-
 Tài liệu này mô tả đầy đủ từng API của dịch vụ ước lượng hướng nhìn (gaze estimation) để team backend có thể gọi đúng từ request đầu tiên.
 
 ## 1. Tổng quan
@@ -96,7 +75,7 @@ y = a3·pitch + a4·yaw + b2
 Kiểm tra dịch vụ đã load xong pipeline chưa trước khi nhận request thật.
 
 ```bash
-curl api.nmhieu.online/health
+curl http://localhost:8000/health
 ```
 
 ```json
@@ -145,7 +124,7 @@ Khai báo kích thước màn hình và danh sách N điểm calibration. Server
 ```
 
 ```bash
-curl -X POST api.nmhieu.online/session \
+curl -X POST http://localhost:8000/session \
   -H "Content-Type: application/json" \
   -d '{"screen_width":1920,"screen_height":1080,"points":[{"id":"tl","x":0.125,"y":0.167},{"id":"c","x":0.5,"y":0.5}]}'
 ```
@@ -167,7 +146,7 @@ curl -X POST api.nmhieu.online/session \
 Dùng để theo dõi tiến độ thu mẫu (mỗi điểm đã có bao nhiêu mẫu) và biết khi nào train/stream được.
 
 ```bash
-curl api.nmhieu.online/session/6f1a2b3c-...
+curl http://localhost:8000/session/6f1a2b3c-...
 ```
 
 ```json
@@ -191,7 +170,7 @@ curl api.nmhieu.online/session/6f1a2b3c-...
 Gọi khi người dùng hủy calibration hoặc đóng trang để giải phóng slot (nhớ giới hạn 100 session).
 
 ```bash
-curl -X DELETE api.nmhieu.online/session/6f1a2b3c-...
+curl -X DELETE http://localhost:8000/session/6f1a2b3c-...
 # {"status": "deleted"}
 ```
 
@@ -207,7 +186,7 @@ Gửi **multipart/form-data** gồm 1 frame JPEG + `point_id` của điểm đan
 | `point_id` | string | `id` của điểm đã khai báo ở `/session` |
 
 ```bash
-curl -X POST api.nmhieu.online/session/6f1a2b3c.../calibrate \
+curl -X POST http://localhost:8000/session/6f1a2b3c.../calibrate \
   -F "image=@frame.jpg" \
   -F "point_id=tl"
 ```
@@ -232,7 +211,7 @@ curl -X POST api.nmhieu.online/session/6f1a2b3c.../calibrate \
 Không cần body. Điều kiện: **mỗi điểm đã có ≥ 5 mẫu**. Server fit `LinearRegression` mapping `(pitch, yaw) → (x, y)` chuẩn hóa và đánh giá bằng 5-fold cross-validation.
 
 ```bash
-curl -X POST api.nmhieu.online/session/6f1a2b3c.../train
+curl -X POST http://localhost:8000/session/6f1a2b3c.../train
 ```
 
 **Thành công:**
@@ -261,7 +240,7 @@ Sau khi train thành công, `state` chuyển sang `ready` — có thể stream.
 Tải mô hình đã train về dạng file `.ubj` (ubjson + pickle) để **lưu vào DB của backend** và tái sử dụng ở lần sau, khỏi phải calibration lại.
 
 ```bash
-curl -o calibration.ubj api.nmhieu.online/session/6f1a2b3c.../model
+curl -o calibration.ubj http://localhost:8000/session/6f1a2b3c.../model
 ```
 
 - Response: `application/octet-stream`, tên file `calibration_{sid}.ubj`.
@@ -276,7 +255,7 @@ Nạp file `.ubj` đã tải từ `/model` vào session mới, **bỏ qua toàn 
 | `model` | file | File `.ubj` tải từ `GET /session/{sid}/model` |
 
 ```bash
-curl -X POST api.nmhieu.online/session/6f1a2b3c.../import \
+curl -X POST http://localhost:8000/session/6f1a2b3c.../import \
   -F "model=@calibration.ubj"
 ```
 
@@ -372,35 +351,36 @@ ws.onmessage = (e) => {
 
 ## 4. Quy trình tích hợp end-to-end
 
-Mô tả đầy đủ vai trò của client (frontend/backend) trong từng bước:
+Mô tả đầy đủ vai trò của backend trong từng bước:
 
 ```
 Bước 1 — Bắt đầu calibration
-  Frontend gọi POST /session với screen_width/height + N điểm (lấy từ cấu hình UI).
+  Backend gọi POST /session với screen_width/height + N điểm (lấy từ cấu hình UI).
   Lưu session_id tạm thời (gắn với user + device đang calibrate).
 
 Bước 2 — Thu mẫu (client lái)
-  Client hiển thị lần lượt từng điểm (5 vòng × 16 điểm); mỗi lần gửi frame JPEG
-  + point_id qua POST /session/{sid}/calibrate (gọi thẳng dịch vụ này).
-  Client định kỳ gọi GET /session/{sid} để biết mỗi điểm đã đủ ≥ 5 mẫu chưa.
-  Nếu nhận status "no_face" / "invalid_image" → yêu cầu chụp lại điểm đó.
+  Client hiển thị lần lượt từng điểm; mỗi lần gửi frame JPEG + point_id
+  (qua backend hoặc gọi thẳng dịch vụ này).
+  Backend định kỳ gọi GET /session/{sid} để biết mỗi điểm đã đủ ≥ 5 mẫu chưa.
+  Nếu nhận status "no_face" / "invalid_image" → yêu cầu client chụp lại điểm đó.
 
 Bước 3 — Train
-  Client gọi POST /session/{sid}/train.
-  - 422 → đọc map detail, thu thêm mẫu cho các điểm còn thiếu.
-  - ok  → download model: GET /session/{sid}/model (file .ubj), rồi upload file đó
-    lên backend: POST /api/calibrations (multipart `model`) — backend lưu làm bản
-    active duy nhất cho (user, device).
+  Backend gọi POST /session/{sid}/train.
+  - 422 → đọc map detail, báo client thu thêm mẫu cho các điểm còn thiếu.
+  - ok  → chuyển sang bước 4; có thể lưu lại mae_px làm chỉ số chất lượng.
 
 Bước 4 — Streaming
-  Lần sau mở phiên: client tải model đã lưu từ backend
-  (GET /api/calibrations/active/model) → POST /session mới →
-  POST /session/{sid}/import (bỏ qua bước 2-3, session chuyển ngay sang ready) →
-  mở WebSocket /session/{sid}/stream: gửi binary JPEG, nhận JSON {ok, x, y}.
+  Backend mở proxy WebSocket tới /session/{sid}/stream, chuyển tiếp binary JPEG
+  (client → server) và JSON kết quả (server → client) nguyên dạng.
+  Lưu ý: proxy phải giữ nguyên kiểu message — binary thì forward binary, text thì forward text.
 
 Dọn dẹp
-  Khi phiên kết thúc (client đóng trang / stream xong), client gọi
+  Khi phiên kết thúc (client đóng trang / stream xong), backend gọi
   DELETE /session/{sid} để trả slot về giới hạn 100 session.
+
+Tái sử dụng calibration (bỏ qua bước 2-3)
+  Lần sau: POST /session mới → POST /session/{sid}/import với file .ubj đã lưu
+  trong DB từ lần trước → stream ngay.
 ```
 
 Ví dụ gọi tuần tự bằng Python:
@@ -409,7 +389,7 @@ Ví dụ gọi tuần tự bằng Python:
 import json
 import urllib.request
 
-BASE = "api.nmhieu.online"
+BASE = "http://localhost:8000"
 
 # 1. Tạo session
 points = [
@@ -460,8 +440,7 @@ print(resp)  # {"status": "ok", "n_samples": 25, "mae_px": ...}
 - [ ] Theo dõi `GET /session/{sid}` trong lúc thu mẫu để biết điểm nào còn thiếu.
 - [ ] Xử lý `status` (không chỉ HTTP code) ở `/calibrate` và `/import`.
 - [ ] Nhân kích thước viewport ở client khi hiển thị; chấp nhận tọa độ âm / > 1.
-- [ ] WebSocket stream: client gửi binary JPEG (không ép kiểu message), nhận text JSON `{ok, x, y}`; sẵn sàng tọa độ âm / > 1.
+- [ ] Proxy WebSocket phải forward nguyên dạng binary/text, không ép kiểu message.
 - [ ] Gọi `DELETE /session/{sid}` khi kết thúc để không chạm giới hạn 100 session.
 - [ ] Lưu file `.ubj` từ `/model` vào DB để tái sử dụng qua `/import` (tránh calibration lại mỗi phiên).
 - [ ] Tự bảo vệ API này (không có auth), không để lộ `session_id` ra ngoài phạm vi kiểm soát.
-- [ ] Xoá session qua `DELETE /session/{sid}` khi đóng trang để không chạm giới hạn 100 session.

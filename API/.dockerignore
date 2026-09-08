@@ -1,0 +1,38 @@
+# ============================================================
+# .dockerignore — loại file không cần thiết khỏi build context
+# ============================================================
+
+# --- Weights: tải lúc runtime (entrypoint.sh chạy download_weights.py) ---
+weights/
+*.safetensors
+*.tflite
+*.ubj
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Git & bí mật ---
+.git/
+.gitignore
+.env
+.env.*
+
+# --- Tài liệu & compose (không cần trong image) ---
+README.md
+DOCKER.md
+PLAN.md
+*.md
+docker-compose*.yml
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store
