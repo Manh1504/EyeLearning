@@ -86,7 +86,7 @@ services:
     # Không publish 8001 ra host — chỉ nginx truy cập nội bộ.
 
   gaze:
-    image: hieunm1501/gaze-api:gpu-v2
+    image: ghcr.io/manh1504/eyelearning-gaze:latest
     container_name: eyetracking-gaze
     pull_policy: always
     restart: unless-stopped
@@ -96,6 +96,7 @@ services:
       - gaze-weights:/app/weights
     gpus: all
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
+    # Build từ ./API/Dockerfile, weights tải runtime vào volume (xem API/download_weights.py)
 
   nginx:
     image: ghcr.io/manh1504/eyelearning-nginx:latest
