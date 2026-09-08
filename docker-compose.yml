@@ -39,8 +39,9 @@ services:
     container_name: eyetracking-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:6379:6379"  # prod: chỉ tool trên host truy cập; app dùng service name `redis:6379`
+    # Không publish ra host — chỉ backend dùng nội bộ qua redis:6379 (tránh conflict 6379 trên host)
+    expose:
+      - "6379"
     volumes:
       - redis-data:/data
     healthcheck:
