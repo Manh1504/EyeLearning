@@ -15,7 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useGazeTracker } from '@/hooks/use-gaze-tracker';
-import { useCourseOutline, useLessonSlides, useMyEnrollments } from '@/hooks/use-student';
+import { useCourseOutline, useLessonProgress, useLessonSlides, useMyEnrollments } from '@/hooks/use-student';
 import {
   createLearningSession,
   getDeviceFingerprint,
@@ -50,6 +50,8 @@ export default function CourseLearningPage() {
   const [activeLessonId, setActiveLessonId] = useState(requestedLessonId ?? '');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [gazePoint, setGazePoint] = useState<{ x: number; y: number } | null>(null);
+  const [showResume, setShowResume] = useState(false);
+  const [resumeHandled, setResumeHandled] = useState<string | null>(null);
   const slideImgRef = useRef<HTMLImageElement>(null);
   // Có model calibration trên backend cho (user, device) chưa → tracker quyết
   // định stream thật hay mô phỏng.
@@ -99,6 +101,7 @@ export default function CourseLearningPage() {
 
   const { data: slides = [] } = useLessonSlides(activeLessonId, activeLesson);
   const total = slides.length;
+  const { data: progress } = useLessonProgress(activeLessonId);
   // Đổi bài có ít slide hơn → quay về slide đầu (render-phase adjust).
   if (total > 0 && currentSlide > total - 1) setCurrentSlide(0);
   const currentContent = slides[currentSlide];
@@ -152,7 +155,9 @@ export default function CourseLearningPage() {
     calibrated: gazeCalibrated,
     allowSimulation: false,
     onPoint: useCallback(
-      (x: number, y: number) => {
+      (x: number, y: number, source: string) => {
+        // Pha 2: chặn dữ liệu mô phỏng gửi nhầm gaze-samples
+        if (source !== 'real') return;
         const slide = slides[currentSlide];
         const img = slideImgRef.current;
         const rect = img?.getBoundingClientRect();
@@ -221,6 +226,16 @@ export default function CourseLearningPage() {
     return () => window.clearTimeout(timer);
   }, [activeLessonId, currentSlide, total]);
 
+  // Hiện dialog "Học tiếp?" khi có lịch sử
+  useEffect(() => {
+    if (!activeLessonId || !progress || total === 0) return;
+    if (resumeHandled === activeLessonId) return;
+    if (progress.completed) return;
+    if (progress.lastSlide > 0 && progress.lastSlide < total) {
+      setShowResume(true);
+    }
+  }, [activeLessonId, progress, total, resumeHandled]);
+
   const selectLesson = (lessonId: string) => {
     setActiveLessonId(lessonId);
     setCurrentSlide(0);
@@ -237,6 +252,15 @@ export default function CourseLearningPage() {
 
   const toggleModule = (moduleId: string) => {
     setOpenModules((prev) => ({ ...prev, [moduleId]: !prev[moduleId] }));
+  };
+
+  const handleComplete = () => {
+    if (!activeLessonId) return;
+    patchLessonProgress(activeLessonId, currentSlide, true)
+      .then(() => {
+        if (nextLesson) selectLesson(nextLesson.id);
+      })
+      .catch(() => {});
   };
 
   const outline = (
@@ -569,11 +593,28 @@ export default function CourseLearningPage() {
                 </span>
               </div>
 
-              {currentSlide === total - 1 && total > 0 && nextLesson ? (
-                <Button size="sm" onClick={() => selectLesson(nextLesson.id)}>
-                  Bài tiếp theo
-                  <RiArrowRightSLine />
-                </Button>
+              {currentSlide === total - 1 && total > 0 ? (
+                progress?.completed ? (
+                  nextLesson ? (
+                    <Button size="sm" onClick={() => selectLesson(nextLesson.id)}>
+                      Bài tiếp theo
+                      <RiArrowRightSLine />
+                    </Button>
+                  ) : (
+                    <span className="hidden items-center gap-1.5 text-xs font-medium text-emerald-600 sm:inline-flex">
+                      <RiCheckboxCircleFill className="h-4 w-4" />
+                      Đã hoàn thành
+                    </span>
+                  )
+                ) : (
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={handleComplete}
+                  >
+                    Hoàn thành
+                  </Button>
+                )
               ) : (
                 <Button
                   variant="outline"
@@ -591,6 +632,41 @@ export default function CourseLearningPage() {
           </footer>
         </main>
       </div>
+
+      {showResume && progress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-foreground">Bạn có muốn học tiếp?</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Lần trước bạn dừng ở trang {progress.lastSlide + 1}/{total}. Tiếp tục từ đó hay bắt đầu lại?
+            </p>
+            <div className="mt-6 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setCurrentSlide(0);
+                  patchLessonProgress(activeLessonId, 0).catch(() => {});
+                  setShowResume(false);
+                  setResumeHandled(activeLessonId);
+                }}
+              >
+                Bắt đầu lại
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  setCurrentSlide(progress.lastSlide);
+                  setShowResume(false);
+                  setResumeHandled(activeLessonId);
+                }}
+              >
+                Học tiếp
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

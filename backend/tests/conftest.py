@@ -7,6 +7,9 @@ os.environ.setdefault(
     "DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5435/eyetracking_test",
 )
+os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-pytest-please-change")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+os.environ.setdefault("AI_HTTP_URL", "http://127.0.0.1:8000")
 os.environ["MEDIA_DIR"] = os.path.join(tempfile.gettempdir(), "eyelearning-test-media")
 
 import pytest

@@ -56,6 +56,10 @@ async def _get_course_or_404(db: AsyncSession, course_id: str) -> Course:
     return course
 
 
+def _escape_like(q: str) -> str:
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 async def _get_owned_course(db: AsyncSession, course_id: str, user: User) -> Course:
     """Khóa học mà user quản lý được (admin hoặc chủ khóa)."""
     course = await _get_course_or_404(db, course_id)
@@ -99,7 +103,8 @@ async def list_teacher_courses(
         status_id = await _course_status_id(db, status_filter)
         stmt = stmt.where(Course.status_id == status_id)
     if q:
-        stmt = stmt.where(Course.title.ilike(f"%{q}%"))
+        esc = _escape_like(q)
+        stmt = stmt.where(Course.title.ilike(f"%{esc}%", escape="\\"))
     stmt = stmt.order_by(Course.updated_at.desc())
     courses = list((await db.execute(stmt)).scalars().all())
 
@@ -420,12 +425,13 @@ async def list_student_directory(
         .limit(200)
     )
     if q and q.strip():
-        like = f"%{q.strip()}%"
+        esc = _escape_like(q.strip())
+        like = f"%{esc}%"
         stmt = stmt.where(
             or_(
-                UserProfile.full_name.ilike(like),
-                StudentProfile.student_code.ilike(like),
-                User.email.ilike(like),
+                UserProfile.full_name.ilike(like, escape="\\"),
+                StudentProfile.student_code.ilike(like, escape="\\"),
+                User.email.ilike(like, escape="\\"),
             )
         )
     rows = (await db.execute(stmt)).all()

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.helpers import gradient_for
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, Enrollment, Lesson, LessonProgress, Module
@@ -103,7 +104,11 @@ async def my_enrollments(
     return out
 
 
-@router.post("/api/courses/{course_id}/enroll", status_code=201)
+@router.post(
+    "/api/courses/{course_id}/enroll",
+    status_code=201,
+    dependencies=[Depends(rate_limit(10, 60, "enroll"))],
+)
 async def enroll(
     course_id: str,
     user: User = Depends(get_current_user),
@@ -127,7 +132,15 @@ async def enroll(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Đã đăng ký khóa học này")
     enrollment = Enrollment(course_id=course_id, student_id=user.id)
     db.add(enrollment)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as exc:  # race condition: unique violation
+        await db.rollback()
+        from sqlalchemy.exc import IntegrityError
+
+        if isinstance(exc, IntegrityError) or "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Đã đăng ký khóa học này") from exc
+        raise
     await db.refresh(enrollment)
     return {"ok": True, "enrollmentId": enrollment.id}
 

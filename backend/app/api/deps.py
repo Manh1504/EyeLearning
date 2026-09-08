@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWTError
 from sqlalchemy import select
@@ -13,15 +13,29 @@ oauth2_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if credentials is None:
+    # 2a: ưu tiên Authorization header (memory token), fallback httpOnly cookie access_token
+    # Nếu auth qua cookie cho state-changing thì verify CSRF
+    raw_token: str | None = None
+    via_cookie = False
+    if credentials is not None:
+        raw_token = credentials.credentials
+    else:
+        raw_token = request.cookies.get("access_token")
+        via_cookie = raw_token is not None
+    if raw_token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Chưa đăng nhập"
         )
+    if via_cookie and request.method.upper() in ("POST", "PATCH", "PUT", "DELETE"):
+        from app.core.csrf import verify_csrf
+
+        verify_csrf(request)
     try:
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(raw_token)
     except PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không hợp lệ"

@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import can_access_course, can_manage_course, require_roles
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, Lesson, LessonContent, Module
@@ -54,7 +55,7 @@ async def get_lesson_heatmap(
     return stats
 
 
-@router.post("/teacher/courses/{course_id}/recompute")
+@router.post("/teacher/courses/{course_id}/recompute", dependencies=[Depends(rate_limit(5, 60, "recompute"))])
 async def recompute_course_analytics(
     course_id: str,
     user: User = Depends(require_roles("teacher", "admin")),

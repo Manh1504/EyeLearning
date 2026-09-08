@@ -37,6 +37,7 @@ class GazeSampleIn(CamelModel):
 class GazeBatchIn(CamelModel):
     learning_session_id: str | None = None
     samples: list[GazeSampleIn] = Field(min_length=1)
+    source: str | None = Field(default="real", pattern="^(real|simulated)$")
 
 
 class GazeBatchOut(CamelModel):

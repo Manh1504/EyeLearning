@@ -4,7 +4,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { LessonItem } from '@/lib/types/domain';
 import {
-  fetchMyEnrollments, fetchMyLearningStats, fetchCourseOutline, fetchLessonSlides,
+  fetchMyEnrollments, fetchMyLearningStats, fetchCourseOutline, fetchLessonSlides, fetchLessonProgress,
 } from '@/lib/api/student';
 
 export function useMyEnrollments() {
@@ -27,6 +27,14 @@ export function useLessonSlides(lessonId: string, _lesson?: LessonItem) {
   return useQuery({
     queryKey: ['student', 'lesson-slides', lessonId],
     queryFn: () => (lessonId ? fetchLessonSlides(lessonId) : Promise.resolve([])),
+    enabled: Boolean(lessonId),
+  });
+}
+
+export function useLessonProgress(lessonId: string) {
+  return useQuery({
+    queryKey: ['student', 'lesson-progress', lessonId],
+    queryFn: () => fetchLessonProgress(lessonId),
     enabled: Boolean(lessonId),
   });
 }

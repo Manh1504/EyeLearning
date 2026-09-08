@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
+    # Cookie auth (httpOnly) — 2a hybrid: access memory + refresh httpOnly
+    # Mặc định an toàn prod: Secure=True khi không DEBUG, dev tự hạ xuống
+    cookie_secure: bool | None = None  # None = tự suy ra từ debug (True prod, False dev/localhost)
+    cookie_samesite: str = "lax"  # lax đủ cho same-site rewrite, strict nếu muốn
+    cookie_domain: str | None = None  # None = host-only (khuyến nghị cho rewrite)
+
+    @property
+    def cookie_secure_resolved(self) -> bool:
+        if self.cookie_secure is not None:
+            return self.cookie_secure
+        return not self.debug
+
     gaze_downsample_hz: float = 4.0
     gaze_batch_max: int = 2000
 

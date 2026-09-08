@@ -84,25 +84,36 @@ export function createLearningSession(input: CreateLearningSessionInput): Promis
   });
 }
 
-// POST /api/lessons/:lessonId/gaze-samples { learningSessionId, samples }
+// POST /api/lessons/:lessonId/gaze-samples { learningSessionId, samples, source }
 export function postGazeSamples(
   lessonId: string,
   samples: GazeSample[],
   learningSessionId?: string,
+  source: 'real' | 'simulated' = 'real',
 ): Promise<{ ok: boolean; inserted?: number }> {
   return apiFetch<{ ok: boolean; inserted?: number }>(`/api/lessons/${lessonId}/gaze-samples`, {
     method: 'POST',
-    body: { learningSessionId, samples },
+    body: { learningSessionId, samples, source },
   });
+}
+
+// GET /api/lessons/:lessonId/progress
+export function fetchLessonProgress(
+  lessonId: string,
+): Promise<{ lastSlide: number; viewed: number[]; completed: boolean; updatedAt: string | null }> {
+  return apiFetch<{ lastSlide: number; viewed: number[]; completed: boolean; updatedAt: string | null }>(
+    `/api/lessons/${lessonId}/progress`,
+  );
 }
 
 // PATCH /api/lessons/:lessonId/progress { last_slide }
 export function patchLessonProgress(
   lessonId: string,
   lastSlide: number,
+  completed?: boolean,
 ): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/lessons/${lessonId}/progress`, {
     method: 'PATCH',
-    body: { lastSlide },
+    body: { lastSlide, ...(completed !== undefined ? { completed } : {}) },
   });
 }

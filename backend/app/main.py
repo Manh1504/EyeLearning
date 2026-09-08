@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
     admin,
@@ -13,6 +12,7 @@ from app.api.routes import (
     enrollments,
     gaze,
     lessons,
+    media,
     modules,
     proxy,
     users,
@@ -23,6 +23,8 @@ from app.db.redis import close_redis, init_redis
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if "*" in settings.cors_origin_list:
+        raise RuntimeError("CORS_ORIGINS không được chứa '*' khi allow_credentials=True — hãy liệt kê origin cụ thể")
     settings.media_path.mkdir(parents=True, exist_ok=True)
     await init_redis()
     yield
@@ -50,6 +52,7 @@ app.include_router(gaze.router)
 app.include_router(calibration.router)
 app.include_router(analytics.router)
 app.include_router(proxy.router)
+app.include_router(media.router)
 
 
 @app.get("/health", tags=["system"])
@@ -58,6 +61,5 @@ async def health():
 
 
 # Slide ảnh render từ PDF (đường dẫn trong lesson_contents.image_url bắt đầu /media).
-# Tạo thư mục tránh lỗi khi không có file nào.
+# Tạo thư mục tránh lỗi khi không có file nào. /media giờ qua router có auth (media.py)
 settings.media_path.mkdir(parents=True, exist_ok=True)
-app.mount("/media", StaticFiles(directory=str(settings.media_path)), name="media")

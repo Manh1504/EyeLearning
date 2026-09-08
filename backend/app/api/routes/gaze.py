@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core import rediscache
 from app.core.config import settings
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.calibration import CalibrationParam, Device
@@ -149,7 +150,11 @@ def _ts_to_datetime(ts_ms: float) -> datetime:
     return dt
 
 
-@router.post("/api/lessons/{lesson_id}/gaze-samples", response_model=GazeBatchOut)
+@router.post(
+    "/api/lessons/{lesson_id}/gaze-samples",
+    response_model=GazeBatchOut,
+    dependencies=[Depends(rate_limit(60, 60, "gaze"))],
+)
 async def post_gaze_samples(
     lesson_id: str,
     body: GazeBatchIn,
@@ -159,6 +164,10 @@ async def post_gaze_samples(
     lesson = await db.get(Lesson, lesson_id)
     if lesson is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+
+    if body.source == "simulated":
+        # Chặn dữ liệu mô phỏng làm nhiễu heatmap/engagement — chỉ cho real
+        return GazeBatchOut(ok=True, inserted=0)
 
     if len(body.samples) > settings.gaze_batch_max:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Batch quá lớn")

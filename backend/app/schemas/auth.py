@@ -5,11 +5,11 @@ from app.schemas.common import CamelModel
 
 class LoginRequest(CamelModel):
     email: EmailStr
-    password: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=8, max_length=72)
 
 
 class RefreshRequest(CamelModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class UserSummary(CamelModel):

@@ -1,14 +1,12 @@
 // lib/api/client.ts — Fetch wrapper cho backend.
 //   - Gọi /api/* (relative) — Next.js rewrite -> backend
-//   - Tự gắn Authorization header từ localStorage (khóa 'auth_token')
-//   - Khi access token hết hạn (401) → tự refresh bằng refresh token rồi retry 1 lần
+//   - 2a hybrid: accessToken lưu memory-only, refreshToken httpOnly cookie
+//   - Gửi credentials:'include' để cookie httpOnly được gửi kèm
+//   - Khi 401 → tự refresh qua cookie rồi retry 1 lần
 
 function normalizeApiUrl(url: string): string {
-  // Nếu đã là relative path (bắt đầu với /) thì giữ nguyên
   if (url.startsWith('/')) return url;
-  // Nếu đã có protocol thì giữ nguyên
   if (url.startsWith('http')) return url;
-  // Không thì thêm https://
   return `https://${url}`;
 }
 
@@ -16,21 +14,12 @@ export const API_BASE_URL = normalizeApiUrl(
   process.env.NEXT_PUBLIC_API_URL ?? 'server.nmhieu.online'
 );
 
-// Resolve đường dẫn file media (ảnh slide render từ PDF) về URL có thể dùng cho <img>.
-// - URL tuyệt đối http(s): giữ nguyên.
-// - Đường dẫn tương đối bắt đầu bằng "/" (vd /media/...): đi qua Next.js rewrite (/media/:path*)
-//   nên dùng nguyên dạng, không ghép API_BASE_URL.
-// - Các dạng khác: ghép API_BASE_URL.
 export function resolveMediaUrl(raw: string | null | undefined): string | null {
   if (!raw) return null;
   if (/^https?:\/\//.test(raw)) return raw;
   if (raw.startsWith('/')) return raw;
   return `${API_BASE_URL}${raw}`;
 }
-
-const TOKEN_KEY = 'auth_token';
-const REFRESH_KEY = 'refresh_token';
-const USER_KEY = 'auth_user';
 
 export class ApiError extends Error {
   constructor(
@@ -42,7 +31,6 @@ export class ApiError extends Error {
   }
 }
 
-// Giới hạn upload (phải khớp với client_max_body_size của nginx).
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = `${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`;
 
@@ -54,7 +42,6 @@ export interface ApiRequestOptions {
 }
 
 function buildUrl(path: string, params?: ApiRequestOptions['params']) {
-  // Use relative path for API calls — Next.js rewrite sẽ handle
   let url = path;
   if (params) {
     const searchParams = new URLSearchParams();
@@ -67,38 +54,74 @@ function buildUrl(path: string, params?: ApiRequestOptions['params']) {
   return url;
 }
 
-function getToken(): string | null {
-  return globalThis.localStorage?.getItem(TOKEN_KEY) ?? null;
+// ── 2a: memory-only access token ──────────────────────────────
+let memoryAccessToken: string | null = null;
+
+export function setMemoryAccessToken(token: string | null): void {
+  memoryAccessToken = token;
 }
 
-function clearAuthStorage(): void {
-  for (const key of [TOKEN_KEY, REFRESH_KEY, USER_KEY, 'gaze_params', 'gaze_calibrated_at']) {
-    globalThis.localStorage?.removeItem(key);
-  }
+export function getMemoryAccessToken(): string | null {
+  return memoryAccessToken;
 }
 
-// POST /api/auth/refresh — trả TokenPair (accessToken, refreshToken, user)
-async function tryRefresh(): Promise<boolean> {
-  const refreshToken = globalThis.localStorage?.getItem(REFRESH_KEY) ?? null;
-  if (!refreshToken) return false;
+export function clearMemoryToken(): void {
+  memoryAccessToken = null;
+}
+
+function getAuthHeader(): Record<string, string> {
+  return memoryAccessToken ? { Authorization: `Bearer ${memoryAccessToken}` } : {};
+}
+
+function getCsrfHeader(): Record<string, string> {
+  if (typeof document === 'undefined') return {};
+  const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+  const token = m ? decodeURIComponent(m[1]) : null;
+  return token ? { 'X-CSRF-Token': token } : {};
+}
+
+// Dọn localStorage cũ (migration từ bản trước) — chạy 1 lần khi module load ở client
+if (typeof window !== 'undefined') {
   try {
+    for (const k of ['auth_token', 'refresh_token', 'auth_user', 'gaze_params']) {
+      if (globalThis.localStorage?.getItem(k) !== null) {
+        // chỉ xóa token/user cũ, giữ gaze_session_* và device fingerprint
+        if (k === 'auth_token' || k === 'refresh_token' || k === 'auth_user') {
+          globalThis.localStorage.removeItem(k);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+// POST /api/auth/refresh — đọc refresh_token từ httpOnly cookie
+async function tryRefresh(): Promise<boolean> {
+  try {
+    const csrf = (() => {
+      if (typeof document === 'undefined') return {};
+      const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+      return m ? { 'X-CSRF-Token': decodeURIComponent(m[1]) } : {};
+    })();
     const res = await fetch(`/api/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(csrf as Record<string, string>) },
+      body: JSON.stringify({}), // body rỗng — server đọc cookie
     });
     if (!res.ok) return false;
     const data = await res.json();
-    globalThis.localStorage?.setItem(TOKEN_KEY, data.accessToken);
-    globalThis.localStorage?.setItem(REFRESH_KEY, data.refreshToken);
-    globalThis.localStorage?.setItem(USER_KEY, JSON.stringify(data.user));
+    if (data?.accessToken) {
+      memoryAccessToken = data.accessToken;
+    } else if (data?.access_token) {
+      memoryAccessToken = data.access_token;
+    }
+    // refresh_token mới đã được Set-Cookie bởi server, không cần lưu JS
     return true;
   } catch {
     return false;
   }
 }
 
-// Dùng chung một lần refresh khi nhiều request cùng 401 để tránh refresh chồng nhau.
 let inFlightRefresh: Promise<boolean> | null = null;
 function refreshAccessToken(): Promise<boolean> {
   if (!inFlightRefresh) {
@@ -109,6 +132,10 @@ function refreshAccessToken(): Promise<boolean> {
   return inFlightRefresh;
 }
 
+function notifyAuthChange(): void {
+  globalThis.window?.dispatchEvent(new Event('gaze-auth-change'));
+}
+
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params, signal } = options;
 
@@ -116,22 +143,24 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     fetch(buildUrl(path, params), {
       method,
       signal,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        ...getAuthHeader(),
+        ...getCsrfHeader(),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
 
   let res = await doFetch();
 
-  // Access token hết hạn → refresh 1 lần rồi retry.
   if (res.status === 401) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
       res = await doFetch();
     } else {
-      clearAuthStorage();
+      clearMemoryToken();
+      notifyAuthChange();
     }
   }
 
@@ -146,8 +175,6 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   return res.json() as Promise<T>;
 }
 
-// apiFetch dạng multipart/form-data (tự gắn Authorization, refresh 1 lần khi 401).
-// KHÔNG đặt header Content-Type — browser tự set boundary với FormData.
 export async function apiFetchMultipart<T>(
   path: string,
   form: FormData,
@@ -156,7 +183,8 @@ export async function apiFetchMultipart<T>(
   const doFetch = (): Promise<Response> =>
     fetch(buildUrl(path), {
       method,
-      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      credentials: 'include',
+      headers: { ...getAuthHeader(), ...getCsrfHeader() },
       body: form,
     });
 
@@ -167,7 +195,8 @@ export async function apiFetchMultipart<T>(
     if (refreshed) {
       res = await doFetch();
     } else {
-      clearAuthStorage();
+      clearMemoryToken();
+      notifyAuthChange();
     }
   }
 
@@ -185,14 +214,14 @@ export async function apiFetchMultipart<T>(
   return res.json() as Promise<T>;
 }
 
-// GET trả về Blob (file .ubj) — có Authorization + refresh 1 lần.
 export async function apiFetchBlob(
   path: string,
   params?: ApiRequestOptions['params'],
 ): Promise<Blob> {
   const doFetch = (): Promise<Response> =>
     fetch(buildUrl(path, params), {
-      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+      credentials: 'include',
+      headers: { ...getAuthHeader(), ...getCsrfHeader() },
     });
 
   let res = await doFetch();
@@ -202,7 +231,8 @@ export async function apiFetchBlob(
     if (refreshed) {
       res = await doFetch();
     } else {
-      clearAuthStorage();
+      clearMemoryToken();
+      notifyAuthChange();
     }
   }
 

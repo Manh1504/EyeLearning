@@ -21,11 +21,13 @@ import {
   createGazeSession,
   formatMaePercent,
   MAX_TRAIN_MAE,
+  saveCalibrationToBackend,
   storeGazeSession,
   submitCalibrationSample,
   trainGazeSession,
   type CalPoint,
 } from '@/lib/api/calibration';
+import { getDeviceFingerprint } from '@/lib/api/student';
 
 const SAMPLES_PER_POINT = 5;       // server yêu cầu tối thiểu MIN_SAMPLES=5/điểm
 const MAX_CAPTURES_PER_POINT = 10; // giới hạn số frame chụp lại mỗi điểm
@@ -158,6 +160,13 @@ export default function Calibration() {
 
     console.log('[calibration] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel });
     storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
+    // Lưu lên Postgres để tái sử dụng 20-30 ngày (không phụ thuộc AI RAM 30p)
+    void saveCalibrationToBackend({
+      deviceFingerprint: getDeviceFingerprint(),
+      maePx: trained.maePx ?? null,
+      screenWidth: window.innerWidth,
+      screenHeight: window.innerHeight,
+    });
     goToCourse();
   }, [sessionId, resetCalibration, goToCourse]);
 

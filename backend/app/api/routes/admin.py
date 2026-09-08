@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_roles
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, CourseTeacher
@@ -17,6 +18,10 @@ async def _course_or_404(db: AsyncSession, course_id: str) -> Course:
     if course is None or course.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khóa học")
     return course
+
+
+def _escape_like(q: str) -> str:
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def _teacher_or_404(db: AsyncSession, teacher_id: str) -> TeacherProfile:
@@ -44,9 +49,10 @@ async def list_teachers(
         .limit(500)
     )
     if q and q.strip():
-        like = f"%{q.strip()}%"
+        esc = _escape_like(q.strip())
+        like = f"%{esc}%"
         stmt = stmt.where(
-            UserProfile.full_name.ilike(like) | User.email.ilike(like)
+            UserProfile.full_name.ilike(like, escape="\\") | User.email.ilike(like, escape="\\")
         )
     rows = (await db.execute(stmt)).all()
     return [
@@ -116,7 +122,7 @@ async def list_course_teachers(
     return out
 
 
-@router.post("/courses/{course_id}/teachers", status_code=201)
+@router.post("/courses/{course_id}/teachers", status_code=201, dependencies=[Depends(rate_limit(10, 60, "admin_assign"))])
 async def assign_teachers(
     course_id: str,
     body: TeacherAssignIn,

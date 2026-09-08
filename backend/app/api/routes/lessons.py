@@ -32,7 +32,15 @@ from app.schemas.gaze import OkOut, ProgressPatchIn
 router = APIRouter(tags=["lessons"])
 
 
+def _validate_uuid(value: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+
+
 async def _get_lesson_or_404(db: AsyncSession, lesson_id: str) -> Lesson:
+    _validate_uuid(lesson_id)
     lesson = await db.get(Lesson, lesson_id)
     if lesson is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
@@ -160,7 +168,12 @@ async def add_slide(
 
 
 def _lesson_media_dir(lesson_id: str) -> Path:
-    return settings.media_path / "lessons" / str(lesson_id)
+    _validate_uuid(lesson_id)
+    p = settings.media_path / "lessons" / str(lesson_id)
+    # Ngăn traversal: đảm bảo nằm trong media_path
+    if not p.resolve().is_relative_to(settings.media_path.resolve()):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Lesson ID không hợp lệ")
+    return p
 
 
 def _clear_lesson_media(lesson_id: str) -> None:
@@ -312,6 +325,32 @@ async def get_lesson_contents(
         )
         for s in slides
     ]
+
+
+@router.get("/api/lessons/{lesson_id}/progress")
+async def get_lesson_progress(
+    lesson_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    lesson = await _get_lesson_or_404(db, lesson_id)
+    enrollment = await _get_enrollment_for_lesson(db, lesson, user)
+    if enrollment is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Chưa đăng ký khóa học")
+    stmt = select(LessonProgress).where(
+        LessonProgress.enrollment_id == enrollment.id,
+        LessonProgress.lesson_id == lesson_id,
+    )
+    progress = (await db.execute(stmt)).scalar_one_or_none()
+    if progress is None:
+        return {"lastSlide": 0, "viewed": [], "completed": False, "updatedAt": None}
+    max_viewed = max(progress.viewed_slides) if progress.viewed_slides else 0
+    return {
+        "lastSlide": max(0, max_viewed - 1),
+        "viewed": progress.viewed_slides or [],
+        "completed": progress.status == "completed",
+        "updatedAt": progress.last_watched_at,
+    }
 
 
 @router.patch("/api/lessons/{lesson_id}/progress", response_model=OkOut)

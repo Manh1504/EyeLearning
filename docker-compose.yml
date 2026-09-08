@@ -72,6 +72,8 @@ services:
       GAZE_DOWNSAMPLE_HZ: ${GAZE_DOWNSAMPLE_HZ:-4.0}
       GAZE_BATCH_MAX: ${GAZE_BATCH_MAX:-2000}
       DEBUG: ${DEBUG:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
     volumes:
       - backend-media:/app/media
     healthcheck:

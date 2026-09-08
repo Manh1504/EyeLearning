@@ -19,11 +19,13 @@ import { useCourseOutline } from '@/hooks/use-student';
 import {
   checkFace,
   clearStoredGazeSession,
+  fetchActiveCalibration,
   getGazeSessionStatus,
   getStoredCalibration,
   getStoredGazeSessionId,
   isCalibrationScreenStale,
 } from '@/lib/api/calibration';
+import { getDeviceFingerprint } from '@/lib/api/student';
 import { cn } from '@/lib/utils';
 
 type CameraState = 'idle' | 'checking' | 'ready' | 'error';
@@ -114,12 +116,35 @@ export default function PreLearningCheck() {
         const stored = getStoredCalibration();
         if (cancelled) return;
         if (!stored.calibrated) {
+          // Fallback DB cho trường hợp xóa localStorage nhưng còn hạn 30 ngày
+          const fp0 = getDeviceFingerprint();
+          const active0 = await fetchActiveCalibration(fp0);
+          if (active0?.calibrated && active0.calibratedAt) {
+            const ageDays0 = (Date.now() - new Date(active0.calibratedAt).getTime()) / 86400000;
+            if (ageDays0 < 30) {
+              setIsCalibrated(true);
+              setCalibratedAt(active0.calibratedAt);
+              setScreenStale(isCalibrationScreenStale());
+              return;
+            }
+          }
           setIsCalibrated(false);
           setCalibratedAt(null);
           return;
         }
         const sid = getStoredGazeSessionId();
         if (!sid) {
+          const fp1 = getDeviceFingerprint();
+          const active1 = await fetchActiveCalibration(fp1);
+          if (active1?.calibrated && active1.calibratedAt) {
+            const ageDays1 = (Date.now() - new Date(active1.calibratedAt).getTime()) / 86400000;
+            if (ageDays1 < 30) {
+              setIsCalibrated(true);
+              setCalibratedAt(active1.calibratedAt);
+              setScreenStale(isCalibrationScreenStale());
+              return;
+            }
+          }
           setIsCalibrated(false);
           setCalibratedAt(null);
           return;
@@ -127,6 +152,21 @@ export default function PreLearningCheck() {
         const status = await getGazeSessionStatus(sid);
         if (cancelled) return;
         if (!status.ready) {
+          // Fallback: kiểm tra Postgres tái sử dụng 20-30 ngày (không phụ thuộc AI RAM)
+          const fp = getDeviceFingerprint();
+          const active = await fetchActiveCalibration(fp);
+          if (active?.calibrated && active.calibratedAt) {
+            const ageDays = (Date.now() - new Date(active.calibratedAt).getTime()) / 86400000;
+            if (ageDays < 30) {
+              setIsCalibrated(true);
+              setCalibratedAt(active.calibratedAt);
+              setScreenStale(isCalibrationScreenStale());
+              setSessionIssue(
+                'Phiên AI đã hết hạn nhưng vẫn còn hiệu chỉnh trong 30 ngày — sẽ thực hiện kiểm tra nhanh 3-5 điểm trước khi học.',
+              );
+              return;
+            }
+          }
           clearStoredGazeSession();
           setIsCalibrated(false);
           setCalibratedAt(null);

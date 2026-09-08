@@ -40,12 +40,15 @@ export function LoginForm({
     try {
       const result = await login(email, password);
       const role = primaryRole(result.user.roles);
-      const target =
+      const roleTarget =
         role === 'student'
           ? '/student/my-courses'
           : role === 'admin'
             ? '/admin/courses'
             : '/teacher/courses';
+      // tôn trọng ?next từ middleware nếu có
+      const next = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+      const target = next && (next.startsWith(`/${role}`) || role === 'admin' || next.startsWith('/student') || next.startsWith('/teacher') || next.startsWith('/admin')) ? next : roleTarget;
       router.replace(target);
     } catch (caught) {
       setError(

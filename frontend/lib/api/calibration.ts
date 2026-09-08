@@ -271,6 +271,45 @@ export function clearStoredGazeSession(): void {
   globalThis.localStorage?.removeItem(DPR_KEY);
 }
 
+// Lưu calibration lên Postgres để tái sử dụng 20-30 ngày (chưa tính 10k scale)
+export async function saveCalibrationToBackend(params: {
+  deviceFingerprint: string;
+  maePx: number | null;
+  screenWidth: number;
+  screenHeight: number;
+}): Promise<boolean> {
+  try {
+    const { apiFetch } = await import('./client');
+    await apiFetch('/api/calibrations', {
+      method: 'POST',
+      body: {
+        deviceFingerprint: params.deviceFingerprint,
+        numPoints: 16,
+        params: [0, 0, 0, 0, 0, 0],
+        screenWidthPx: params.screenWidth,
+        screenHeightPx: params.screenHeight,
+        maePx: params.maePx,
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchActiveCalibration(deviceFingerprint: string): Promise<{ calibrated: boolean; calibratedAt: string | null } | null> {
+  try {
+    const { apiFetch } = await import('./client');
+    const data = await apiFetch<{ calibrated: boolean; calibratedAt: string; maePx?: number }>(
+      '/api/calibrations/active',
+      { params: { deviceFingerprint } },
+    );
+    return { calibrated: data.calibrated, calibratedAt: data.calibratedAt };
+  } catch {
+    return null;
+  }
+}
+
 // WebSocket stream (nối thẳng AI service — không qua proxy, không cần CORS).
 // Production phải dùng wss:// (TLS). Suy ra từ NEXT_PUBLIC_GAZE_URL:
 //   https://... -> wss://..., http://... -> ws://

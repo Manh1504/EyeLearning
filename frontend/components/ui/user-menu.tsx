@@ -43,9 +43,13 @@ export function UserMenu({
     };
   }, [open]);
 
-  const logout = () => {
-    void apiLogout();
-    router.replace('/');
+  const logout = async () => {
+    try {
+      await apiLogout();
+    } finally {
+      router.replace('/');
+      router.refresh();
+    }
   };
 
   return (
