@@ -28,6 +28,37 @@ heatmap_aggregates, aoi_regions, aoi_dwell_stats, engagement_scores,
 slide_coverage_stats, lesson_mastery_scores, auth_sessions CASCADE
 """
 
+# Tự động áp migrations cho DB test (để stack update/recreate vẫn tự migrate)
+# Dùng logic giống CI: chạy toàn bộ db/migrations/*.sql, idempotent nên an toàn
+MIGRATIONS_DIR = None
+try:
+    from pathlib import Path as _P
+    _cand = _P(__file__).resolve().parents[2] / "db" / "migrations"
+    if _cand.is_dir():
+        MIGRATIONS_DIR = _cand
+except Exception:
+    pass
+
+
+async def _apply_migrations():
+    if MIGRATIONS_DIR is None:
+        return
+    import re
+
+    files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    for f in files:
+        raw = f.read_text(encoding="utf-8")
+        if not raw.strip():
+            continue
+        # Bỏ BEGIN/COMMIT ngoài cùng để chạy trong engine.begin() (tránh nested transaction)
+        # Giữ nguyên nội dung idempotent bên trong (IF NOT EXISTS / ON CONFLICT)
+        cleaned = re.sub(r"^\s*BEGIN\s*;\s*", "", raw, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*COMMIT\s*;\s*$", "", cleaned, flags=re.IGNORECASE)
+        if not cleaned.strip():
+            continue
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql(cleaned)
+
 LOOKUPS = """
 INSERT INTO user_statuses (code, label) VALUES ('active', 'Đang hoạt động')
 ON CONFLICT (code) DO NOTHING;
@@ -64,7 +95,18 @@ requires_db = pytest.mark.skipif(
 
 async def _reset_db():
     async with SessionLocal() as session:
-        await session.execute(text(TRUNCATE))
+        try:
+            await session.execute(text(TRUNCATE))
+        except Exception as e:
+            # Bảng mới (008) chưa có trên DB cũ / test DB vừa tạo bằng tay
+            # → tự áp toàn bộ migrations rồi thử lại (idempotent)
+            await session.rollback()
+            msg = str(e).lower()
+            if "does not exist" in msg or "undefinedtable" in msg or "slide_coverage" in msg or "lesson_mastery" in msg:
+                await _apply_migrations()
+                await session.execute(text(TRUNCATE))
+            else:
+                raise
         for stmt in LOOKUPS.strip().split(";"):
             if stmt.strip():
                 await session.execute(text(stmt))

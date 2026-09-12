@@ -20,10 +20,15 @@ services:
 
   # Chạy migration một lần mỗi lần deploy (idempotent) — thay cho bind mount
   # ./db/migrations (không hoạt động khi Portainer deploy từ Git/web-editor).
+  # Có `build` để `docker compose up --build` luôn dùng migrations local (008, ...),
+  # còn khi deploy qua GHCR thì image đã được CI build/push sẵn.
   migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrations
     image: ghcr.io/manh1504/eyelearning-migrations:latest
     container_name: eyetracking-migrate
-    pull_policy: always
+    pull_policy: build
     restart: "no"
     depends_on:
       postgres:
