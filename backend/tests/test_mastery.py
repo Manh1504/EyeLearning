@@ -102,7 +102,7 @@ def test_mastery_endpoint(client):
     r = client.get(
         f"/teacher/lessons/{lesson_id}/mastery",
         headers=auth(teacher),
-        params={"studentId": student_id},
+        params={"student_id": student_id},
     )
     assert r.status_code == 200, r.text
     data = r.json()
