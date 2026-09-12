@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { RiArrowLeftLine, RiMenu2Line, RiCloseLine, RiCheckboxCircleFill, RiArrowLeftSLine, RiArrowRightSLine } from '@remixicon/react';
+import { RiMenu2Line, RiCloseLine, RiCheckboxCircleFill, RiArrowLeftSLine, RiArrowRightSLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { useGazeTracker } from '@/hooks/use-gaze-tracker';
@@ -61,11 +61,14 @@ export default function CourseLearningPage() {
   const flatIndex = allLessons.findIndex((l) => l.id === activeLessonId);
   const nextLesson = allLessons[flatIndex + 1];
 
-  // dwell timer
+  // dwell timer — reset khi đổi bài/slide
   useEffect(() => {
-    setDwellSec(0);
     const t = window.setInterval(() => setDwellSec((s) => s + 1), 1000);
     return () => window.clearInterval(t);
+  }, [activeLessonId, currentSlide]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDwellSec(0);
   }, [activeLessonId, currentSlide]);
 
   const formatDwell = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;

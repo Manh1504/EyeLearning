@@ -2,11 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { RiAddLine, RiSearchLine, RiBookOpenLine, RiGroupLine, RiCheckLine, RiEyeLine } from '@remixicon/react';
+import { RiSearchLine, RiBookOpenLine, RiGroupLine, RiCheckLine, RiEyeLine } from '@remixicon/react';
 
 import { buttonVariants } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
 import { useTeacherCourses } from '@/hooks/use-teacher';
 import { LEVEL_LABEL, STATUS_LABEL } from '@/lib/mock/teacher';
 import type { TeacherCourse } from '@/lib/types/domain';
