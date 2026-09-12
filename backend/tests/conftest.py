@@ -40,24 +40,61 @@ except Exception:
     pass
 
 
+def _split_sql(sql: str) -> list[str]:
+    """Chia file SQL thành từng statement, tôn trọng $$...$$ và '...'."""
+    stmts: list[str] = []
+    buf = ""
+    in_dollar = False
+    in_single = False
+    i = 0
+    import re as _re
+
+    cleaned = _re.sub(r"^\s*BEGIN\s*;\s*", "", sql, flags=_re.IGNORECASE)
+    cleaned = _re.sub(r"\s*COMMIT\s*;\s*$", "", cleaned, flags=_re.IGNORECASE)
+    while i < len(cleaned):
+        if not in_single and cleaned[i : i + 2] == "$$":
+            in_dollar = not in_dollar
+            buf += "$$"
+            i += 2
+            continue
+        if not in_dollar and cleaned[i] == "'":
+            if i + 1 < len(cleaned) and cleaned[i + 1] == "'":
+                buf += "''"
+                i += 2
+                continue
+            in_single = not in_single
+            buf += "'"
+            i += 1
+            continue
+        if not in_dollar and not in_single and cleaned[i] == ";":
+            if buf.strip():
+                stmts.append(buf.strip())
+            buf = ""
+            i += 1
+            continue
+        buf += cleaned[i]
+        i += 1
+    if buf.strip():
+        stmts.append(buf.strip())
+    return [s for s in stmts if s.strip()]
+
+
 async def _apply_migrations():
     if MIGRATIONS_DIR is None:
         return
-    import re
-
     files = sorted(MIGRATIONS_DIR.glob("*.sql"))
     for f in files:
         raw = f.read_text(encoding="utf-8")
         if not raw.strip():
             continue
-        # Bỏ BEGIN/COMMIT ngoài cùng để chạy trong engine.begin() (tránh nested transaction)
-        # Giữ nguyên nội dung idempotent bên trong (IF NOT EXISTS / ON CONFLICT)
-        cleaned = re.sub(r"^\s*BEGIN\s*;\s*", "", raw, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\s*COMMIT\s*;\s*$", "", cleaned, flags=re.IGNORECASE)
-        if not cleaned.strip():
+        stmts = _split_sql(raw)
+        if not stmts:
             continue
         async with engine.begin() as conn:
-            await conn.exec_driver_sql(cleaned)
+            for stmt in stmts:
+                if not stmt.strip():
+                    continue
+                await conn.execute(text(stmt))
 
 LOOKUPS = """
 INSERT INTO user_statuses (code, label) VALUES ('active', 'Đang hoạt động')
