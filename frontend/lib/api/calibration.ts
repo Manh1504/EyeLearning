@@ -353,33 +353,38 @@ export async function updateAdminCalibrationSettings(patch: { enabled: boolean; 
 // Tự động nâng lên wss:// nếu trang đang chạy trên https: (tránh Mixed Content).
 function getGazeWsOrigin(): string {
   // Hỗ trợ cả biến cũ NEXT_PUBLIC_EYE_TRACKING_WS_URL (đã set dạng ws(s)://)
-  const raw = (
+  let raw = (
     process.env.NEXT_PUBLIC_GAZE_URL?.trim() ||
     (process.env as Record<string, string | undefined>).NEXT_PUBLIC_EYE_TRACKING_WS_URL?.trim() ||
     "http://localhost:8000"
   ).replace(/\/+$/, "");
 
+  // Normalize: legacy Vercel env có thể chứa :8443 (nginx chỉ listen 80 sau tunnel,
+  // Cloudflare Edge lo TLS 443). Strip :8443 để WS đi qua 443/wss chuẩn.
+  raw = raw.replace(/:8443(?=\/|$)/, "");
+
   let origin: string;
   if (/^wss?:\/\//i.test(raw)) {
-    origin = raw;
+    origin = raw.replace(/:8443(?=\/|$)/, "");
   } else if (/^https:\/\//i.test(raw)) {
-    origin = raw.replace(/^https:/i, "wss:");
+    origin = raw.replace(/^https:/i, "wss:").replace(/:8443(?=\/|$)/, "");
   } else if (/^http:\/\//i.test(raw)) {
-    origin = raw.replace(/^http:/i, "ws:");
+    origin = raw.replace(/^http:/i, "ws:").replace(/:8443(?=\/|$)/, "");
   } else {
     // Bare host (vd: gaze.eyelearning.id.vn) — suy ra scheme theo page protocol
     const isHttps =
       typeof window !== "undefined"
         ? window.location.protocol === "https:"
         : raw.includes("eyelearning.id.vn") || raw.includes("api.nmhieu.online");
-    origin = `${isHttps ? "wss" : "ws"}://${raw.replace(/^\/+/, "")}`;
+    origin = `${isHttps ? "wss" : "ws"}://${raw.replace(/^\/+/, "").replace(/:8443(?=\/|$)/, "")}`;
   }
 
   // Enforce wss khi page là https (browser chặn ws trên https)
   if (typeof window !== "undefined" && window.location.protocol === "https:" && origin.startsWith("ws://")) {
     origin = origin.replace(/^ws:/, "wss:");
   }
-  return origin;
+  // Strip :8443 lần cuối (đề phòng)
+  return origin.replace(/:8443(?=\/|$)/, "");
 }
 
 export const GAZE_WS_ORIGIN = getGazeWsOrigin();

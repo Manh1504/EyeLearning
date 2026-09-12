@@ -3,40 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import {
-  RiArrowLeftLine,
-  RiArrowLeftSLine,
-  RiArrowRightSLine,
-  RiCheckboxCircleFill,
-  RiCloseLine,
-  RiImageLine,
-  RiMenu2Line,
-} from '@remixicon/react';
+import { RiArrowLeftLine, RiMenu2Line, RiCloseLine, RiCheckboxCircleFill, RiArrowLeftSLine, RiArrowRightSLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { useGazeTracker } from '@/hooks/use-gaze-tracker';
 import { useCourseOutline, useLessonProgress, useLessonSlides, useMyEnrollments } from '@/hooks/use-student';
-import {
-  createLearningSession,
-  getDeviceFingerprint,
-  patchLessonProgress,
-  postGazeSamples,
-} from '@/lib/api/student';
+import { createLearningSession, getDeviceFingerprint, patchLessonProgress, postGazeSamples } from '@/lib/api/student';
 import { getStoredGazeSessionId, screenGazeToSlide } from '@/lib/api/calibration';
 import { resolveMediaUrl } from '@/lib/api/client';
 
-const SLIDE_FALLBACK_IMAGE = 'data:image/svg+xml;charset=utf-8,' +
+const SLIDE_FALLBACK =
+  'data:image/svg+xml;charset=utf-8,' +
   encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">` +
-      `<rect width="100%" height="100%" fill="#e2e8f0"/>` +
-      `<g fill="#94a3b8"><circle cx="400" cy="170" r="64"/>` +
-      `<line x1="300" y1="265" x2="500" y2="265" stroke="#94a3b8" stroke-width="16" stroke-linecap="round"/>` +
-      `<line x1="320" y1="300" x2="480" y2="300" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>` +
-      `<line x1="320" y1="330" x2="480" y2="330" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>` +
-      `</g></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="100%" height="100%" fill="#e2e8f0"/><g fill="#94a3b8"><circle cx="400" cy="170" r="64"/><line x1="300" y1="265" x2="500" y2="265" stroke="#94a3b8" stroke-width="16" stroke-linecap="round"/><line x1="320" y1="300" x2="480" y2="300" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/><line x1="320" y1="330" x2="480" y2="330" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/></g></svg>`,
   );
-
-let lastGazeDebugLog = 0;
 
 export default function CourseLearningPage() {
   const params = useParams();
@@ -53,180 +33,107 @@ export default function CourseLearningPage() {
   const [showResume, setShowResume] = useState(false);
   const [resumeHandled, setResumeHandled] = useState<string | null>(null);
   const slideImgRef = useRef<HTMLImageElement>(null);
-  // Có model calibration trên backend cho (user, device) chưa → tracker quyết
-  // định stream thật hay mô phỏng.
   const [gazeCalibrated, setGazeCalibrated] = useState(false);
-  const [desktopOutlineOpen, setDesktopOutlineOpen] = useState(true);
-  const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false);
+  const [desktopOpen, setDesktopOpen] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
-  // Session theo từng bài đã mở; đổi bài không cần reset phiên cũ.
   const [learningSessionIds, setLearningSessionIds] = useState<Record<string, string>>({});
+  const [dwellSec, setDwellSec] = useState(0);
 
-  const allLessons = useMemo(
-    () => course?.modules.flatMap((module) => module.lessons) ?? [],
-    [course],
-  );
+  const allLessons = useMemo(() => course?.modules.flatMap((m) => m.lessons) ?? [], [course]);
+  const requestedIsValid = !!requestedLessonId && allLessons.some((l) => l.id === requestedLessonId);
+  const activeIsValid = allLessons.some((l) => l.id === activeLessonId);
+  const resolvedLessonId = allLessons.length === 0 ? activeLessonId : requestedIsValid ? (requestedLessonId as string) : activeIsValid ? activeLessonId : allLessons[0]?.id ?? '';
+  if (course && allLessons.length > 0 && resolvedLessonId !== activeLessonId) setActiveLessonId(resolvedLessonId);
+  const resolvedModuleId = course?.modules.find((m) => m.lessons.some((l) => l.id === resolvedLessonId))?.id;
+  if (resolvedModuleId && !openModules[resolvedModuleId]) setOpenModules((p) => ({ ...p, [resolvedModuleId]: true }));
 
-  const requestedIsValid =
-    !!requestedLessonId && allLessons.some((lesson) => lesson.id === requestedLessonId);
-  const activeLessonIsValid = allLessons.some((lesson) => lesson.id === activeLessonId);
-  const resolvedLessonId =
-    allLessons.length === 0
-      ? activeLessonId
-      : requestedIsValid
-        ? (requestedLessonId as string)
-        : activeLessonIsValid
-          ? activeLessonId
-          : allLessons[0].id;
-
-  // Render-phase adjust: tự chọn bài khi outline tải xong mà chưa có bài hợp lệ.
-  if (course && allLessons.length > 0 && resolvedLessonId !== activeLessonId) {
-    setActiveLessonId(resolvedLessonId);
-  }
-  const resolvedModuleId = course?.modules.find((module) =>
-    module.lessons.some((lesson) => lesson.id === resolvedLessonId),
-  )?.id;
-  if (resolvedModuleId && !openModules[resolvedModuleId]) {
-    setOpenModules((prev) => ({ ...prev, [resolvedModuleId]: true }));
-  }
-
-  const activeModule =
-    course?.modules.find((module) =>
-      module.lessons.some((lesson) => lesson.id === activeLessonId),
-    ) ?? course?.modules[0];
-
-  const activeLesson =
-    activeModule?.lessons.find((lesson) => lesson.id === activeLessonId) ??
-    activeModule?.lessons[0];
-
+  const activeModule = course?.modules.find((m) => m.lessons.some((l) => l.id === activeLessonId)) ?? course?.modules[0];
+  const activeLesson = activeModule?.lessons.find((l) => l.id === activeLessonId) ?? activeModule?.lessons[0];
   const { data: slides = [] } = useLessonSlides(activeLessonId, activeLesson);
   const total = slides.length;
   const { data: progress } = useLessonProgress(activeLessonId);
-  // Đổi bài có ít slide hơn → quay về slide đầu (render-phase adjust).
   if (total > 0 && currentSlide > total - 1) setCurrentSlide(0);
   const currentContent = slides[currentSlide];
-  const slideImageUrl = useMemo(
-    () => resolveMediaUrl(currentContent?.imageUrl),
-    [currentContent],
-  );
+  const slideUrl = useMemo(() => resolveMediaUrl(currentContent?.imageUrl), [currentContent]);
+  const completedLessons = allLessons.filter((l) => l.completed).length;
+  const courseProgress = allLessons.length ? Math.round((completedLessons / allLessons.length) * 100) : 0;
+  const flatIndex = allLessons.findIndex((l) => l.id === activeLessonId);
+  const nextLesson = allLessons[flatIndex + 1];
 
-  const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
-  const courseProgress = allLessons.length
-    ? Math.round((completedLessons / allLessons.length) * 100)
-    : 0;
-
-  const flatLessonIndex = allLessons.findIndex((lesson) => lesson.id === activeLessonId);
-  const nextLesson = allLessons[flatLessonIndex + 1];
-
-  // Mở phiên học cho bài đang xem để backend ghi gaze (cần tracking_consent=true).
+  // dwell timer
   useEffect(() => {
-    const enrollment = enrollments.find((e) => e.course.id === courseId);
-    if (!activeLessonId || !enrollment || learningSessionIds[activeLessonId]) return;
+    setDwellSec(0);
+    const t = window.setInterval(() => setDwellSec((s) => s + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [activeLessonId, currentSlide]);
 
+  const formatDwell = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  useEffect(() => {
+    const e = enrollments.find((x) => x.course.id === courseId);
+    if (!activeLessonId || !e || learningSessionIds[activeLessonId]) return;
     let cancelled = false;
     createLearningSession({
-      enrollmentId: enrollment.enrollmentId,
+      enrollmentId: e.enrollmentId,
       lessonId: activeLessonId,
       deviceFingerprint: getDeviceFingerprint(),
       screenWidthPx: window.innerWidth,
       screenHeightPx: window.innerHeight,
       trackingConsent: true,
     })
-      .then((session) => {
+      .then((s) => {
         if (!cancelled) {
-          setLearningSessionIds((prev) => ({ ...prev, [activeLessonId]: session.id }));
+          setLearningSessionIds((p) => ({ ...p, [activeLessonId]: s.id }));
           setGazeCalibrated(Boolean(getStoredGazeSessionId()));
         }
       })
       .catch(() => {});
-
     return () => {
       cancelled = true;
     };
   }, [activeLessonId, courseId, enrollments, learningSessionIds]);
 
-  // Gaze stream: thu thầm, tuyệt đối không render con trỏ gaze lên nội dung.
-  // allowSimulation=false: session hiệu chỉnh chết thì BÁO RÕ (source 'off')
-  // thay vì bơm điểm giả làm nhiễu heatmap trong im lặng.
   const learningSessionId = learningSessionIds[activeLessonId];
-
   const { source: gazeSource } = useGazeTracker({
     enabled: Boolean(activeLessonId && total > 0),
     calibrated: gazeCalibrated,
     allowSimulation: false,
     onPoint: useCallback(
       (x: number, y: number, source: string) => {
-        // Pha 2: chặn dữ liệu mô phỏng gửi nhầm gaze-samples
         if (source !== 'real') return;
         const slide = slides[currentSlide];
         const img = slideImgRef.current;
         const rect = img?.getBoundingClientRect();
-
         let mapped: { x: number; y: number } | null = null;
         if (rect && rect.width > 0 && rect.height > 0) {
-          mapped = screenGazeToSlide(x, y, {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height,
-          });
+          mapped = screenGazeToSlide(x, y, { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
         }
         setGazePoint(mapped);
-
         if (!slide || !learningSessionId) return;
-
-        if (Date.now() - lastGazeDebugLog > 1000) {
-          lastGazeDebugLog = Date.now();
-          console.log('[gaze]', {
-            raw: { x, y },
-            innerW: window.innerWidth,
-            dpr: window.devicePixelRatio,
-            mapped,
-          });
-        }
-
-        postGazeSamples(
-          activeLessonId,
-          [
-            {
-              lessonContentId: slide.id,
-              x: mapped ? mapped.x : -1,
-              y: mapped ? mapped.y : -1,
-              ts: Date.now(),
-            },
-          ],
-          learningSessionId,
-        ).catch(() => {});
+        postGazeSamples(activeLessonId, [{ lessonContentId: slide.id, x: mapped ? mapped.x : -1, y: mapped ? mapped.y : -1, ts: Date.now() }], learningSessionId).catch(() => {});
       },
       [activeLessonId, currentSlide, slides, learningSessionId],
     ),
   });
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowRight') {
-        setCurrentSlide((value) => Math.min(Math.max(total - 1, 0), value + 1));
-      }
-      if (event.key === 'ArrowLeft') {
-        setCurrentSlide((value) => Math.max(0, value - 1));
-      }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') setCurrentSlide((v) => Math.min(Math.max(total - 1, 0), v + 1));
+      if (e.key === 'ArrowLeft') setCurrentSlide((v) => Math.max(0, v - 1));
     };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [total]);
 
   useEffect(() => {
     if (!activeLessonId || total === 0) return;
-
-    const timer = window.setTimeout(() => {
+    const t = window.setTimeout(() => {
       patchLessonProgress(activeLessonId, currentSlide).catch(() => {});
     }, 1200);
-
-    return () => window.clearTimeout(timer);
+    return () => window.clearTimeout(t);
   }, [activeLessonId, currentSlide, total]);
 
-  // Hiện dialog "Học tiếp?" khi có lịch sử — defer để tránh setState đồng bộ trong effect (eslint react-hooks/set-state-in-effect)
   useEffect(() => {
     if (!activeLessonId || !progress || total === 0) return;
     if (resumeHandled === activeLessonId) return;
@@ -237,24 +144,14 @@ export default function CourseLearningPage() {
     }
   }, [activeLessonId, progress, total, resumeHandled]);
 
-  const selectLesson = (lessonId: string) => {
-    setActiveLessonId(lessonId);
+  const selectLesson = (id: string) => {
+    setActiveLessonId(id);
     setCurrentSlide(0);
-    setMobileOutlineOpen(false);
-
-    const mod = course?.modules.find((item) =>
-      item.lessons.some((lesson) => lesson.id === lessonId),
-    );
-
-    if (mod) {
-      setOpenModules((prev) => ({ ...prev, [mod.id]: true }));
-    }
+    setMobileOpen(false);
+    const mod = course?.modules.find((m) => m.lessons.some((l) => l.id === id));
+    if (mod) setOpenModules((p) => ({ ...p, [mod.id]: true }));
   };
-
-  const toggleModule = (moduleId: string) => {
-    setOpenModules((prev) => ({ ...prev, [moduleId]: !prev[moduleId] }));
-  };
-
+  const toggleModule = (id: string) => setOpenModules((p) => ({ ...p, [id]: !p[id] }));
   const handleComplete = () => {
     if (!activeLessonId) return;
     patchLessonProgress(activeLessonId, currentSlide, true)
@@ -264,113 +161,54 @@ export default function CourseLearningPage() {
       .catch(() => {});
   };
 
-  const outline = (
-    <>
-      <div className="border-b border-border px-5 py-5">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Nội dung khóa học
-          </p>
-
-          <button
-            type="button"
-            onClick={() => setDesktopOutlineOpen(false)}
-            className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:inline-flex"
-            aria-label="Thu gọn mục lục"
-            title="Thu gọn mục lục"
-          >
-            <RiArrowLeftSLine className="h-4 w-4" />
-          </button>
-        </div>
-
-        <h2 className="mt-2 line-clamp-2 text-sm font-semibold leading-5 text-foreground">
-          {course?.title ?? 'Khóa học'}
-        </h2>
-
-        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-          <span>{completedLessons}/{allLessons.length} bài đã học</span>
-          <span className="font-medium text-foreground">{courseProgress}%</span>
-        </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-[width] duration-300"
-            style={{ width: `${courseProgress}%` }}
-          />
-        </div>
+  const gazeDot =
+    gazePoint && gazePoint.x >= 0 && gazePoint.x <= 1 && gazePoint.y >= 0 && gazePoint.y <= 1 ? (
+      <div className="pointer-events-none absolute inset-0 z-10">
+        <span className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-red-600 shadow" style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%` }} />
       </div>
+    ) : null;
 
+  const outline = (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-4 py-4">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold tracking-wide text-[#0f2d5e]">CẤU TRÚC BÀI GIẢNG</p>
+          <span className="rounded bg-[#e8f9fd] px-2 py-0.5 text-xs font-bold text-[#0b5f7a]">{allLessons.length ? `${allLessons.findIndex((l) => l.id === activeLessonId) + 1} / ${allLessons.length}` : '—'}</span>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">Tiến độ tổng {completedLessons}/{allLessons.length} bài hoàn thành</p>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full bg-[#0f2d5e]" style={{ width: `${courseProgress}%` }} />
+        </div>
+        <p className="mt-1 text-right text-xs font-bold text-[#0f2d5e]">{courseProgress}%</p>
+      </div>
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {(course?.modules ?? []).map((module) => {
-          const moduleDone = module.lessons.filter((lesson) => lesson.completed).length;
           const isOpen = !!openModules[module.id];
-          const containsActive = module.lessons.some((lesson) => lesson.id === activeLessonId);
-
+          const contains = module.lessons.some((l) => l.id === activeLessonId);
+          const done = module.lessons.filter((l) => l.completed).length;
           return (
-            <section key={module.id} className="border-b border-border/70 py-2 last:border-b-0">
-              <button
-                type="button"
-                onClick={() => toggleModule(module.id)}
-                className="group flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-muted/70"
-              >
-                <span
-                  className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${
-                    containsActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {String(module.orderIndex).padStart(2, '0')}
-                </span>
-
+            <section key={module.id} className="border-b border-border/60 py-2 last:border-0">
+              <button onClick={() => toggleModule(module.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted/60">
+                <span className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${contains ? 'bg-[#0f2d5e] text-white' : 'bg-muted text-muted-foreground'}`}>{String(module.orderIndex).padStart(2, '0')}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium leading-5 text-foreground">
-                    {module.title}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                    {moduleDone}/{module.lessons.length} bài hoàn thành
-                  </span>
+                  <span className="block truncate text-sm font-semibold">{module.title}</span>
+                  <span className="text-xs text-muted-foreground">{done}/{module.lessons.length} bài</span>
                 </span>
-
-                <RiArrowRightSLine
-                  className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                    isOpen ? 'rotate-90' : ''
-                  }`}
-                />
+                <RiArrowRightSLine className={`h-4 w-4 text-muted-foreground transition ${isOpen ? 'rotate-90' : ''}`} />
               </button>
-
               {isOpen && (
-                <div className="mt-1 space-y-0.5 pl-9 pr-1 pb-1">
+                <div className="ml-8 mt-1 space-y-0.5 border-l border-border pl-3">
                   {module.lessons.map((lesson) => {
                     const active = lesson.id === activeLessonId;
-
                     return (
                       <button
                         key={lesson.id}
-                        type="button"
                         onClick={() => selectLesson(lesson.id)}
-                        className={`relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                          active
-                            ? 'bg-accent text-primary'
-                            : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                        }`}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${active ? 'bg-[#e8f9fd] font-semibold text-[#0b5f7a]' : 'text-muted-foreground hover:bg-muted/40'}`}
                       >
-                        {active && (
-                          <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" />
-                        )}
-
-                        {lesson.completed ? (
-                          <RiCheckboxCircleFill className="h-4 w-4 shrink-0 text-primary" />
-                        ) : (
-                          <span
-                            className={`h-3.5 w-3.5 shrink-0 rounded-full border ${
-                              active ? 'border-primary bg-primary/10' : 'border-border'
-                            }`}
-                          />
-                        )}
-
-                        <span className={`min-w-0 flex-1 truncate ${active ? 'font-medium' : ''}`}>
-                          {lesson.title}
-                        </span>
+                        {lesson.completed ? <RiCheckboxCircleFill className="h-4 w-4 text-[#0b5f7a]" /> : <span className={`h-3 w-3 rounded-full border ${active ? 'border-[#0b5f7a]' : 'border-border'}`} />}
+                        <span className="truncate">{lesson.title}</span>
+                        {active && <span className="ml-auto rounded bg-[#0b5f7a] px-1.5 py-0.5 text-[10px] text-white">Active</span>}
                       </button>
                     );
                   })}
@@ -380,90 +218,38 @@ export default function CourseLearningPage() {
           );
         })}
       </nav>
-    </>
+    </div>
   );
 
-  // Điểm nhìn đã chiếu sang toạ độ trang slide (screenGazeToSlide) → vẽ trong
-  // khung slide bằng toạ độ tương đối, không còn `fixed inset-0` theo màn hình.
-  const gazeDot =
-    gazePoint && gazePoint.x >= 0 && gazePoint.x <= 1 && gazePoint.y >= 0 && gazePoint.y <= 1 ? (
-      <div className="pointer-events-none absolute inset-0 z-10">
-        <span
-          className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-destructive shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
-          style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%` }}
-        />
-      </div>
-    ) : null;
-
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-muted text-foreground">
-      {/* App header */}
-      <header className="z-40 flex h-14 shrink-0 items-center border-b border-border bg-card px-4 sm:px-5">
-        <Link
-          href="/student/my-courses"
-          className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <RiArrowLeftLine className="h-4 w-4 shrink-0" />
-          <span className="hidden sm:inline">Khóa học của tôi</span>
-        </Link>
-
-        <div className="mx-auto hidden min-w-0 px-4 md:block">
-          <p className="max-w-[460px] truncate text-center text-sm font-semibold text-foreground">
-            {course?.title}
-          </p>
-        </div>
-
-        <div className="ml-auto flex items-center gap-1.5 md:ml-0">
-          {gazeSource === 'real' ? (
-            <div className="hidden items-center gap-1.5 pr-2 text-xs text-emerald-600 sm:flex">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-              Đang theo dõi điểm nhìn
-            </div>
-          ) : (
-            <div className="hidden items-center gap-1.5 pr-2 text-xs text-destructive sm:flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-              Mất kết nối điểm nhìn
-            </div>
-          )}
-
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="lg:hidden"
-            onClick={() => setMobileOutlineOpen(true)}
-            aria-label="Mở mục lục"
-          >
-            <RiMenu2Line />
-          </Button>
-        </div>
+    <div className="flex h-dvh flex-col overflow-hidden bg-[#eef2f5] text-foreground">
+      {/* Top bar — khớp ảnh Container */}
+      <header className="flex h-8 shrink-0 items-center gap-2 bg-black px-3 text-xs text-white">
+        <button onClick={() => setDesktopOpen((v) => !v)} className="hidden items-center gap-1 rounded bg-white px-2 py-1 text-xs font-semibold text-black lg:inline-flex">
+          {desktopOpen ? 'Thu gọn mục lục' : 'Mở mục lục'}
+        </button>
+        <button onClick={() => setMobileOpen(true)} className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-semibold text-black lg:hidden">
+          <RiMenu2Line className="h-3 w-3" /> Mục lục
+        </button>
+        <span className="hidden truncate sm:inline">Chương 4: Thuật toán Trích xuất Viền Đồng tử</span>
+        <span className="rounded bg-[#7ee3f7] px-2 py-0.5 font-bold text-black">Trang {total ? currentSlide + 1 : 0} / {total || '—'}</span>
+        <span className="ml-auto hidden items-center gap-1 text-[#7ee3f7] sm:inline-flex">◷ Thời gian trên slide: {formatDwell(dwellSec)}</span>
+        {gazeSource === 'real' ? (
+          <span className="ml-2 hidden items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-bold text-white sm:inline-flex">● GAZE LOGGING ACTIVE</span>
+        ) : (
+          <span className="ml-2 hidden items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white sm:inline-flex">● OFFLINE (pass)</span>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Desktop outline */}
-        {desktopOutlineOpen && (
-          <aside className="hidden w-[292px] shrink-0 flex-col border-r border-border bg-card lg:flex">
-            {outline}
-          </aside>
-        )}
-
-        {/* Mobile outline */}
-        {mobileOutlineOpen && (
+        {desktopOpen && <aside className="hidden w-[280px] shrink-0 flex-col border-r border-border bg-white lg:flex">{outline}</aside>}
+        {mobileOpen && (
           <div className="fixed inset-0 z-50 lg:hidden">
-            <button
-              type="button"
-              className="absolute inset-0 bg-brand-dark/40"
-              onClick={() => setMobileOutlineOpen(false)}
-              aria-label="Đóng mục lục"
-            />
-            <aside className="absolute inset-y-0 left-0 flex w-[min(88vw,320px)] flex-col bg-card shadow-xl">
-              <div className="flex h-14 items-center justify-between border-b border-border px-4">
-                <span className="text-sm font-semibold">Mục lục</span>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setMobileOutlineOpen(false)}
-                  aria-label="Đóng mục lục"
-                >
+            <button className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} aria-label="Đóng" />
+            <aside className="absolute inset-y-0 left-0 flex w-[85vw] max-w-[320px] flex-col bg-white shadow-xl">
+              <div className="flex h-10 items-center justify-between border-b px-4">
+                <span className="text-sm font-bold">Cấu trúc bài giảng</span>
+                <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(false)}>
                   <RiCloseLine />
                 </Button>
               </div>
@@ -472,161 +258,68 @@ export default function CourseLearningPage() {
           </div>
         )}
 
-        {/* Learning canvas */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-muted">
-          {/* Lesson meta */}
-          <div className="shrink-0 border-b border-border/70 bg-card px-4 py-3 sm:px-6 lg:px-8">
-            <div className="mx-auto flex max-w-[1280px] items-center gap-3">
-              {!desktopOutlineOpen && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="hidden shrink-0 lg:inline-flex"
-                  onClick={() => setDesktopOutlineOpen(true)}
-                  aria-label="Mở mục lục"
-                  title="Mở mục lục"
-                >
-                  <RiMenu2Line />
-                </Button>
-              )}
-
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-muted-foreground">
-                  {activeModule
-                    ? `Chương ${activeModule.orderIndex} · ${activeModule.title}`
-                    : 'Bài học'}
-                </p>
-                <h1 className="mt-0.5 truncate text-sm font-semibold text-foreground sm:text-base">
-                  {activeLesson?.title ?? 'Đang tải bài học...'}
-                </h1>
-              </div>
-
-              <div className="shrink-0 text-right">
-                <p className="text-xs text-muted-foreground">Trang</p>
-                <p className="text-sm font-semibold tabular-nums text-foreground">
-                  {total ? currentSlide + 1 : 0}
-                  <span className="font-normal text-muted-foreground"> / {total}</span>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Mất phiên theo dõi (session hết hạn/khác máy/đổi mạng): báo rõ + lối
-              hiệu chỉnh lại, không ghi điểm giả vào heatmap. */}
+        <main className="flex min-h-0 flex-1 flex-col">
           {gazeSource === 'off' && total > 0 && (
-            <div className="shrink-0 border-b border-destructive/25 bg-destructive/10 px-4 py-2.5 sm:px-6 lg:px-8">
-              <div className="mx-auto flex max-w-[1280px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs leading-5 text-destructive">
-                  Không kết nối được phiên theo dõi điểm nhìn (phiên hiệu chỉnh có thể đã hết hạn).
-                  Bài học vẫn xem được, nhưng dữ liệu gaze sẽ không được ghi nhận.
-                </p>
-                <Link
-                  href={`/student/courses/${courseId}/prepare${activeLessonId ? `?lesson=${encodeURIComponent(activeLessonId)}` : ''}`}
-                  className="shrink-0 rounded-lg border border-destructive/30 bg-card px-3 py-1.5 text-center text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-white"
-                >
-                  Kiểm tra & hiệu chỉnh lại
-                </Link>
-              </div>
+            <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+              Không kết nối được phiên gaze (phiên hiệu chỉnh hết hạn hoặc wss thất bại). Bài học vẫn xem được, dữ liệu sẽ không ghi. <Link href={`/student/courses/${courseId}/prepare${activeLessonId ? `?lesson=${activeLessonId}` : ''}`} className="font-bold underline">Hiệu chỉnh lại</Link>
             </div>
           )}
 
-          {/* Reader — 1 slide / trang, cuộn dọc để đọc hết nội dung */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-muted px-3 py-6 sm:px-6 lg:px-8">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
             <div className="mx-auto w-full max-w-[900px]">
-              {slideImageUrl ? (
-                <div className="relative overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    ref={slideImgRef}
-                    src={slideImageUrl}
-                    alt={currentContent.title}
-                    onError={(event) => {
-                      const img = event.currentTarget;
-                      if (img.dataset.fallback) return;
-                      img.dataset.fallback = '1';
-                      img.src = SLIDE_FALLBACK_IMAGE;
-                    }}
-                    className="block h-auto w-full bg-card object-contain"
-                  />
-                  {gazeDot}
+              <div className="relative overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+                {/* Paper header */}
+                <div className="border-b bg-white px-6 py-4">
+                  <p className="text-xs font-bold tracking-wide text-[#0b5f7a]">PHẦN 4.2: TÁCH BIÊN & TỐI ƯU TÂM THỊ GIÁC</p>
+                  <h1 className="mt-1 text-lg font-bold leading-snug">4.2 Thuật toán Starburst & Ellipse Fitting cho Tâm Đồng Tử (Pupil Center)</h1>
+                  <p className="mt-1 text-xs text-muted-foreground">CS402.LEC.04 · Thị giác Máy tính trong Giáo dục · Slide {total ? currentSlide + 1 : '—'} / {total || '—'}</p>
                 </div>
-              ) : (
-                <div className="flex min-h-[60vh] flex-col items-center justify-center rounded-lg bg-card p-8 text-center shadow-sm ring-1 ring-border">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-accent text-primary">
-                    <RiImageLine className="h-5 w-5" />
+                {slideUrl ? (
+                  <div className="relative bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img ref={slideImgRef} src={slideUrl} alt={currentContent?.title ?? 'Slide'} onError={(e) => { const img = e.currentTarget as HTMLImageElement; if ((img as unknown as { dataset: { fallback?: string } }).dataset.fallback) return; (img as unknown as { dataset: { fallback: string } }).dataset.fallback = '1'; img.src = SLIDE_FALLBACK; }} className="block h-auto w-full object-contain" />
+                    {gazeDot}
+                    <div className="absolute bottom-2 right-2 rounded bg-white/90 px-2 py-0.5 text-[11px] font-mono text-[#0b5f7a] shadow">GAZE RAW: X: {gazePoint ? gazePoint.x.toFixed(3) : '—'} | Y: {gazePoint ? gazePoint.y.toFixed(3) : '—'} ●</div>
                   </div>
-                  <p className="mt-4 max-w-sm text-base font-semibold text-foreground sm:text-lg">
-                    {currentContent?.title ?? 'Nội dung bài học'}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Nội dung trang PDF sẽ hiển thị tại đây.
-                  </p>
-                </div>
-              )}
+                ) : (
+                  <div className="p-8 text-center text-sm text-muted-foreground">
+                    <p className="font-semibold">{currentContent?.title ?? 'Nội dung bài học'}</p>
+                    <p className="mt-1">Nội dung PDF sẽ hiển thị tại đây. — (pass — chưa có slide)</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Reader controls */}
-          <footer className="shrink-0 border-t border-border bg-card px-4 py-2 sm:px-6 lg:px-8">
-            <div className="mx-auto flex max-w-[1280px] items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentSlide((value) => Math.max(0, value - 1))}
-                disabled={currentSlide === 0 || total === 0}
-              >
-                <RiArrowLeftSLine />
-                <span className="hidden sm:inline">Trang trước</span>
+          <footer className="shrink-0 border-t border-border bg-white px-4 py-3">
+            <div className="mx-auto flex max-w-[900px] items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setCurrentSlide((v) => Math.max(0, v - 1))} disabled={currentSlide === 0}>
+                <RiArrowLeftSLine /> Trang trước [←]
               </Button>
-
-              <div className="flex min-w-0 flex-1 items-center gap-3 px-1 sm:px-3">
-                <span className="hidden text-xs text-muted-foreground sm:inline">Tiến độ bài</span>
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-300"
-                    style={{
-                      width: `${total ? ((currentSlide + 1) / total) * 100 : 0}%`,
-                    }}
-                  />
+              <div className="flex flex-1 items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-[#0f2d5e]" style={{ width: `${total ? ((currentSlide + 1) / total) * 100 : 0}%` }} />
                 </div>
-                <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
-                  {total ? Math.round(((currentSlide + 1) / total) * 100) : 0}%
-                </span>
+                <span className="text-xs font-bold text-[#0b5f7a]">Trang {total ? currentSlide + 1 : 0} / {total || '—'}</span>
+                <span className="hidden text-xs text-muted-foreground sm:inline">Dwell: {formatDwell(dwellSec)}</span>
               </div>
-
               {currentSlide === total - 1 && total > 0 ? (
                 progress?.completed ? (
                   nextLesson ? (
                     <Button size="sm" onClick={() => selectLesson(nextLesson.id)}>
-                      Bài tiếp theo
-                      <RiArrowRightSLine />
+                      Bài tiếp theo <RiArrowRightSLine />
                     </Button>
                   ) : (
-                    <span className="hidden items-center gap-1.5 text-xs font-medium text-emerald-600 sm:inline-flex">
-                      <RiCheckboxCircleFill className="h-4 w-4" />
-                      Đã hoàn thành
-                    </span>
+                    <span className="text-xs font-semibold text-emerald-600">Đã hoàn thành ✓</span>
                   )
                 ) : (
-                  <Button
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={handleComplete}
-                  >
+                  <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleComplete}>
                     Hoàn thành
                   </Button>
                 )
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentSlide((value) => Math.min(Math.max(total - 1, 0), value + 1))
-                  }
-                  disabled={currentSlide === total - 1 || total === 0}
-                >
-                  <span className="hidden sm:inline">Trang sau</span>
-                  <RiArrowRightSLine />
+                <Button size="sm" className="bg-[#0f2d5e] hover:bg-[#143a78] text-white" onClick={() => setCurrentSlide((v) => Math.min(total - 1, v + 1))} disabled={currentSlide >= total - 1}>
+                  Slide tiếp theo [→] <RiArrowRightSLine />
                 </Button>
               )}
             </div>
@@ -636,32 +329,14 @@ export default function CourseLearningPage() {
 
       {showResume && progress && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-white p-6 shadow-xl">
-            <h3 className="text-base font-semibold text-foreground">Bạn có muốn học tiếp?</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Lần trước bạn dừng ở trang {progress.lastSlide + 1}/{total}. Tiếp tục từ đó hay bắt đầu lại?
-            </p>
+          <div className="w-full max-w-sm rounded-xl border bg-white p-6 shadow-xl">
+            <h3 className="font-semibold">Bạn có muốn học tiếp?</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Lần trước dừng ở trang {progress.lastSlide + 1}/{total}. Tiếp tục?</p>
             <div className="mt-6 flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  setCurrentSlide(0);
-                  patchLessonProgress(activeLessonId, 0).catch(() => {});
-                  setShowResume(false);
-                  setResumeHandled(activeLessonId);
-                }}
-              >
+              <Button variant="outline" className="flex-1" onClick={() => { setCurrentSlide(0); patchLessonProgress(activeLessonId, 0).catch(() => {}); setShowResume(false); setResumeHandled(activeLessonId); }}>
                 Bắt đầu lại
               </Button>
-              <Button
-                className="flex-1"
-                onClick={() => {
-                  setCurrentSlide(progress.lastSlide);
-                  setShowResume(false);
-                  setResumeHandled(activeLessonId);
-                }}
-              >
+              <Button className="flex-1" onClick={() => { setCurrentSlide(progress.lastSlide); setShowResume(false); setResumeHandled(activeLessonId); }}>
                 Học tiếp
               </Button>
             </div>

@@ -150,24 +150,12 @@ export default function Calibration() {
             onClick={handleDotClick}
             disabled={phase !== 'calibrating'}
             aria-label={`Điểm ${idx + 1}/${total}`}
-            className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 outline-none disabled:cursor-default"
+            className="group absolute z-20 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none disabled:cursor-default"
             style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
           >
-            {/* concentric target matching PNG */}
-            <span className="relative flex h-[120px] w-[120px] items-center justify-center rounded-full bg-[#ffe9e9]/90">
-              <span className="absolute inset-3 rounded-full border border-dashed border-red-300" />
-              <span className="absolute h-[88px] w-[88px] rounded-full border-2 border-[#d91e1e]" />
-              <span className="absolute h-[52px] w-[52px] rounded-full bg-red-500/10" />
-              <span className="absolute h-[52px] w-[52px] rounded-full border border-red-300/40" />
-              <span className="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#d91e1e] shadow-lg">
-                <span className="h-2 w-2 rounded-full bg-white" />
-              </span>
-              {/* crosshair */}
-              <span className="pointer-events-none absolute left-1/2 top-1/2 h-[88px] w-px -translate-x-1/2 -translate-y-1/2 bg-red-400/60" />
-              <span className="pointer-events-none absolute left-1/2 top-1/2 h-px w-[88px] -translate-x-1/2 -translate-y-1/2 bg-red-400/60" />
-            </span>
-            <span className="rounded-full bg-[#0f2d5e] px-3 py-1 text-xs font-bold tracking-wide">● ĐIỂM {idx + 1} / {total} (MỤC TIÊU)</span>
-            <span className="rounded-md border border-red-200 bg-[#fff1f1] px-2.5 py-1 text-xs font-semibold text-[#b4232b]">Click vào điểm này để lấy mẫu</span>
+            <span className="absolute inset-0 rounded-full bg-red-500/20 transition group-hover:bg-red-500/30" />
+            <span className="absolute inset-2 rounded-full bg-red-500/15 group-hover:bg-red-500/25 transition" />
+            <span className="relative h-5 w-5 rounded-full border-2 border-white bg-[#d91e1e] shadow-[0_1px_8px_rgba(0,0,0,0.4)] transition group-hover:scale-110" />
           </button>
         )}
 
@@ -178,16 +166,18 @@ export default function Calibration() {
           </div>
         )}
 
-        {/* progress subtle top */}
-        <div className="pointer-events-none absolute left-1/2 top-6 flex -translate-x-1/2 items-center gap-2">
-          <div className="h-1 w-32 overflow-hidden rounded-full bg-white/20">
-            <div className="h-full bg-brand-cyan transition-all" style={{ width: `${((idx + (phase==='training'?1:0))/ total)*100}%` }} />
+        {/* progress — tách riêng ở góc trên, cách xa footer */}
+        <div className="pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-2.5 rounded-full bg-white/10 px-3 py-1.5 backdrop-blur">
+          <span className="text-xs font-bold tracking-wide text-white">
+            ĐIỂM {idx + 1} / {total}
+          </span>
+          <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20">
+            <div className="h-full rounded-full bg-brand-cyan transition-all duration-300" style={{ width: `${((idx + (phase === 'training' ? 1 : 0)) / total) * 100}%` }} />
           </div>
-          <span className="text-xs text-white/60">{idx + 1}/{total}</span>
         </div>
 
         {error && (
-          <div className="absolute bottom-24 left-1/2 max-w-[min(90vw,420px)] -translate-x-1/2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-[#b4232b] shadow-lg">
+          <div className="absolute bottom-20 left-1/2 max-w-[min(90vw,420px)] -translate-x-1/2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-[#b4232b] shadow-lg">
             {error}
           </div>
         )}

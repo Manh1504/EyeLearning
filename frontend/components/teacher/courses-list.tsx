@@ -48,11 +48,9 @@ export default function TeacherCoursesPage() {
               <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground"><span className="font-semibold text-foreground">TS. Nguyễn Trí Dũng</span> <span className="text-xs text-[#0b5f7a]">Lab Director #402</span></p>
             </div>
           </div>
-          <nav className="flex rounded bg-muted p-1 text-sm">
-            <span className="rounded bg-white px-3 py-1.5 font-semibold text-[#0f2d5e] shadow-sm">Khóa học</span>
-            <Link href="#" className="px-3 py-1.5 text-muted-foreground">Phân tích điểm nhìn</Link>
-            <Link href="/admin/courses" className="px-3 py-1.5 text-muted-foreground">Quản trị</Link>
-          </nav>
+          <div className="hidden rounded bg-muted p-1 text-xs text-muted-foreground sm:flex">
+            <span>Không gian Giảng viên · Hệ thống giám sát khoa học nhận thức</span>
+          </div>
         </div>
 
         <div className="mt-4">
@@ -141,10 +139,10 @@ export default function TeacherCoursesPage() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Link href={courseHref(course)} className="inline-flex h-9 items-center gap-1 rounded bg-[#01bcea] px-4 text-sm font-semibold text-white hover:bg-[#00a6d1]">Xem bản đồ nhiệt Heatmap</Link>
+                  <Link href={`${courseHref(course)}&tab=overview`} className="inline-flex h-9 items-center gap-1 rounded bg-[#01bcea] px-4 text-sm font-semibold text-white hover:bg-[#00a6d1]">Xem bản đồ nhiệt Heatmap</Link>
                   <Link href={courseHref(course)} className="inline-flex h-9 items-center gap-1 rounded bg-muted px-3 text-sm font-medium hover:bg-accent">Quản lý nội dung & Slide</Link>
                   <Link href={`${courseHref(course)}&tab=students`} className="inline-flex h-9 items-center gap-1 rounded bg-muted px-3 text-sm font-medium hover:bg-accent">Danh sách sinh viên ({course.students})</Link>
-                  <span className="ml-auto inline-flex h-9 items-center gap-1 rounded px-3 text-sm text-muted-foreground">Thiết lập</span>
+                  <Link href={`${courseHref(course)}&tab=overview`} className="ml-auto inline-flex h-9 items-center gap-1 rounded px-3 text-sm text-muted-foreground hover:text-foreground">Thiết lập</Link>
                 </div>
               </article>
             );
