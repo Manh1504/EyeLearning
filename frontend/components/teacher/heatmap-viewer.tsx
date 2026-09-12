@@ -10,7 +10,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { useCourseStudents, useCourseTree, useHeatmap } from '@/hooks/use-teacher';
+import { useCourseStudents, useCourseTree, useHeatmap, useLessonMastery } from '@/hooks/use-teacher';
 import { useLessonSlides } from '@/hooks/use-student';
 import { resolveMediaUrl } from '@/lib/api/client';
 import { buildHeatLegendGradient } from '@/lib/heatmap-colors';
@@ -49,6 +49,7 @@ export default function HeatmapViewer() {
   const [opacity, setOpacity] = useState(HEATMAP_DEFAULT_OPACITY);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showScatter, setShowScatter] = useState(false);
+  const [showAoi, setShowAoi] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [imgFailed, setImgFailed] = useState(false);
@@ -68,8 +69,10 @@ export default function HeatmapViewer() {
 
   const { data: stats = [] } = useHeatmap(lesson.id, lesson.slides, scope === 'class' ? 'class' : scope);
   const { data: slides = [] } = useLessonSlides(lesson.id);
+  const { data: mastery } = useLessonMastery(lesson.id, scope === 'class' ? null : scope);
   const pageCount = stats.length || slides.length || lesson.slides || 1;
   const activePageIdx = Math.min(pageCount - 1, Math.max(0, pageIdx));
+  const currentCoverage = mastery?.slides[activePageIdx] ?? null;
   const slideImageRaw = slides[activePageIdx]?.imageUrl ?? null;
   // Ảnh media dạng đường dẫn tương đối (/media/…) đi qua Next.js rewrite,
   // dùng nguyên dạng để đúng phần /media mount của backend.
@@ -277,6 +280,15 @@ export default function HeatmapViewer() {
                 className="h-4 w-4 accent-brand-cyan"
               />
             </label>
+            <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+              <span>Vùng nội dung (AOI)</span>
+              <input
+                type="checkbox"
+                checked={showAoi}
+                onChange={(event) => setShowAoi(event.target.checked)}
+                className="h-4 w-4 accent-brand-cyan"
+              />
+            </label>
           </div>
 
           <label className="mt-4 block text-xs font-medium text-muted-foreground">
@@ -296,11 +308,11 @@ export default function HeatmapViewer() {
         </section>
 
         <section>
-          <p className="text-xs font-medium text-muted-foreground">Dữ liệu</p>
+          <p className="text-xs font-bold tracking-wide text-[#0f2d5e]">DỮ LIỆU</p>
           <dl className="mt-2 space-y-2 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-muted-foreground">Mẫu gaze</dt>
-              <dd className="font-medium tabular-nums text-foreground">{Math.max(0, current.fixations * 4)}</dd>
+              <dd className="font-medium tabular-nums text-foreground">{current.fixations ? Math.max(0, current.fixations * 4) : '—'}</dd>
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-muted-foreground">Số học viên</dt>
@@ -308,17 +320,36 @@ export default function HeatmapViewer() {
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-muted-foreground">Thời gian quan sát</dt>
-              <dd className="font-medium tabular-nums text-foreground">{formatDuration(current.viewSec)}</dd>
+              <dd className="font-medium tabular-nums text-foreground">{current.viewSec ? formatDuration(current.viewSec) : '—'}</dd>
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-muted-foreground">Tỷ lệ gaze trên trang</dt>
-              <dd className="font-medium tabular-nums text-foreground">{current.onSlide}%</dd>
+              <dd className="font-medium tabular-nums text-foreground">{current.onSlide ? `${current.onSlide}%` : '— (pass)'}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Vùng tập trung</dt>
-              <dd className="font-medium tabular-nums text-foreground">{(current.hotspots ?? []).length}</dd>
+              <dt className="text-muted-foreground">Vùng tập trung (AOI)</dt>
+              <dd className="font-medium tabular-nums text-foreground">{(current.hotspots ?? []).length || '—'}</dd>
             </div>
+            {mastery && (
+              <>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Điểm hoàn thành bài</dt>
+                  <dd className="font-semibold tabular-nums text-foreground">{mastery.score}%</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Trang trọng tâm đã đọc</dt>
+                  <dd className="font-medium tabular-nums text-foreground">{mastery.keyDone}/{mastery.keyTotal}</dd>
+                </div>
+              </>
+            )}
+            {currentCoverage && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Độ bao phủ trang {activePageIdx + 1}</dt>
+                <dd className="font-medium tabular-nums text-foreground">{Math.round(currentCoverage.coverage * 100)}%</dd>
+              </div>
+            )}
           </dl>
+          <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Chỉ số hiển thị <b>— (pass)</b> khi chưa có dữ liệu gaze. Cần BE: <span className="font-mono">aoi_regions / heatmap_aggregates</span> — sẽ phát triển thêm.</p>
         </section>
 
         {lowestOnPage && (
@@ -450,6 +481,26 @@ export default function HeatmapViewer() {
                     className="pointer-events-none absolute inset-0 h-full w-full mix-blend-normal"
                     style={{ opacity }}
                   />
+                  {scope !== 'class' && showAoi && currentCoverage && (
+                    <div className="pointer-events-none absolute inset-0 z-[5]">
+                      {currentCoverage.aois.map((aoi) => (
+                        <span
+                          key={aoi.id}
+                          className={`absolute border ${
+                            aoi.covered
+                              ? 'border-emerald-500 bg-emerald-400/15'
+                              : 'border-slate-400/70 bg-slate-200/10'
+                          }`}
+                          style={{
+                            left: `${aoi.xMin * 100}%`,
+                            top: `${aoi.yMin * 100}%`,
+                            width: `${(aoi.xMax - aoi.xMin) * 100}%`,
+                            height: `${(aoi.yMax - aoi.yMin) * 100}%`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

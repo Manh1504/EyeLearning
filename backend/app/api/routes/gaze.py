@@ -21,7 +21,7 @@ from app.schemas.gaze import (
     LearningSessionEndIn,
     LearningSessionOut,
 )
-from app.services import analytics
+from app.services import analytics, mastery
 
 router = APIRouter(tags=["gaze"])
 
@@ -254,10 +254,12 @@ async def post_gaze_samples(
         bucket.append(s)
 
     events: list[GazeEvent] = []
+    kept_points: dict[str, list[tuple[float, float, float]]] = {}
     view_ms_by_content: dict[str, int] = {}
+    nominal_dwell = int(1000.0 / max(settings.gaze_downsample_hz, 0.1))
     for content_id, bucket in by_content.items():
         bucket.sort(key=lambda s: s.ts)
-        kept_ts: list[float] = []
+        kept: list[tuple[float, float, float]] = []
         last_kept = float("-inf")
         for s in bucket:
             # Chỉ ghi gaze_events cho điểm hợp lệ trong [0,1]; sample "ngoài màn
@@ -267,24 +269,38 @@ async def post_gaze_samples(
                 continue
             if s.ts - last_kept >= min_interval_ms:
                 last_kept = s.ts
-                kept_ts.append(s.ts)
-                events.append(
-                    GazeEvent(
-                        learning_session_id=session.id,
-                        lesson_content_id=content_id,
-                        event_time=_ts_to_datetime(s.ts),
-                        gaze_x=s.x,
-                        gaze_y=s.y,
-                    )
+                kept.append((s.x, s.y, s.ts))
+        if kept:
+            kept_points[content_id] = kept
+            events.extend(
+                GazeEvent(
+                    learning_session_id=session.id,
+                    lesson_content_id=content_id,
+                    event_time=_ts_to_datetime(ts),
+                    gaze_x=x,
+                    gaze_y=y,
                 )
-        if kept_ts:
-            span = kept_ts[-1] - kept_ts[0]
+                for x, y, ts in kept
+            )
+            span = kept[-1][2] - kept[0][2]
             if span <= 0:
                 span = min_interval_ms
             view_ms_by_content[content_id] = int(span)
 
     if events:
         db.add_all(events)
+
+    # Cộng dồn dwell vào aoi_dwell_stats cho từng AOI (chỉ dữ liệu thật).
+    if session and session.tracking_consent:
+        for content_id, kept in kept_points.items():
+            dwell_points: list[tuple[float, float, int]] = []
+            for i, (x, y, ts) in enumerate(kept):
+                if i + 1 < len(kept):
+                    d = min(kept[i + 1][2] - ts, settings.mastery_max_dwell_ms)
+                else:
+                    d = nominal_dwell
+                dwell_points.append((x, y, int(d)))
+            await mastery.accumulate_dwell(db, session.id, content_id, dwell_points)
 
     for content_id, raw in raw_counts.items():
         stmt = pg_insert(GazeSlideStat).values(
@@ -307,8 +323,8 @@ async def post_gaze_samples(
 
     await db.commit()
 
-    # Tự cập nhật heatmap_aggregates + engagement_scores GẦN THỜI GIAN THỰC để
-    # dashboard giáo viên thấy số mới ngay, không cần bấm recompute thủ công.
+    # Tự cập nhật heatmap_aggregates + engagement_scores + mastery GẦN THỜI GIAN
+    # THỰC để dashboard giáo viên thấy số mới ngay, không cần recompute thủ công.
     # Throttle bằng Redis lock để không chạy lại aggregates ở mỗi batch (~4Hz).
     if session and session.tracking_consent and raw_counts:
         if await rediscache.try_acquire_lock(
@@ -320,6 +336,7 @@ async def post_gaze_samples(
                 content_ids=sorted(raw_counts.keys()),
                 enrollment_id=session.enrollment_id,
             )
+            await mastery.refresh_mastery(db, lesson_id, session.enrollment_id)
             await db.commit()
 
     # Dữ liệu gaze mới → heatmap cache của lesson đã cũ (bump generation).

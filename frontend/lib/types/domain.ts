@@ -28,6 +28,7 @@ export interface LessonNode {
   slides: number;            // count(lesson_contents)
   completion: number;        // % học viên completed bài này
   attention: number | null;
+  mastery?: number | null;   // điểm hoàn thành TB (độ bao phủ nội dung)
 }
 
 export interface ModuleNode {
@@ -41,6 +42,9 @@ export interface StudentLesson {
   viewed: number;            // cardinality(lesson_progress.viewed_slides)
   total: number;
   attention: number | null;
+  mastery?: number | null;   // điểm hoàn thành (độ bao phủ nội dung)
+  keyDone?: number;          // số trang trọng tâm đã hoàn thành
+  keyTotal?: number;         // tổng số trang trọng tâm
 }
 
 export interface StudentRow {
@@ -144,6 +148,56 @@ export interface Slide {
   id: string;
   title: string;
   imageUrl: string | null;
+}
+
+// ---- Slide trọng tâm + điểm hoàn thành theo độ bao phủ nội dung (teacher) ----
+
+export interface SlideAdmin {
+  id: string;
+  orderIndex: number;
+  title: string;
+  imageUrl: string | null;
+  isKey: boolean;
+  aoiCount: number;
+  aoiSource: string;
+}
+
+export interface Aoi {
+  id: string;
+  name: string;
+  xMin: number;
+  yMin: number;
+  xMax: number;
+  yMax: number;
+  weight: number;
+  charCount: number;
+  source: string;
+  covered: boolean;
+  dwellMs: number;
+}
+
+export interface SlideCoverage {
+  contentId: string;
+  orderIndex: number;
+  isKey: boolean;
+  coverage: number;          // 0..1
+  dwellMs: number;
+  isComplete: boolean;
+  aoiCount: number;
+  aoiSource: string;
+  aois: Aoi[];
+}
+
+export interface LessonMastery {
+  lessonId: string;
+  score: number;             // 0..100 (85% trọng tâm / 15% thường)
+  keyScore: number;
+  normalScore: number;
+  keyDone: number;
+  keyTotal: number;
+  slidesDone: number;
+  slidesTotal: number;
+  slides: SlideCoverage[];
 }
 
 export interface LessonItem {

@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ConfirmDialog, EmptyState, INPUT_CLS } from './workspace-ui';
-import { useCourseTree, useTeacherCourses } from '@/hooks/use-teacher';
+import { useCourseTree, useLessonSlidesAdmin, useTeacherCourses } from '@/hooks/use-teacher';
 import {
   addCourseStudents,
   createCourse,
@@ -24,6 +24,7 @@ import {
   deleteLesson,
   deleteModule,
   fetchStudentDirectory,
+  setSlideKey,
   updateCourse,
   updateLesson,
   updateModule,
@@ -59,6 +60,30 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
   const [failed, setFailed] = useState<Record<number, boolean>>({});
   const [preview, setPreview] = useState<number | null>(null);
 
+  const queryClient = useQueryClient();
+  const { data: adminSlides = [] } = useLessonSlidesAdmin(lessonId);
+  const slideByPage = useMemo(
+    () => new Map(adminSlides.map((s) => [s.orderIndex, s])),
+    [adminSlides],
+  );
+  const keyCount = adminSlides.filter((s) => s.isKey).length;
+
+  const toggleKey = async (page: number) => {
+    const slide = slideByPage.get(page);
+    if (!slide) return;
+    const next = !slide.isKey;
+    queryClient.setQueryData(['teacher', 'lesson-slides', lessonId], (old: unknown) =>
+      Array.isArray(old)
+        ? old.map((s) => (s.orderIndex === page ? { ...s, isKey: next } : s))
+        : old,
+    );
+    try {
+      await setSlideKey(slide.id, next);
+    } catch {
+      queryClient.invalidateQueries({ queryKey: ['teacher', 'lesson-slides', lessonId] });
+    }
+  };
+
   useEffect(() => {
     if (preview === null) return;
     const onKey = (event: KeyboardEvent) => {
@@ -74,9 +99,21 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
 
   return (
     <>
-      <div className="mt-4 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Trang có <Icon name="ri-star-fill" className="inline text-amber-500" aria-hidden /> là trang trọng tâm
+          (chiếm 85% điểm hoàn thành bài học).
+        </p>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {keyCount}/{slideCount} trang trọng tâm
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
         {Array.from({ length: slideCount }, (_, i) => i + 1).map((page) => {
           const url = slideImageUrl(lessonId, page);
+          const slide = slideByPage.get(page);
+          const isKey = slide?.isKey ?? false;
           if (!url || failed[page]) {
             return (
               <div
@@ -89,23 +126,38 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
             );
           }
           return (
-            <button
-              key={page}
-              type="button"
-              onClick={() => setPreview(page)}
-              title={`Xem trước trang ${page}`}
-              aria-label={`Xem trước trang ${page}`}
-              className="group overflow-hidden rounded-md border border-border bg-white outline-none transition hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
-                alt={`Trang ${page}`}
-                loading="lazy"
-                onError={() => setFailed((prev) => ({ ...prev, [page]: true }))}
-                className="aspect-[4/3] w-full object-contain transition group-hover:scale-[1.02]"
-              />
-            </button>
+            <div key={page} className="relative">
+              <button
+                type="button"
+                onClick={() => setPreview(page)}
+                title={`Xem trước trang ${page}`}
+                aria-label={`Xem trước trang ${page}`}
+                className="group block w-full overflow-hidden rounded-md border border-border bg-white outline-none transition hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={`Trang ${page}`}
+                  loading="lazy"
+                  onError={() => setFailed((prev) => ({ ...prev, [page]: true }))}
+                  className="aspect-[4/3] w-full object-contain transition group-hover:scale-[1.02]"
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => void toggleKey(page)}
+                title={isKey ? 'Bỏ đánh dấu trọng tâm' : 'Đánh dấu trang trọng tâm'}
+                aria-label={`${isKey ? 'Bỏ đánh dấu' : 'Đánh dấu'} trang ${page} là trọng tâm`}
+                aria-pressed={isKey}
+                className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 ${
+                  isKey
+                    ? 'border-amber-300 bg-amber-100 text-amber-600'
+                    : 'border-border bg-white/90 text-muted-foreground hover:border-amber-300 hover:text-amber-500'
+                }`}
+              >
+                <Icon name={isKey ? 'ri-star-fill' : 'ri-star-line'} className="text-sm" aria-hidden />
+              </button>
+            </div>
           );
         })}
       </div>

@@ -73,6 +73,7 @@ class LessonNodeOut(CamelModel):
     slides: int
     completion: float
     attention: float | None = None
+    mastery: float | None = None
 
 
 class ModuleNodeOut(CamelModel):
@@ -141,11 +142,32 @@ class SlideOut(CamelModel):
     image_url: str | None = None
 
 
+class SlideAdminOut(CamelModel):
+    id: str
+    order_index: int
+    title: str
+    image_url: str | None = None
+    is_key: bool = False
+    aoi_count: int = 0
+    aoi_source: str = "none"
+
+
+class SlideKeyUpdateIn(CamelModel):
+    is_key: bool
+
+
+class SlideKeySetIn(CamelModel):
+    order_indexes: list[int]
+
+
 class StudentLessonOut(CamelModel):
     lesson_id: str
     viewed: int
     total: int
     attention: float | None = None
+    mastery: float | None = None
+    key_done: int = 0
+    key_total: int = 0
 
 
 class StudentRowOut(CamelModel):

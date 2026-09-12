@@ -5,6 +5,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchTeacherCourses, fetchCourseTree, fetchCourseStudents, fetchHeatmap,
+  fetchLessonSlidesAdmin, fetchLessonMastery,
   type CourseListQuery,
 } from '@/lib/api/teacher';
 
@@ -37,5 +38,21 @@ export function useHeatmap(lessonId: string, slideCount: number, scope: 'class' 
     queryFn: () => fetchHeatmap(lessonId, slideCount, scope),
     enabled: Boolean(lessonId),
     staleTime: 30_000,
+  });
+}
+
+export function useLessonSlidesAdmin(lessonId: string) {
+  return useQuery({
+    queryKey: ['teacher', 'lesson-slides', lessonId],
+    queryFn: () => fetchLessonSlidesAdmin(lessonId),
+    enabled: Boolean(lessonId),
+  });
+}
+
+export function useLessonMastery(lessonId: string, studentId: string | null) {
+  return useQuery({
+    queryKey: ['teacher', 'lesson-mastery', lessonId, studentId],
+    queryFn: () => fetchLessonMastery(lessonId, studentId as string),
+    enabled: Boolean(lessonId) && Boolean(studentId),
   });
 }

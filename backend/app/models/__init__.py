@@ -1,4 +1,11 @@
-from app.models.analytics import AoiDwellStat, AoiRegion, EngagementScore, HeatmapAggregate
+from app.models.analytics import (
+    AoiDwellStat,
+    AoiRegion,
+    EngagementScore,
+    HeatmapAggregate,
+    LessonMasteryScore,
+    SlideCoverageStat,
+)
 from app.models.auth import (
     AuthSession,
     OAuthAccount,
@@ -42,6 +49,7 @@ __all__ = [
     "HeatmapAggregate",
     "Lesson",
     "LessonContent",
+    "LessonMasteryScore",
     "LessonProgress",
     "LearningSession",
     "Module",
@@ -49,6 +57,7 @@ __all__ = [
     "Permission",
     "Role",
     "RolePermission",
+    "SlideCoverageStat",
     "StudentProfile",
     "TeacherProfile",
     "User",

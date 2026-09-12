@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     # Dung lượng tối đa một file PDF upload (bytes).
     max_pdf_bytes: int = 100 * 1024 * 1024
 
+    # Tính điểm hoàn thành bài học theo độ bao phủ nội dung (AOI).
+    mastery_coverage_threshold: float = 0.85      # bao phủ >= 85% → xem như đủ trang
+    mastery_key_weight: float = 0.85              # trọng số nhóm slide trọng tâm (còn lại 0.15)
+    mastery_min_aoi_dwell_ms: int = 400           # dwell tối thiểu để tính 1 AOI đã xem
+    mastery_aoi_padding: float = 0.02             # nở bbox AOI (chuẩn hóa) bù sai số gaze
+    mastery_max_dwell_ms: int = 1000              # trần dwell mỗi mẫu (tránh tab mất focus)
+    mastery_grid_cols: int = 12                   # lưới fallback khi PDF không trích được text
+    mastery_grid_rows: int = 8
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

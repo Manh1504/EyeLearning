@@ -7,6 +7,7 @@
 import { apiFetch, apiFetchMultipart } from './client';
 import type {
   TeacherCourse, CourseStatus, Level, ModuleNode, StudentRow, SlideStat,
+  SlideAdmin, LessonMastery,
 } from '@/lib/types/domain';
 import { formatShortDate } from '@/lib/utils';
 
@@ -167,4 +168,40 @@ export function uploadLessonPdf(
   const form = new FormData();
   form.append('pdf', pdf, filename);
   return apiFetchMultipart(`/api/teacher/lessons/${lessonId}/slides/upload`, form, 'POST');
+}
+
+// ---- Slide trọng tâm + điểm hoàn thành (mastery) ----
+
+// GET /api/teacher/lessons/{id}/slides — danh sách slide để đánh dấu trọng tâm
+export function fetchLessonSlidesAdmin(lessonId: string): Promise<SlideAdmin[]> {
+  return apiFetch<SlideAdmin[]>(`/api/teacher/lessons/${lessonId}/slides`);
+}
+
+// PATCH /api/teacher/slides/{id} — bật/tắt slide trọng tâm
+export function setSlideKey(slideId: string, isKey: boolean): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/teacher/slides/${slideId}`, {
+    method: 'PATCH',
+    body: { isKey },
+  });
+}
+
+// POST /api/teacher/lessons/{id}/slides/key — đặt danh sách trang trọng tâm
+export function setSlideKeys(
+  lessonId: string,
+  orderIndexes: number[],
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/teacher/lessons/${lessonId}/slides/key`, {
+    method: 'POST',
+    body: { orderIndexes },
+  });
+}
+
+// GET /api/teacher/lessons/{id}/mastery?studentId= — điểm hoàn thành 1 học viên
+export function fetchLessonMastery(
+  lessonId: string,
+  studentId: string,
+): Promise<LessonMastery> {
+  return apiFetch<LessonMastery>(`/api/teacher/lessons/${lessonId}/mastery`, {
+    params: { student_id: studentId },
+  });
 }

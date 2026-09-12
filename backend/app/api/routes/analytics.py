@@ -6,9 +6,9 @@ from app.api.deps import can_access_course, can_manage_course, require_roles
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
-from app.models.course import Course, Lesson, LessonContent, Module
-from app.schemas.analytics import SlideStatOut
-from app.services import analytics
+from app.models.course import Course, Enrollment, Lesson, LessonContent, Module
+from app.schemas.analytics import LessonMasteryOut, SlideStatOut
+from app.services import analytics, mastery
 
 router = APIRouter(tags=["analytics"])
 
@@ -55,6 +55,32 @@ async def get_lesson_heatmap(
     return stats
 
 
+@router.get("/teacher/lessons/{lesson_id}/mastery", response_model=LessonMasteryOut)
+async def get_lesson_mastery(
+    lesson_id: str,
+    student_id: str = Query(...),
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Điểm hoàn thành bài học (độ bao phủ nội dung) của một học viên."""
+    lesson = await _lesson_with_owner_check(db, lesson_id, user)
+    module = await db.get(Module, lesson.module_id)
+    enrollment = (
+        await db.execute(
+            select(Enrollment).where(
+                Enrollment.course_id == module.course_id,
+                Enrollment.student_id == student_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if enrollment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Học viên chưa đăng ký khóa học")
+    out = await mastery.get_lesson_mastery(db, lesson_id, enrollment.id)
+    if out is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bài học chưa có slide")
+    return out
+
+
 @router.post("/teacher/courses/{course_id}/recompute", dependencies=[Depends(rate_limit(5, 60, "recompute"))])
 async def recompute_course_analytics(
     course_id: str,
@@ -78,6 +104,7 @@ async def recompute_course_analytics(
     total = 0
     for lid in lesson_ids:
         total += await analytics.recompute_lesson_aggregates(db, lid)
+        await mastery.recompute_lesson_mastery(db, lid)
     await db.commit()
     for lid in lesson_ids:
         await analytics.invalidate_heatmap_cache(lid)

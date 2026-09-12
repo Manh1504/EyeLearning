@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -147,6 +148,8 @@ class LessonContent(Base):
     order_index: Mapped[int] = mapped_column(Integer)
     image_url: Mapped[str] = mapped_column(Text)
     content_json: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    is_key: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    aoi_source: Mapped[str] = mapped_column(String(6), server_default=text("'none'"))
 
     lesson: Mapped[Lesson] = relationship(back_populates="contents")
 

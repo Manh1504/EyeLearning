@@ -10,7 +10,7 @@ from app.api.deps import (
 )
 from app.core.helpers import color_for, gradient_for, relative_time_vn
 from app.db.session import get_db
-from app.models.analytics import EngagementScore
+from app.models.analytics import EngagementScore, LessonMasteryScore
 from app.models.auth import User
 from app.models.course import (
     Course,
@@ -272,6 +272,14 @@ async def get_course_tree(
     )
     attention = {r[0]: float(r[1]) for r in await db.execute(attention_stmt)}
 
+    mastery_stmt = (
+        select(LessonMasteryScore.lesson_id, func.avg(LessonMasteryScore.score))
+        .join(Enrollment, Enrollment.id == LessonMasteryScore.enrollment_id)
+        .where(Enrollment.course_id == course.id)
+        .group_by(LessonMasteryScore.lesson_id)
+    )
+    mastery = {r[0]: float(r[1]) for r in await db.execute(mastery_stmt)}
+
     students_stmt = (
         select(func.count(Enrollment.id))
         .where(Enrollment.course_id == course.id, Enrollment.status != "dropped")
@@ -293,6 +301,7 @@ async def get_course_tree(
                         else 0.0
                     ),
                     attention=round(attention[l.id], 1) if l.id in attention else None,
+                    mastery=round(mastery[l.id], 1) if l.id in mastery else None,
                 )
                 for l in m.lessons
             ],
@@ -349,6 +358,12 @@ async def get_course_students(
     engagement_rows = (await db.execute(engagement_stmt)).scalars().all()
     engagement_map = {(s.enrollment_id, s.lesson_id): s for s in engagement_rows}
 
+    mastery_stmt = select(LessonMasteryScore).where(
+        LessonMasteryScore.enrollment_id.in_(enrollment_ids)
+    )
+    mastery_rows = (await db.execute(mastery_stmt)).scalars().all()
+    mastery_map = {(m.enrollment_id, m.lesson_id): m for m in mastery_rows}
+
     from app.models.gaze import LearningSession
 
     last_active_stmt = (
@@ -376,12 +391,16 @@ async def get_course_students(
         for l in lessons:
             p = progress_map.get((enrollment.id, l.id))
             eng = engagement_map.get((enrollment.id, l.id))
+            m = mastery_map.get((enrollment.id, l.id))
             lesson_outs.append(
                 StudentLessonOut(
                     lesson_id=l.id,
                     viewed=len(p.viewed_slides) if p else 0,
                     total=lesson_slide_counts[l.id],
                     attention=round(eng.score, 1) if eng else None,
+                    mastery=round(m.score, 1) if m else None,
+                    key_done=m.key_done if m else 0,
+                    key_total=m.key_total if m else 0,
                 )
             )
         out.append(

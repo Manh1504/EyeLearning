@@ -1,20 +1,7 @@
 'use client';
 
-// components/student/calibration.tsx — Hiệu chỉnh mắt (16 điểm, 2 mẫu/điểm).
-//
-// Luồng (khớp AI service /session — server giữ model theo session):
-//   1. Tạo session POST /session (16 điểm chuẩn hóa [0,1]) → session_id.
-//   2. Hiển thị từng chấm; người dùng nhìn vào chấm → BẤM → chụp nhiều frame gửi
-//      POST /session/{sid}/calibrate (image + point_id) — server tự gom mẫu.
-//   3. Đủ 2 mẫu × 16 điểm → POST /session/{sid}/train → model sẵn sàng.
-//   4. Pass (MAE ≤ ngưỡng) → vào thẳng bài học; không pass → hiệu chỉnh lại.
-//   5. Lưu session_id vào localStorage để phiên học sau mở WS /session/{sid}/stream.
-//
-// no_face/invalid_image/network_error → báo bấm lại ở cùng chấm.
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-
 import {
   buildCalibrationPoints,
   clearStoredGazeSession,
@@ -31,12 +18,10 @@ import {
 } from '@/lib/api/calibration';
 import { getDeviceFingerprint } from '@/lib/api/student';
 
-const SAMPLES_PER_POINT = 2;       // giảm 5→2 để rút ngắn thời gian cali (AI MIN_SAMPLES phải =2)
-const MAX_CAPTURES_PER_POINT = 5; // giới hạn số frame chụp lại mỗi điểm
-const CAPTURE_GAP_MS = 100;        // burst nhanh để mắt chưa kịp rời chấm
-
+const SAMPLES_PER_POINT = 2;
+const MAX_CAPTURES_PER_POINT = 5;
+const CAPTURE_GAP_MS = 100;
 type Phase = 'calibrating' | 'sending' | 'training';
-
 const ERROR_TEXT: Record<string, string> = {
   no_face: 'Không phát hiện khuôn mặt — hãy nhìn thẳng vào chấm đỏ rồi bấm lại.',
   invalid_image: 'Ảnh webcam không hợp lệ — bấm lại.',
@@ -49,10 +34,8 @@ export default function Calibration() {
   const params = useParams();
   const router = useRouter();
   const courseId = String(params?.courseId ?? 'c1');
-
   const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
   const total = points.length;
-
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>('calibrating');
   const [error, setError] = useState<string | null>(null);
@@ -60,94 +43,56 @@ export default function Calibration() {
   const [sessionNonce, setSessionNonce] = useState(0);
   const [threshold, setThreshold] = useState(DEFAULT_MAX_TRAIN_MAE);
   const [scoringEnabled, setScoringEnabled] = useState(true);
-
-  // Camera preview (ảnh thu nhỏ, đặt trong card mờ giữa màn hình — không chiếm đất vùng chấm).
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [camOn, setCamOn] = useState(false);
 
-  // Lấy cấu hình ngưỡng từ admin (fallback 12%)
   useEffect(() => {
-    fetchCalibrationConfig().then((cfg) => {
-      setThreshold(cfg.threshold);
-      setScoringEnabled(cfg.enabled);
-    }).catch(() => {});
+    fetchCalibrationConfig().then((cfg) => { setThreshold(cfg.threshold); setScoringEnabled(cfg.enabled); }).catch(() => {});
   }, []);
-
-  // Tạo session gaze ngay khi mount (server giữ mẫu theo session này).
-  // sessionNonce để tạo lại session mới khi hiệu chỉnh lại (model cũ đã kém thì bỏ hẳn).
   useEffect(() => {
     let cancelled = false;
-    const screenWidth = typeof window !== 'undefined' ? (window.innerWidth || 1280) : 1280;
-    const screenHeight = typeof window !== 'undefined' ? (window.innerHeight || 720) : 720;
-    createGazeSession(points, screenWidth, screenHeight)
-      .then((res) => {
-        if (!cancelled && res.ok && res.sessionId) setSessionId(res.sessionId);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    const w = typeof window !== 'undefined' ? window.innerWidth || 1280 : 1280;
+    const h = typeof window !== 'undefined' ? window.innerHeight || 720 : 720;
+    createGazeSession(points, w, h).then((res) => { if (!cancelled && res.ok && res.sessionId) setSessionId(res.sessionId); }).catch(() => {});
+    return () => { cancelled = true; };
   }, [points, sessionNonce]);
 
-  // Làm lại từ đầu với session mới (khi train fail / MAE quá cao) — ép cali lại từ p0, không chỉ bấm lại điểm cuối.
   const resetCalibration = useCallback(() => {
     if (sessionId) deleteGazeSession(sessionId);
     clearStoredGazeSession();
-    setSessionId(null);
-    setError(null);
-    setIdx(0);
-    setPhase('calibrating');
-    setSessionNonce((v) => v + 1);
+    setSessionId(null); setError(null); setIdx(0); setPhase('calibrating'); setSessionNonce((v) => v + 1);
   }, [sessionId]);
 
   useEffect(() => {
     let cancelled = false;
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'user' }, audio: false })
       .then((stream) => {
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => undefined);
-        }
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => undefined); }
         setCamOn(true);
-      })
-      .catch(() => setCamOn(false));
-
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
+      }).catch(() => setCamOn(false));
+    return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
 
   const captureFrame = useCallback(async (): Promise<Blob | null> => {
     const video = videoRef.current;
     if (!video) return null;
-    // Chờ video có frame đầu tiên (mount sau khi camOn=true; srcObject gán qua ref-callback).
     let waited = 0;
-    while (video.videoWidth === 0 && waited < 1000) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      waited += 50;
-    }
+    while (video.videoWidth === 0 && waited < 1000) { await new Promise((r) => setTimeout(r, 50)); waited += 50; }
     if (video.videoWidth === 0) return null;
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return Promise.resolve(null);
+    if (!ctx) return null;
     ctx.drawImage(video, 0, 0);
     return new Promise((resolve) => canvas.toBlob((b) => resolve(b ?? null), 'image/jpeg', 0.9));
   }, []);
 
-  const goToCourse = useCallback(() => {
-    router.replace(`/student/courses/${courseId}`);
-  }, [courseId, router]);
-
+  const goToCourse = useCallback(() => router.replace(`/student/courses/${courseId}`), [courseId, router]);
   const handleStop = useCallback(() => {
     if (sessionId) deleteGazeSession(sessionId);
-    // không xóa calibration cũ đã pass — chỉ dừng phiên hiện tại
     streamRef.current?.getTracks().forEach((t) => t.stop());
     router.replace(`/student/courses/${courseId}`);
   }, [sessionId, courseId, router]);
@@ -157,173 +102,112 @@ export default function Calibration() {
     setPhase('training');
     const trained = await trainGazeSession(sessionId);
     const maeLabel = trained.maePx != null ? formatMaePercent(trained.maePx) : null;
-
-    // Nếu admin tắt tính điểm -> luôn pass khi train ok
     const maeFail = scoringEnabled && trained.maePx != null && trained.maePx > threshold;
     const failed = !trained.ok || maeFail;
     if (failed) {
-      const message = !trained.ok
-        ? trained.error === 'insufficient_samples'
-          ? ERROR_TEXT.insufficient + ' — sẽ làm lại từ đầu.'
-          : trained.error === 'network_error'
-            ? 'Không kết nối được dịch vụ AI khi huấn luyện — sẽ làm lại từ đầu.'
-            : 'Không huấn luyện được bộ hiệu chỉnh — sẽ làm lại từ đầu.'
-        : `Độ chính xác hiệu chỉnh thấp (lệch trung bình ~${maeLabel} màn hình, cho phép ${formatMaePercent(threshold)}). Sẽ làm lại từ đầu — hãy giữ mắt nhìn chằm chằm vào từng chấm đỏ.`;
-      console.log('[calibration] FAIL', {
-        error: trained.error ?? null,
-        maePx: trained.maePx ?? null,
-        maePct: maeLabel,
-        max: threshold,
-        enabled: scoringEnabled,
-      });
-      resetCalibration();
-      setError(message);
-      return;
+      const msg = !trained.ok
+        ? trained.error === 'insufficient_samples' ? ERROR_TEXT.insufficient + ' — sẽ làm lại từ đầu.' : trained.error === 'network_error' ? 'Không kết nối được dịch vụ AI khi huấn luyện — sẽ làm lại từ đầu.' : 'Không huấn luyện được — sẽ làm lại từ đầu.'
+        : `Độ chính xác thấp (lệch ~${maeLabel}, cho phép ${formatMaePercent(threshold)}). Sẽ làm lại — giữ mắt nhìn chấm đỏ.`;
+      resetCalibration(); setError(msg); return;
     }
-
-    console.log('[calibration] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel, threshold, enabled: scoringEnabled });
     storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
-    // Lưu lên Postgres để tái sử dụng 20-30 ngày (không phụ thuộc AI RAM 30p)
-    void saveCalibrationToBackend({
-      deviceFingerprint: getDeviceFingerprint(),
-      maePx: trained.maePx ?? null,
-      screenWidth: window.innerWidth,
-      screenHeight: window.innerHeight,
-    });
+    void saveCalibrationToBackend({ deviceFingerprint: getDeviceFingerprint(), maePx: trained.maePx ?? null, screenWidth: window.innerWidth, screenHeight: window.innerHeight });
     goToCourse();
   }, [sessionId, resetCalibration, goToCourse, scoringEnabled, threshold]);
 
   const handleDotClick = async () => {
     if (phase !== 'calibrating') return;
-    if (!sessionId) {
-      setError('Dịch vụ AI chưa sẵn sàng — hãy thử lại sau một nhịp.');
-      return;
-    }
-    setPhase('sending');
-    setError(null);
-    // Chụp frame NGAY khi bấm (không delay): mắt rời chấm chỉ sau ~200-300ms,
-    // delay cũ khiến mẫu train bị sai target có hệ thống → lệch đều.
-
-    if (!camOn) {
-      setPhase('calibrating');
-      setError(ERROR_TEXT['no_camera']);
-      return;
-    }
-
+    if (!sessionId) { setError('Dịch vụ AI chưa sẵn sàng — thử lại sau.'); return; }
+    if (!camOn) { setError(ERROR_TEXT.no_camera); return; }
+    setPhase('sending'); setError(null);
     const point = points[idx];
-    let accepted = 0;
-    let failed: string | null = null;
-
+    let accepted = 0; let failed: string | null = null;
     for (let attempt = 0; attempt < MAX_CAPTURES_PER_POINT && accepted < SAMPLES_PER_POINT; attempt++) {
       const frame = await captureFrame();
-      if (frame === null) {
-        failed = 'no_camera';
-        break;
-      }
+      if (!frame) { failed = 'no_camera'; break; }
       const result = await submitCalibrationSample(sessionId, frame, point.id);
-      if (result.status === 'accepted') {
-        accepted += 1;
-      } else if (result.status === 'no_face' || result.status === 'invalid_image') {
-        failed = result.status;
-        break;
-      } else {
-        failed = 'network_error';
-        break;
-      }
-      if (accepted < SAMPLES_PER_POINT) {
-        await new Promise((r) => setTimeout(r, CAPTURE_GAP_MS));
-      }
+      if (result.status === 'accepted') accepted += 1;
+      else if (result.status === 'no_face' || result.status === 'invalid_image') { failed = result.status; break; }
+      else { failed = 'network_error'; break; }
+      if (accepted < SAMPLES_PER_POINT) await new Promise((r) => setTimeout(r, CAPTURE_GAP_MS));
     }
-
-    if (accepted < SAMPLES_PER_POINT) {
-      setPhase('calibrating');
-      setError(failed ? (ERROR_TEXT[failed] ?? 'Gửi điểm thất bại — bấm lại.') : ERROR_TEXT.insufficient);
-      return;
-    }
-
-    if (idx === total - 1) {
-      await finish();
-      return;
-    }
-    setIdx(idx + 1);
-    setPhase('calibrating');
+    if (accepted < SAMPLES_PER_POINT) { setPhase('calibrating'); setError(failed ? (ERROR_TEXT[failed] ?? 'Gửi điểm thất bại — bấm lại.') : ERROR_TEXT.insufficient); return; }
+    if (idx === total - 1) { await finish(); return; }
+    setIdx(idx + 1); setPhase('calibrating');
   };
 
   const current = points[idx];
-  const step = idx;
-  const busy = phase !== 'calibrating';
-  const progress = ((step + (phase === 'training' ? 1 : 0)) / total) * 100;
 
   return (
-    <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
-      {/* Nút dừng — học: quay về trang khóa học, xóa session tạm */}
-      <button
-        onClick={handleStop}
-        aria-label="Dừng hiệu chỉnh và quay về khóa học"
-        className="absolute left-4 top-4 z-40 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3.5 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        ✕ Dừng
-      </button>
-      {/* Camera capture (ẩn) — vẫn cần để chụp frame gửi hiệu chỉnh, không hiển thị lên màn hình */}
-      <video
-        ref={(el) => {
-          videoRef.current = el;
-          if (el && streamRef.current && !el.srcObject) {
-            el.srcObject = streamRef.current;
-          }
-        }}
-        autoPlay
-        playsInline
-        muted
-        aria-hidden="true"
-        className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px opacity-0"
-      />
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-black text-white">
+      {/* hidden camera */}
+      <video ref={(el) => { videoRef.current = el; if (el && streamRef.current && !el.srcObject) el.srcObject = streamRef.current; }} autoPlay playsInline muted aria-hidden className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px opacity-0" />
 
-      {/* Chấm đỏ hiện tại — chỉ 1 chấm một lúc; ẩn khi đang training */}
-      {(phase === 'calibrating' || phase === 'sending') && (
-        <button
-          onClick={handleDotClick}
-          disabled={busy}
-          aria-label={`Điểm hiệu chỉnh ${step + 1}/${total}`}
-          className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none disabled:cursor-default"
-          style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
-        >
-          <span className="absolute inset-0 rounded-full bg-destructive/20 transition group-hover:bg-destructive/30" />
-          <span className={`absolute inset-2 rounded-full bg-destructive/40 transition ${busy ? 'animate-pulse' : ''}`} />
-          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-destructive shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
-        </button>
-      )}
+      {/* Calibration canvas — black full */}
+      <div className="relative flex flex-1 items-center justify-center">
+        {(phase === 'calibrating' || phase === 'sending') && (
+          <button
+            onClick={handleDotClick}
+            disabled={phase !== 'calibrating'}
+            aria-label={`Điểm ${idx + 1}/${total}`}
+            className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 outline-none disabled:cursor-default"
+            style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
+          >
+            {/* concentric target matching PNG */}
+            <span className="relative flex h-[120px] w-[120px] items-center justify-center rounded-full bg-[#ffe9e9]/90">
+              <span className="absolute inset-3 rounded-full border border-dashed border-red-300" />
+              <span className="absolute h-[88px] w-[88px] rounded-full border-2 border-[#d91e1e]" />
+              <span className="absolute h-[52px] w-[52px] rounded-full bg-red-500/10" />
+              <span className="absolute h-[52px] w-[52px] rounded-full border border-red-300/40" />
+              <span className="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#d91e1e] shadow-lg">
+                <span className="h-2 w-2 rounded-full bg-white" />
+              </span>
+              {/* crosshair */}
+              <span className="pointer-events-none absolute left-1/2 top-1/2 h-[88px] w-px -translate-x-1/2 -translate-y-1/2 bg-red-400/60" />
+              <span className="pointer-events-none absolute left-1/2 top-1/2 h-px w-[88px] -translate-x-1/2 -translate-y-1/2 bg-red-400/60" />
+            </span>
+            <span className="rounded-full bg-[#0f2d5e] px-3 py-1 text-xs font-bold tracking-wide">● ĐIỂM {idx + 1} / {total} (MỤC TIÊU)</span>
+            <span className="rounded-md border border-red-200 bg-[#fff1f1] px-2.5 py-1 text-xs font-semibold text-[#b4232b]">Click vào điểm này để lấy mẫu</span>
+          </button>
+        )}
 
-      {/* Thông báo OVERLAY MỜ giữa màn hình — không chiếm đất, không chặn bấm chấm.
-          pointer-events-none ở container → bấm xuyên qua tới chấm đỏ. bg mờ + blur → chấm phía sau vẫn nhìn thấy. */}
-      <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
-        <div className="pointer-events-none w-full max-w-xs rounded-xl border border-border bg-card px-5 py-4 text-center shadow-lg">
-          <p className="text-sm font-bold text-foreground">Hiệu chỉnh mắt</p>
-
-          {phase === 'training' ? (
-            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              Đang huấn luyện bộ hiệu chỉnh…
-            </p>
-          ) : (
-            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-              Nhìn chằm chằm vào chấm đỏ rồi <span className="font-semibold text-foreground">bấm vào chấm và GIỮ mắt nhìn chấm</span> tới khi chấm tiếp theo hiện ra. Nhìn đi chỗ khác lúc này sẽ làm lệch toàn bộ kết quả.
-            </p>
-          )}
-
-          {/* Tiến độ */}
-          <div className="mt-3 flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-brand-cyan transition-all duration-300" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="shrink-0 text-xs font-semibold text-muted-foreground">{Math.min(step + 1, total)}/{total}</span>
+        {phase === 'training' && (
+          <div className="flex flex-col items-center gap-3">
+            <span className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            <p className="text-sm text-white/80">Đang huấn luyện bộ hiệu chỉnh…</p>
           </div>
+        )}
 
-          {error && (
-            <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
-          )}
+        {/* progress subtle top */}
+        <div className="pointer-events-none absolute left-1/2 top-6 flex -translate-x-1/2 items-center gap-2">
+          <div className="h-1 w-32 overflow-hidden rounded-full bg-white/20">
+            <div className="h-full bg-brand-cyan transition-all" style={{ width: `${((idx + (phase==='training'?1:0))/ total)*100}%` }} />
+          </div>
+          <span className="text-xs text-white/60">{idx + 1}/{total}</span>
         </div>
+
+        {error && (
+          <div className="absolute bottom-24 left-1/2 max-w-[min(90vw,420px)] -translate-x-1/2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-[#b4232b] shadow-lg">
+            {error}
+          </div>
+        )}
       </div>
+
+      {/* Footer guidance panel — matches Footer - BOTTOM GUIDANCE image */}
+      <footer className="flex h-[56px] shrink-0 items-center gap-3 border-t border-white/10 bg-white px-4 text-foreground">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded bg-[#e8f9fd] text-[#0b5f7a]">◈</span>
+          <div className="leading-tight">
+            <p className="text-[11px] font-bold tracking-wide text-[#0b5f7a]">HƯỚNG DẪN HIỆU CHUẨN</p>
+            <p className="text-xs font-semibold text-foreground">Giữ cố định đầu, hướng mắt nhìn thẳng và click vào chấm đỏ khi xuất hiện trên màn hình</p>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="hidden text-xs text-muted-foreground sm:inline">TẬP TRUNG THỊ GIÁC</span>
+          <button onClick={resetCalibration} className="h-8 rounded-full border bg-white px-3 text-xs font-semibold hover:bg-muted">↻ Bắt đầu lại [R]</button>
+          <button onClick={handleStop} className="h-8 rounded-full border bg-white px-3 text-xs font-semibold hover:bg-muted">✕ Hủy hiệu chuẩn [ESC]</button>
+        </div>
+      </footer>
     </div>
   );
 }
