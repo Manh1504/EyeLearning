@@ -68,6 +68,13 @@ def test_slide_key_toggle_and_list(client):
 def test_mastery_endpoint(client):
     teacher, student, course_id, lesson_id = _setup_pdf_course(client)
 
+    # đánh dấu trang 1 là trọng tâm để test mastery tính keyTotal
+    client.post(
+        f"/teacher/lessons/{lesson_id}/slides/key",
+        headers=auth(teacher),
+        json={"orderIndexes": [1]},
+    )
+
     client.post(f"/api/courses/{course_id}/enroll", headers=auth(student))
     r = client.get(f"/teacher/courses/{course_id}/students", headers=auth(teacher))
     student_id = r.json()[0]["id"]
