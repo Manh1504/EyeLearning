@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { RiMenu2Line, RiCloseLine, RiCheckboxCircleFill, RiArrowLeftSLine, RiArrowRightSLine } from '@remixicon/react';
+import { RiMenu2Line, RiCloseLine, RiCheckboxCircleFill, RiArrowLeftSLine, RiArrowRightSLine, RiTimeLine, RiFocus3Line, RiBookOpenLine, RiCheckLine } from '@remixicon/react';
 
 import { Button } from '@/components/ui/button';
 import { useGazeTracker } from '@/hooks/use-gaze-tracker';
