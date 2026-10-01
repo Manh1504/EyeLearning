@@ -54,14 +54,6 @@ function activityText(value: string | null | undefined) {
   return clean ? clean : '—';
 }
 
-function avgMastery(lessons: StudentRow['lessons']) {
-  const vals = lessons
-    .map((lesson) => lesson.mastery)
-    .filter((v): v is number => typeof v === 'number');
-  if (vals.length === 0) return null;
-  return Math.round(vals.reduce((sum, v) => sum + v, 0) / vals.length);
-}
-
 function ProgressBar({ value, label, className = '' }: { value: number; label: string; className?: string }) {
   const normalized = Math.max(0, Math.min(100, value));
 
@@ -404,13 +396,12 @@ export function StudentsTab({
 
             {/* Desktop table */}
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[820px] text-sm text-foreground">
+              <table className="w-full min-w-[680px] text-sm text-foreground">
                 <thead>
                   <tr className="border-b border-border bg-muted/60 text-left text-sm font-semibold text-muted-foreground">
                     <th className="px-5 py-3 font-semibold">Học viên</th>
                     <th className="px-4 py-3 font-semibold">Trạng thái</th>
                     <th className="px-4 py-3 font-semibold">Tiến độ</th>
-                    <th className="px-4 py-3 font-semibold">Điểm hoàn thành</th>
                     <th className="px-4 py-3 font-semibold">Hoạt động gần nhất</th>
                     <th className="w-[220px] px-4 py-3 text-center font-semibold">Hành động</th>
                   </tr>
@@ -419,7 +410,7 @@ export function StudentsTab({
                 <tbody className="divide-y divide-border">
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-12 text-center">
+                      <td colSpan={5} className="px-5 py-12 text-center">
                         <p className="text-sm font-medium text-foreground">Không tìm thấy học viên phù hợp</p>
                         {hasActiveSearch && (
                           <button
@@ -463,13 +454,6 @@ export function StudentsTab({
                               {student.progress}%
                             </span>
                           </div>
-                        </td>
-
-                        <td className="px-4 py-3 text-sm font-normal tabular-nums text-muted-foreground">
-                          {(() => {
-                            const mastery = avgMastery(student.lessons);
-                            return mastery === null ? '—' : `${mastery}%`;
-                          })()}
                         </td>
 
                         <td className="px-4 py-3 text-sm font-normal text-muted-foreground">{activityText(student.lastActive)}</td>
@@ -745,7 +729,7 @@ export function StudentsTab({
                 const target = open.lessons.find((lesson) => lesson.viewed > 0) ?? open.lessons[0];
                 return target ? (
                   <Link
-                    href={`/teacher/courses/${courseId}/lessons/${target.lessonId}/heatmap?student=${open.id}`}
+                    href={`/teacher/courses/${courseId}/lessons/${target.lessonId}/heatmap?student=${open.id}&from=students`}
                     className={cn(buttonVariants(), 'mt-4 w-full')}
                   >
                     <Icon name="ri-fire-line" data-icon="inline-start" />
@@ -775,7 +759,7 @@ export function StudentsTab({
                     return (
                       <li key={lesson.lessonId}>
                         <Link
-                          href={`/teacher/courses/${courseId}/lessons/${lesson.lessonId}/heatmap?student=${open.id}`}
+                          href={`/teacher/courses/${courseId}/lessons/${lesson.lessonId}/heatmap?student=${open.id}&from=students`}
                           className="group flex items-center gap-3 px-3.5 py-3 transition first:rounded-t-xl last:rounded-b-xl hover:bg-muted"
                         >
                           <div className="min-w-0 flex-1">
@@ -795,18 +779,6 @@ export function StudentsTab({
                               <span>
                                 Quan sát {lesson.attention === null ? '—' : `${lesson.attention}%`}
                               </span>
-                            </div>
-
-                            <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                              <span>
-                                Điểm hoàn thành{' '}
-                                {lesson.mastery === null || lesson.mastery === undefined ? '—' : `${lesson.mastery}%`}
-                              </span>
-                              {(lesson.keyTotal ?? 0) > 0 && (
-                                <span className="font-medium tabular-nums text-amber-600">
-                                  {lesson.keyDone ?? 0}/{lesson.keyTotal} trang trọng tâm
-                                </span>
-                              )}
                             </div>
                           </div>
 

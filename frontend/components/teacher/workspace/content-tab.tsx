@@ -9,12 +9,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ConfirmDialog, EmptyState, INPUT_CLS } from './workspace-ui';
-import { useCourseTree, useLessonSlidesAdmin, useTeacherCourses } from '@/hooks/use-teacher';
+import { useCourseTree, useTeacherCourses } from '@/hooks/use-teacher';
 import {
   addCourseStudents,
   createCourse,
@@ -24,7 +25,6 @@ import {
   deleteLesson,
   deleteModule,
   fetchStudentDirectory,
-  setSlideKey,
   updateCourse,
   updateLesson,
   updateModule,
@@ -33,6 +33,7 @@ import {
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, resolveMediaUrl } from '@/lib/api/client';
 import { LEVEL_LABEL } from '@/lib/mock/teacher';
 import type { CourseStatus, LessonNode, Level, ModuleNode } from '@/lib/types/domain';
+import { cn } from '@/lib/utils';
 
 // ---- State cho form tạo mới 1 trang (chương → bài → PDF + học viên) ----
 interface NewLessonDraft {
@@ -60,30 +61,6 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
   const [failed, setFailed] = useState<Record<number, boolean>>({});
   const [preview, setPreview] = useState<number | null>(null);
 
-  const queryClient = useQueryClient();
-  const { data: adminSlides = [] } = useLessonSlidesAdmin(lessonId);
-  const slideByPage = useMemo(
-    () => new Map(adminSlides.map((s) => [s.orderIndex, s])),
-    [adminSlides],
-  );
-  const keyCount = adminSlides.filter((s) => s.isKey).length;
-
-  const toggleKey = async (page: number) => {
-    const slide = slideByPage.get(page);
-    if (!slide) return;
-    const next = !slide.isKey;
-    queryClient.setQueryData(['teacher', 'lesson-slides', lessonId], (old: unknown) =>
-      Array.isArray(old)
-        ? old.map((s) => (s.orderIndex === page ? { ...s, isKey: next } : s))
-        : old,
-    );
-    try {
-      await setSlideKey(slide.id, next);
-    } catch {
-      queryClient.invalidateQueries({ queryKey: ['teacher', 'lesson-slides', lessonId] });
-    }
-  };
-
   useEffect(() => {
     if (preview === null) return;
     const onKey = (event: KeyboardEvent) => {
@@ -99,21 +76,9 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
 
   return (
     <>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          Trang có <Icon name="ri-star-fill" className="inline text-amber-500" aria-hidden /> là trang trọng tâm
-          (chiếm 85% điểm hoàn thành bài học).
-        </p>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {keyCount}/{slideCount} trang trọng tâm
-        </span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
+      <div className="mt-4 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
         {Array.from({ length: slideCount }, (_, i) => i + 1).map((page) => {
           const url = slideImageUrl(lessonId, page);
-          const slide = slideByPage.get(page);
-          const isKey = slide?.isKey ?? false;
           if (!url || failed[page]) {
             return (
               <div
@@ -126,38 +91,23 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
             );
           }
           return (
-            <div key={page} className="relative">
-              <button
-                type="button"
-                onClick={() => setPreview(page)}
-                title={`Xem trước trang ${page}`}
-                aria-label={`Xem trước trang ${page}`}
-                className="group block w-full overflow-hidden rounded-md border border-border bg-white outline-none transition hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  alt={`Trang ${page}`}
-                  loading="lazy"
-                  onError={() => setFailed((prev) => ({ ...prev, [page]: true }))}
-                  className="aspect-[4/3] w-full object-contain transition group-hover:scale-[1.02]"
-                />
-              </button>
-              <button
-                type="button"
-                onClick={() => void toggleKey(page)}
-                title={isKey ? 'Bỏ đánh dấu trọng tâm' : 'Đánh dấu trang trọng tâm'}
-                aria-label={`${isKey ? 'Bỏ đánh dấu' : 'Đánh dấu'} trang ${page} là trọng tâm`}
-                aria-pressed={isKey}
-                className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 ${
-                  isKey
-                    ? 'border-amber-300 bg-amber-100 text-amber-600'
-                    : 'border-border bg-white/90 text-muted-foreground hover:border-amber-300 hover:text-amber-500'
-                }`}
-              >
-                <Icon name={isKey ? 'ri-star-fill' : 'ri-star-line'} className="text-sm" aria-hidden />
-              </button>
-            </div>
+            <button
+              key={page}
+              type="button"
+              onClick={() => setPreview(page)}
+              title={`Xem trước trang ${page}`}
+              aria-label={`Xem trước trang ${page}`}
+              className="group overflow-hidden rounded-md border border-border bg-white outline-none transition hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt={`Trang ${page}`}
+                loading="lazy"
+                onError={() => setFailed((prev) => ({ ...prev, [page]: true }))}
+                className="aspect-[4/3] w-full object-contain transition group-hover:scale-[1.02]"
+              />
+            </button>
           );
         })}
       </div>
@@ -1417,11 +1367,26 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
 
           {selectedLessonContext && (
             <div className="mx-auto max-w-5xl p-5 sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bài học / PDF</p>
-              <h3 className="mt-2 text-xl font-semibold text-foreground">{selectedLessonContext.lesson.title}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Chương {tree.findIndex((m) => m.id === selectedLessonContext.module.id) + 1} · {selectedLessonContext.module.title}
-              </p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bài học / PDF</p>
+                  <h3 className="mt-2 text-xl font-semibold text-foreground">{selectedLessonContext.lesson.title}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Chương {tree.findIndex((m) => m.id === selectedLessonContext.module.id) + 1} · {selectedLessonContext.module.title}
+                  </p>
+                </div>
+
+                {selectedLessonContext.lesson.slides > 0 && (
+                  <Link
+                    href={`/teacher/courses/${validCourseId}/lessons/${selectedLessonContext.lesson.id}/heatmap?from=content`}
+                    className={cn(buttonVariants({ variant: 'outline' }), 'w-full sm:w-auto')}
+                    aria-label={`Xem heatmap bài ${selectedLessonContext.lesson.title}`}
+                  >
+                    <Icon name="ri-fire-line" data-icon="inline-start" />
+                    Xem heatmap
+                  </Link>
+                )}
+              </div>
 
               <section className="mt-8 border-b border-border pb-8">
                   <h4 className="text-sm font-semibold text-foreground">Thông tin bài học</h4>

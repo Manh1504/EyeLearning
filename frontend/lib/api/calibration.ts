@@ -219,9 +219,9 @@ export interface SlideRect {
   height: number;
 }
 
-// Chuyển điểm nhìn màn hình (x,y ∈ [0,1] — AI chuẩn hóa theo khung hiệu chỉnh
-// W0×H0 cố định, KHÔNG phải viewport live) sang toạ độ trang slide [0,1] trong
-// rect hiển thị hiện tại. Bù tỷ lệ khi zoom (dpr) và tịnh tiến khi cuộn/resize.
+// Chuyển điểm nhìn màn hình (x,y thuộc [0,1]) sang toạ độ trang slide [0,1].
+// getBoundingClientRect() và visualViewport cùng dùng CSS pixel của viewport
+// hiện tại, nên phép chiếu vẫn đúng khi browser zoom, pinch-zoom hoặc cuộn trang.
 // Trả null khi điểm nằm ngoài vùng slide (on_slide = false).
 export function screenGazeToSlide(
   x: number,
@@ -231,14 +231,15 @@ export function screenGazeToSlide(
   if (!(x >= 0 && x <= 1) || !(y >= 0 && y <= 1) || rect.width <= 0 || rect.height <= 0) {
     return null;
   }
-  const dpr = globalThis.devicePixelRatio || 1;
-  const dpr0 = getStoredCalibrationDpr();
-  const screen = getStoredCalibrationScreen();
-  const W0 = screen?.w || (typeof window !== 'undefined' ? window.innerWidth : 1280);
-  const H0 = screen?.h || (typeof window !== 'undefined' ? window.innerHeight : 720);
+  const viewport = globalThis.visualViewport;
+  const viewportWidth = viewport?.width ?? globalThis.innerWidth;
+  const viewportHeight = viewport?.height ?? globalThis.innerHeight;
+  const viewportLeft = viewport?.offsetLeft ?? 0;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  if (!(viewportWidth > 0) || !(viewportHeight > 0)) return null;
 
-  const gx = x * W0 * (dpr0 / dpr);
-  const gy = y * H0 * (dpr0 / dpr);
+  const gx = viewportLeft + x * viewportWidth;
+  const gy = viewportTop + y * viewportHeight;
 
   const sx = (gx - rect.left) / rect.width;
   const sy = (gy - rect.top) / rect.height;
@@ -246,13 +247,17 @@ export function screenGazeToSlide(
   return { x: sx, y: sy };
 }
 
-/** true khi viewport hiện tại lệch >10% so với lúc hiệu chỉnh → nên làm lại. */
+/** true khi kích thước cửa sổ vật lý lệch >10%; browser zoom không làm stale. */
 export function isCalibrationScreenStale(): boolean {
   if (typeof window === 'undefined') return false;
   const stored = getStoredCalibrationScreen();
   if (!stored) return false;
-  const dw = Math.abs(window.innerWidth - stored.w) / stored.w;
-  const dh = Math.abs(window.innerHeight - stored.h) / stored.h;
+  const currentDpr = window.devicePixelRatio || 1;
+  const storedDpr = getStoredCalibrationDpr();
+  const storedWidthPx = stored.w * storedDpr;
+  const storedHeightPx = stored.h * storedDpr;
+  const dw = Math.abs(window.innerWidth * currentDpr - storedWidthPx) / storedWidthPx;
+  const dh = Math.abs(window.innerHeight * currentDpr - storedHeightPx) / storedHeightPx;
   return dw > 0.1 || dh > 0.1;
 }
 

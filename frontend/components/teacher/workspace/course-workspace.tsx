@@ -41,7 +41,7 @@ function SegmentedNav({
   ];
 
   return (
-    <nav className="flex items-center gap-1 rounded-lg bg-muted p-1">
+    <nav aria-label="Khu vực quản lý khóa học" className="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1 sm:w-auto">
       {items.map((item) => {
         if (isNew && item.key !== 'content') return null;
         const active = view === item.key;
@@ -49,7 +49,7 @@ function SegmentedNav({
           <Link
             key={item.key}
             href={queryFor(item.key)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            className={`flex h-11 shrink-0 flex-1 items-center justify-center rounded-md px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25 sm:flex-none ${
               active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -88,7 +88,7 @@ export default function TeacherCourseWorkspace() {
     <div className="min-h-[calc(100dvh-56px)] bg-muted">
       {/* Top bar */}
       <header className="sticky top-0 z-30 border-b border-border bg-card">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center gap-3 px-4 py-2 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0 lg:px-8">
           <Link
             href="/teacher/courses"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
@@ -110,7 +110,11 @@ export default function TeacherCourseWorkspace() {
             </div>
           </div>
 
-          {!isNew && <SegmentedNav isNew={false} courseId={courseId} view={view} />}
+          {!isNew && (
+            <div className="order-3 w-full sm:order-none sm:w-auto">
+              <SegmentedNav isNew={false} courseId={courseId} view={view} />
+            </div>
+          )}
         </div>
       </header>
 
