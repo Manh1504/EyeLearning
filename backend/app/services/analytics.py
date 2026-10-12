@@ -6,13 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import rediscache
 from app.core.config import settings
-from app.models.analytics import EngagementScore, HeatmapAggregate
+from app.models.analytics import AoiRegion, EngagementScore, HeatmapAggregate
 from app.models.course import Enrollment, LessonContent
 from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
-from app.schemas.analytics import HotspotOut, SlideStatOut
+from app.schemas.analytics import HeatmapAoiOut, HotspotOut, SlideStatOut
 
 FIXATION_RADIUS = 0.03
-HEATMAP_KEY_PREFIX = "heatmap"
+HEATMAP_KEY_PREFIX = "heatmap:v2"
 
 # Cache heatmap dùng "generation" thay vì DEL để khép kín race read-before-write:
 #   reader đọc gen G -> miss -> tính toán (snapshot DB) -> ghi vào key chứa G.
@@ -99,9 +99,39 @@ async def compute_slide_stats(
     if not slides:
         return []
 
+    slide_ids = [slide.id for slide in slides]
+    aoi_rows = (
+        await db.execute(
+            select(AoiRegion)
+            .where(AoiRegion.lesson_content_id.in_(slide_ids))
+            .order_by(AoiRegion.lesson_content_id, AoiRegion.block_index)
+        )
+    ).scalars().all()
+    aois_by_content: dict[str, list[HeatmapAoiOut]] = {}
+    for region in aoi_rows:
+        aois_by_content.setdefault(region.lesson_content_id, []).append(
+            HeatmapAoiOut(
+                id=region.id,
+                name=region.name,
+                x_min=region.x_min,
+                y_min=region.y_min,
+                x_max=region.x_max,
+                y_max=region.y_max,
+                source=region.source,
+            )
+        )
+
     empty = [
-        SlideStatOut(idx=i, on_slide=0, fixations=0, view_sec=0, hotspots=[], points=[])
-        for i in range(len(slides))
+        SlideStatOut(
+            idx=i,
+            on_slide=0,
+            fixations=0,
+            view_sec=0,
+            hotspots=[],
+            points=[],
+            aois=aois_by_content.get(slide.id, []),
+        )
+        for i, slide in enumerate(slides)
     ]
     if not session_ids:
         return empty
@@ -153,6 +183,7 @@ async def compute_slide_stats(
                 view_sec=round(view_ms / 1000 / n_sessions, 1),
                 hotspots=hotspots,
                 points=[list(p) for p in _downsample(points, MAX_POINTS)],
+                aois=aois_by_content.get(slide.id, []),
             )
         )
     return out

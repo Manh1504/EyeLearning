@@ -9,7 +9,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   RiArrowLeftSLine,
   RiArrowRightLine,
@@ -67,7 +66,7 @@ const CALIB_ERROR_TEXT: Record<string, string> = {
 
 type CalPhase = 'calibrating' | 'sending' | 'training';
 
-function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () => void }) {
+function GuestCalibration({ onDone }: { onDone: () => void }) {
   const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
   const total = points.length;
 
@@ -106,12 +105,6 @@ function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () =
     setPhase('calibrating');
     setSessionNonce((v) => v + 1);
   }, [sessionId]);
-
-  const handleStop = useCallback(() => {
-    if (sessionId) deleteGazeSession(sessionId);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    onStop();
-  }, [sessionId, onStop]);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,13 +235,6 @@ function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () =
 
   return (
     <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
-      <button
-        onClick={handleStop}
-        aria-label="Dừng hiệu chỉnh và quay về trang chủ"
-        className="absolute left-4 top-4 z-40 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3.5 py-2 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        ✕ Dừng
-      </button>
       {/* Camera capture (ẩn) — vẫn cần để chụp frame gửi hiệu chỉnh, không hiển thị lên màn hình */}
       <video
         ref={(el) => {
@@ -269,7 +255,7 @@ function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () =
           onClick={handleDotClick}
           disabled={busy}
           aria-label={`Điểm hiệu chỉnh ${idx + 1}/${total}`}
-          className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none disabled:cursor-default"
+          className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-4 focus-visible:ring-destructive/40 disabled:cursor-default"
           style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
         >
           <span className="absolute inset-0 rounded-full bg-destructive/20 transition group-hover:bg-destructive/30" />
@@ -283,7 +269,7 @@ function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () =
           <p className="text-sm font-bold text-foreground">Hiệu chỉnh điểm nhìn</p>
 
           {phase === 'training' ? (
-            <p className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <p role="status" aria-live="polite" className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               Đang huấn luyện bộ hiệu chỉnh…
             </p>
@@ -301,7 +287,7 @@ function GuestCalibration({ onDone, onStop }: { onDone: () => void; onStop: () =
           </div>
 
           {error && (
-            <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
+            <p role="alert" className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
           )}
 
           <p className="mt-3 text-xs text-muted-foreground">
@@ -322,7 +308,6 @@ const STEP_LABELS: Array<{ key: Step; label: string }> = [
 ];
 
 export default function TryFlow() {
-  const router = useRouter();
   const [step, setStep] = useState<Step>('intro');
   const [currentSlide, setCurrentSlide] = useState(0);
   const [gazeDot, setGazeDot] = useState<{ x: number; y: number } | null>(null);
@@ -398,7 +383,6 @@ export default function TryFlow() {
         onDone={() => {
           setStep('view');
         }}
-        onStop={() => router.push('/')}
       />
     );
   }

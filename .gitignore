@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 .env
 backend/.venv
+frontend/.next
+frontend/frontend/
+.idea/

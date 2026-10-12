@@ -7,15 +7,14 @@
 //   - Bài học:  POST/DELETE /teacher/modules/{id}/lessons, PATCH /teacher/lessons/{id}
 //   - PDF:      POST /teacher/lessons/{id}/slides/upload (backend render từng trang ra JPEG)
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { ConfirmDialog, EmptyState, INPUT_CLS } from './workspace-ui';
-import { useCourseTree, useTeacherCourses } from '@/hooks/use-teacher';
+import { ConfirmDialog, INPUT_CLS } from './workspace-ui';
+import { useCourseTree, useLessonSlidesAdmin, useTeacherCourses } from '@/hooks/use-teacher';
 import {
   addCourseStudents,
   createCourse,
@@ -24,11 +23,14 @@ import {
   deleteCourse,
   deleteLesson,
   deleteModule,
+  deleteSlide,
   fetchStudentDirectory,
+  rebuildLessonAois,
   updateCourse,
   updateLesson,
   updateModule,
   uploadLessonPdf,
+  setSlideKey,
 } from '@/lib/api/teacher';
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, resolveMediaUrl } from '@/lib/api/client';
 import { LEVEL_LABEL } from '@/lib/mock/teacher';
@@ -48,63 +50,57 @@ interface NewChapterDraft {
   lessons: NewLessonDraft[];
 }
 
-function slideImageUrl(lessonId: string, page: number) {
-  return resolveMediaUrl(`/media/lessons/${lessonId}/slide_${String(page).padStart(3, '0')}.jpg`);
-}
-
-// Xem trước slide vừa upload: thumbnail từng trang + lightbox phóng to.
-// URL ảnh suy từ quy ước backend render PDF (`slide_{NNN}.jpg`), không cần
-// endpoint riêng nên giáo viên được phân công cũng xem được.
-function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: number }) {
-  // Component được remount theo key={lessonId} từ phía cha nên state
-  // khởi tạo mới cho mỗi bài học, không cần reset trong effect.
-  const [failed, setFailed] = useState<Record<number, boolean>>({});
+function SlidePreview({ lessonId }: { lessonId: string }) {
+  const { data: slides = [] } = useLessonSlidesAdmin(lessonId);
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
   const [preview, setPreview] = useState<number | null>(null);
 
   useEffect(() => {
     if (preview === null) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setPreview(null);
-      if (event.key === 'ArrowLeft') setPreview((v) => (v === null ? v : (v - 1 + slideCount) % slideCount));
-      if (event.key === 'ArrowRight') setPreview((v) => (v === null ? v : (v + 1) % slideCount));
+      if (event.key === 'ArrowLeft') setPreview((value) => (value === null ? value : (value - 1 + slides.length) % slides.length));
+      if (event.key === 'ArrowRight') setPreview((value) => (value === null ? value : (value + 1) % slides.length));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [preview, slideCount]);
+  }, [preview, slides.length]);
 
-  if (slideCount === 0) return null;
+  if (slides.length === 0) return null;
+
+  const previewSlide = preview === null ? null : slides[preview];
 
   return (
     <>
       <div className="mt-4 grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
-        {Array.from({ length: slideCount }, (_, i) => i + 1).map((page) => {
-          const url = slideImageUrl(lessonId, page);
-          if (!url || failed[page]) {
+        {slides.map((slide, index) => {
+          const url = resolveMediaUrl(slide.imageUrl);
+          if (!url || failed[slide.id]) {
             return (
               <div
-                key={page}
+                key={slide.id}
                 className="flex aspect-[4/3] items-center justify-center rounded-md border border-border bg-card text-xs font-medium tabular-nums text-muted-foreground"
-                title={`Trang ${page}`}
+                title={`Trang ${slide.orderIndex}`}
               >
-                {page}
+                {slide.orderIndex}
               </div>
             );
           }
           return (
             <button
-              key={page}
+              key={slide.id}
               type="button"
-              onClick={() => setPreview(page)}
-              title={`Xem trước trang ${page}`}
-              aria-label={`Xem trước trang ${page}`}
+              onClick={() => setPreview(index)}
+              title={`Xem trước trang ${slide.orderIndex}`}
+              aria-label={`Xem trước trang ${slide.orderIndex}`}
               className="group overflow-hidden rounded-md border border-border bg-white outline-none transition hover:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={url}
-                alt={`Trang ${page}`}
+                alt={`Trang ${slide.orderIndex}`}
                 loading="lazy"
-                onError={() => setFailed((prev) => ({ ...prev, [page]: true }))}
+                onError={() => setFailed((current) => ({ ...current, [slide.id]: true }))}
                 className="aspect-[4/3] w-full object-contain transition group-hover:scale-[1.02]"
               />
             </button>
@@ -112,7 +108,7 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
         })}
       </div>
 
-      {preview !== null && (
+      {previewSlide && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" role="presentation">
           <button
             type="button"
@@ -123,7 +119,7 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
           <div className="relative flex max-h-full w-full max-w-4xl flex-col rounded-xl border border-border bg-card p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold tabular-nums text-foreground">
-                Trang {preview} / {slideCount}
+                Trang {previewSlide.orderIndex} / {slides.length}
               </p>
               <button
                 type="button"
@@ -135,18 +131,18 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
               </button>
             </div>
             {(() => {
-              const url = slideImageUrl(lessonId, preview);
+              const url = resolveMediaUrl(previewSlide.imageUrl);
               return url ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  key={preview}
+                  key={previewSlide.id}
                   src={url}
-                  alt={`Trang ${preview}`}
+                  alt={`Trang ${previewSlide.orderIndex}`}
                   className="mt-3 max-h-[70dvh] w-full rounded-lg bg-white object-contain"
                 />
               ) : (
                 <p className="mt-3 rounded-lg bg-muted px-3 py-8 text-center text-sm text-muted-foreground">
-                  Không tải được ảnh trang {preview}.
+                  Không tải được ảnh trang {previewSlide.orderIndex}.
                 </p>
               );
             })()}
@@ -155,8 +151,8 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setPreview((v) => (v === null ? v : (v - 2 + slideCount) % slideCount + 1))}
-                disabled={slideCount <= 1}
+                onClick={() => setPreview((value) => (value === null ? value : (value - 1 + slides.length) % slides.length))}
+                disabled={slides.length <= 1}
               >
                 <Icon name="ri-arrow-left-line" data-icon="inline-start" />
                 Trang trước
@@ -165,8 +161,8 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setPreview((v) => (v === null ? v : (v % slideCount) + 1))}
-                disabled={slideCount <= 1}
+                onClick={() => setPreview((value) => (value === null ? value : (value + 1) % slides.length))}
+                disabled={slides.length <= 1}
               >
                 Trang sau
                 <Icon name="ri-arrow-right-line" data-icon="inline-end" />
@@ -179,158 +175,212 @@ function SlidePreview({ lessonId, slideCount }: { lessonId: string; slideCount: 
   );
 }
 
-type Selection =
-  | { type: 'module'; id: string }
-  | { type: 'lesson'; id: string }
-  | null;
+type Selection = { type: 'lesson'; id: string } | null;
 
-type StructureMenuKey = { type: 'module' | 'lesson'; id: string } | null;
-
-type StructureMenuAction = {
-  label: string;
-  onSelect: () => void;
-  destructive?: boolean;
-  separated?: boolean;
-};
-
-function sameMenu(a: StructureMenuKey, b: Exclude<StructureMenuKey, null>) {
-  return a?.type === b.type && a.id === b.id;
-}
-
-function StructureMenu({
-  menu,
-  openMenu,
-  setOpenMenu,
-  label,
-  actions,
-  widthClass = 'w-40',
+function KeySlideControls({
+  lessonId,
+  courseId,
+  canDelete,
 }: {
-  menu: Exclude<StructureMenuKey, null>;
-  openMenu: StructureMenuKey;
-  setOpenMenu: (menu: StructureMenuKey) => void;
-  label: string;
-  actions: StructureMenuAction[];
-  widthClass?: string;
+  lessonId: string;
+  courseId: string;
+  canDelete: boolean;
 }) {
-  const isOpen = sameMenu(openMenu, menu);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const queryClient = useQueryClient();
+  const { data: slides = [], isLoading, isError } = useLessonSlidesAdmin(lessonId);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [slideToDelete, setSlideToDelete] = useState<{ id: string; orderIndex: number } | null>(null);
+  const [toggleError, setToggleError] = useState('');
+  const [aoiMessage, setAoiMessage] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
-  const closeMenu = useCallback(() => {
-    setOpenMenu(null);
-  }, [setOpenMenu]);
+  const sourceLabel = (source: string) => {
+    if (source === 'pdf') return 'PDF gốc';
+    if (source === 'grid') return 'Lưới dự phòng';
+    return 'Chưa xác định';
+  };
 
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    const content = menuRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const menuWidth = content?.offsetWidth ?? (widthClass === 'w-36' ? 144 : 160);
-    const menuHeight = content?.offsetHeight ?? 128;
-    const gap = 8;
-    const margin = 8;
-    const belowTop = rect.bottom + gap;
-    const aboveTop = rect.top - gap - menuHeight;
-    const top =
-      belowTop + menuHeight <= window.innerHeight - margin
-        ? belowTop
-        : Math.max(margin, aboveTop);
-    const left = Math.min(
-      Math.max(margin, rect.right - menuWidth),
-      window.innerWidth - menuWidth - margin,
-    );
-
-    setPosition({ top, left });
-  }, [widthClass]);
-
-  useLayoutEffect(() => {
-    if (isOpen) updatePosition();
-  }, [isOpen, updatePosition]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
-      closeMenu();
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeMenu();
-        triggerRef.current?.focus();
+  const rebuildAois = async () => {
+    setRebuilding(true);
+    setAoiMessage(null);
+    try {
+      const result = await rebuildLessonAois(lessonId);
+      if (result.slides === 0) {
+        setAoiMessage({
+          tone: 'err',
+          text: 'Không tìm thấy PDF nguồn. Hãy tải lại PDF trước khi tạo AOI.',
+        });
+        return;
       }
-    };
-    const onReposition = () => closeMenu();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'lesson-slides', lessonId] }),
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'heatmap', lessonId] }),
+      ]);
+      setAoiMessage({
+        tone: 'ok',
+        text: `Đã tạo lại và lưu AOI cho ${result.slides} trang.`,
+      });
+    } catch (error) {
+      setAoiMessage({
+        tone: 'err',
+        text: error instanceof Error ? error.message : 'Không tạo lại được AOI.',
+      });
+    } finally {
+      setRebuilding(false);
+    }
+  };
 
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    window.addEventListener('resize', onReposition);
-    window.addEventListener('scroll', onReposition, true);
+  const toggle = async (slideId: string, isKey: boolean) => {
+    setPendingId(slideId);
+    setToggleError('');
+    try {
+      await setSlideKey(slideId, !isKey);
+      await queryClient.invalidateQueries({ queryKey: ['teacher', 'lesson-slides', lessonId] });
+    } catch (error) {
+      setToggleError(error instanceof Error ? error.message : 'Không cập nhật được slide trọng tâm.');
+    } finally {
+      setPendingId(null);
+    }
+  };
 
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('resize', onReposition);
-      window.removeEventListener('scroll', onReposition, true);
-    };
-  }, [closeMenu, isOpen]);
+  const removeSlide = async () => {
+    if (!slideToDelete) return;
+    const slide = slideToDelete;
+    setPendingId(slide.id);
+    setToggleError('');
+    try {
+      await deleteSlide(slide.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'lesson-slides', lessonId] }),
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'course-tree'] }),
+        queryClient.invalidateQueries({ queryKey: ['teacher', 'courses'] }),
+      ]);
+      setSlideToDelete(null);
+    } catch (error) {
+      setToggleError(error instanceof Error ? error.message : 'Không xóa được slide.');
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  if (isLoading) return <p className="mt-3 text-sm text-muted-foreground">Đang tải danh sách slide…</p>;
+  if (isError) return <p role="alert" className="mt-3 text-sm text-destructive">Không tải được thiết lập slide trọng tâm.</p>;
+  if (slides.length === 0) return null;
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        aria-label={label}
-        title="Thao tác"
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpenMenu(isOpen ? null : menu);
-        }}
-        className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-      >
-        <Icon name="ri-more-2-fill" className="text-lg" aria-hidden />
-      </button>
+    <section aria-labelledby={`lesson-aoi-${lessonId}`} className="mt-6 border-t border-border pt-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h5 id={`lesson-aoi-${lessonId}`} className="text-sm font-semibold text-foreground">Vùng nội dung (AOI)</h5>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            Kiểm tra vùng đo trên từng trang. AOI được tạo và lưu từ PDF nguồn.
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={() => void rebuildAois()} disabled={rebuilding}>
+          <Icon name="ri-refresh-line" data-icon="inline-start" aria-hidden />
+          {rebuilding ? 'Đang tạo AOI…' : 'Tạo lại & lưu AOI'}
+        </Button>
+      </div>
 
-      {isOpen &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="menu"
-            className={`fixed z-[80] overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg ${widthClass}`}
-            style={{ top: position.top, left: position.left }}
-          >
-            {actions.map((action) => (
-              <div key={action.label}>
-                {action.separated && <div className="my-1 border-t border-border" />}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={`flex w-full px-3 py-2 text-left text-sm outline-none transition hover:bg-muted focus-visible:bg-muted ${
-                    action.destructive ? 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10' : 'text-foreground'
-                  }`}
-                  onClick={() => {
-                    closeMenu();
-                    action.onSelect();
-                  }}
-                >
-                  {action.label}
-                </button>
-              </div>
-            ))}
-          </div>,
-          document.body,
-        )}
+      {aoiMessage ? (
+        <p
+          role={aoiMessage.tone === 'err' ? 'alert' : 'status'}
+          className={`mt-4 rounded-lg border px-3 py-3 text-sm ${
+            aoiMessage.tone === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-destructive/25 bg-destructive/10 text-destructive'
+          }`}
+        >
+          {aoiMessage.text}
+        </p>
+      ) : null}
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="hidden grid-cols-[minmax(0,1fr)_minmax(7rem,0.7fr)_minmax(7rem,0.7fr)_auto] gap-4 border-b border-border bg-muted/60 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:grid">
+          <span>Trang</span>
+          <span>Nguồn</span>
+          <span>Kiểm tra</span>
+          <span className="sr-only">Thao tác</span>
+        </div>
+        <ul className="divide-y divide-border">
+          {slides.map((slide) => {
+            const aoiReady = slide.aoiCount > 0 && slide.aoiSource !== 'none';
+            return (
+              <li
+                key={slide.id}
+                className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(7rem,0.7fr)_minmax(7rem,0.7fr)_auto] sm:items-center"
+              >
+                <label className="flex min-w-0 cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={slide.isKey}
+                    disabled={pendingId === slide.id}
+                    onChange={() => void toggle(slide.id, slide.isKey)}
+                    className="size-4 accent-primary"
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-foreground">Trang {slide.orderIndex}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {slide.isKey ? 'Slide trọng tâm' : 'Slide thường'} · {slide.aoiCount} AOI
+                    </span>
+                  </span>
+                </label>
+                <div className="text-sm text-foreground">
+                  <span className="mr-2 text-xs text-muted-foreground sm:hidden">Nguồn</span>
+                  {sourceLabel(slide.aoiSource)}
+                </div>
+                <div>
+                  <span className="mr-2 text-xs text-muted-foreground sm:hidden">Kiểm tra</span>
+                  <span className={`inline-flex items-center gap-2 text-xs font-medium ${aoiReady ? 'text-emerald-700' : 'text-destructive'}`}>
+                    <span className={`size-2 rounded-full ${aoiReady ? 'bg-emerald-500' : 'bg-destructive'}`} aria-hidden />
+                    {aoiReady ? 'Sẵn sàng' : 'Cần tạo lại'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/teacher/courses/${courseId}/lessons/${lessonId}/heatmap?from=content&view=aoi&page=${slide.orderIndex}`}
+                    className={cn(buttonVariants({ variant: 'outline' }), 'flex-1 sm:flex-none')}
+                    aria-label={`Xem AOI trang ${slide.orderIndex}`}
+                  >
+                    <Icon name="ri-focus-3-line" data-icon="inline-start" aria-hidden />
+                    Xem AOI
+                  </Link>
+                  {canDelete ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-lg"
+                      disabled={pendingId === slide.id}
+                      onClick={() => setSlideToDelete({ id: slide.id, orderIndex: slide.orderIndex })}
+                      aria-label={`Xóa slide trang ${slide.orderIndex}`}
+                      title="Xóa slide"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Icon name="ri-delete-bin-line" aria-hidden />
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      {toggleError ? <p role="alert" className="mt-3 text-sm text-destructive">{toggleError}</p> : null}
+    </section>
+    <ConfirmDialog
+      open={slideToDelete !== null}
+      title={slideToDelete ? `Xóa slide trang ${slideToDelete.orderIndex}?` : 'Xóa slide?'}
+      description="Slide sẽ bị xóa khỏi bài học. Thao tác có thể thất bại nếu slide đã có dữ liệu theo dõi."
+      confirmLabel="Xóa slide"
+      onClose={() => setSlideToDelete(null)}
+      onConfirm={removeSlide}
+    />
     </>
   );
 }
 
-export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: boolean }) {
+export function ContentTab({ isNew }: { isNew: boolean; embed?: boolean }) {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -342,12 +392,13 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     [courses, courseIdFromUrl],
   );
   const validCourseId = course?.id ?? courseIdFromUrl;
-  const isOwner = isNew || (course?.isOwner ?? true);
+  const isOwner = isNew || course?.isOwner === true;
   const { data: tree = [], isFetching: treeFetching } = useCourseTree(validCourseId);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [level, setLevel] = useState<Level>('beginner');
+  const [status, setStatus] = useState<CourseStatus>('draft');
   // Form tạo mới 1 trang: danh sách chương, mỗi chương có bài + file PDF.
   const [newChapters, setNewChapters] = useState<NewChapterDraft[]>([
     { key: 0, title: '', lessons: [{ key: 0, title: '', file: null }] },
@@ -366,7 +417,6 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
   const [selection, setSelection] = useState<Selection>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<{ type: 'module' | 'lesson'; id: string } | null>(null);
-  const [openMenu, setOpenMenu] = useState<StructureMenuKey>(null);
   const [lessonToDelete, setLessonToDelete] = useState<LessonNode | null>(null);
   const [moduleToDelete, setModuleToDelete] = useState<ModuleNode | null>(null);
   const [confirmDeleteCourse, setConfirmDeleteCourse] = useState(false);
@@ -383,6 +433,8 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     hydratedRef.current = true;
     setTitle(course.title);
     setDescription(course.description);
+    setLevel(course.level);
+    setStatus(course.status);
   }, [isNew, course]);
 
   const flash = useCallback((tone: 'ok' | 'err', text: string) => {
@@ -401,19 +453,6 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
   const errText = (e: unknown) =>
     e instanceof Error ? e.message : 'Lỗi không xác định';
 
-  // ---- Chọn tự động bài/chương đầu tiên khi tree tải xong (render-phase adjust) ----
-  if (!isNew && !selection && tree.length > 0) {
-    const firstLesson = tree[0]?.lessons[0] ?? null;
-    setSelection(
-      firstLesson
-        ? { type: 'lesson', id: firstLesson.id }
-        : { type: 'module', id: tree[0].id },
-    );
-  }
-
-  const selectedModule =
-    selection?.type === 'module' ? tree.find((m) => m.id === selection.id) ?? null : null;
-
   let selectedLessonContext: { module: ModuleNode; lesson: LessonNode } | null = null;
   if (selection?.type === 'lesson') {
     for (const m of tree) {
@@ -426,7 +465,6 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
   }
 
   const selectedLesson = selectedLessonContext?.lesson ?? null;
-  const selectedModuleForAdd = selectedModule ?? selectedLessonContext?.module ?? tree[0] ?? null;
 
   const totalLessons = tree.flatMap((m) => m.lessons).length;
   const totalSlides = tree
@@ -462,11 +500,13 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
       }
       const saved = await updateCourse(validCourseId, {
         title: title.trim(),
-        description: description.trim() || undefined,
+        description: description.trim(),
+        level,
         status,
       });
+      setStatus(saved.status);
       refreshTree();
-      flash('ok', `Đã ${status === 'published' ? 'xuất bản' : 'lưu nháp'} "${saved.title}".`);
+      flash('ok', `Đã lưu "${saved.title}".`);
     } catch (e) {
       flash('err', `Không lưu được khóa học: ${errText(e)}`);
     } finally {
@@ -721,7 +761,7 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     }
   };
 
-  const currentStatus: CourseStatus = course?.status ?? 'draft';
+  const currentStatus: CourseStatus = status;
   const currentStatusLabel =
     currentStatus === 'published'
       ? 'Đã xuất bản'
@@ -1010,493 +1050,199 @@ export function ContentTab({ isNew, embed = false }: { isNew: boolean; embed?: b
     );
   }
 
-  const pageFrame = embed
-    ? 'flex flex-col'
-    : 'flex min-h-0 flex-col lg:h-[calc(100dvh-8rem)] lg:overflow-hidden';
-  const gridFrame = embed
-    ? 'mt-4 grid rounded-xl border border-border bg-card lg:grid-cols-[minmax(300px,34%)_minmax(0,1fr)]'
-    : 'mt-4 grid flex-1 rounded-xl border border-border bg-card lg:grid-cols-[minmax(300px,34%)_minmax(0,1fr)]';
-
   return (
-    <div className={pageFrame}>
-      <header
-        className={
-          embed
-            ? 'shrink-0 rounded-xl border border-border bg-card p-4 sm:p-5'
-            : 'shrink-0 border-b border-border bg-muted pb-4'
-        }
-      >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="mx-auto w-full max-w-5xl">
+      <header className="border-b border-border pb-6">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-foreground">{title || course?.title || 'Nội dung khóa học'}</h2>
-              <span className={`rounded-md border px-2 py-1 text-xs font-medium ${currentStatusClass}`}>
-                {currentStatusLabel}
-              </span>
+              <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Nội dung khóa học</p>
+              <span className={`rounded-full border px-2 py-1 text-xs font-medium ${currentStatusClass}`}>{currentStatusLabel}</span>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {embed
-                ? 'Quản lý thông tin khóa học, cấu trúc chương – bài học và tài liệu PDF.'
-                : 'Quản lý cấu trúc bài học và tài liệu PDF của khóa học.'}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>{tree.length} chương</span>
-              <span>{totalLessons} bài học</span>
-              <span>{totalSlides} trang PDF</span>
-            </div>
+            <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              {title || course?.title || 'Khóa học'}
+            </h1>
+            <p className="mt-2 text-base leading-7 text-muted-foreground">Một tài liệu duy nhất cho khóa học, chương, bài học và slide.</p>
+            <p className="mt-3 text-sm text-muted-foreground">{tree.length} chương · {totalLessons} bài học · {totalSlides} trang</p>
           </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-            {isOwner && (
-              <Button
-                type="button"
-                variant="outline"
-                size="default"
-                disabled={saving || !title.trim()}
-                onClick={() => saveCourse('draft')}
-              >
+          {isOwner ? (
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" disabled={saving || !title.trim()} onClick={() => saveCourse(currentStatus)}>
                 {saving ? 'Đang lưu…' : 'Lưu thay đổi'}
               </Button>
-            )}
-            {isOwner && (
-              <Button
-                type="button"
-                size="default"
-                disabled={saving || !canPublish}
-                title={!canPublish ? 'Cần có tên, chương, bài học và slide trước khi xuất bản' : undefined}
-                onClick={() => saveCourse('published')}
-              >
-                {saving ? 'Đang lưu…' : 'Xuất bản'}
+              <Button type="button" disabled={saving || !canPublish} onClick={() => saveCourse('published')}>
+                Xuất bản
               </Button>
-            )}
-            {isOwner && !isNew && (
-              <Button
-                type="button"
-                variant="destructive"
-                size="default"
-                className="border border-destructive/25 bg-card hover:bg-destructive/10 sm:ml-3"
-                onClick={() => setConfirmDeleteCourse(true)}
-              >
-                Xóa khóa học
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <section className="mt-5 rounded-lg border border-border bg-muted p-4">
-          <div className="grid gap-5">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-foreground">Thông tin khóa học</h3>
-              <div className="mt-4 grid w-full gap-4">
-                <div>
-                  <label htmlFor="course-title" className="mb-1.5 block text-sm font-medium text-foreground">
-                    Tên khóa học <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    id="course-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    readOnly={!isOwner}
-                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="course-description" className="mb-1.5 block text-sm font-medium text-foreground">
-                    Mô tả
-                  </label>
-                  <textarea
-                    id="course-description"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    readOnly={!isOwner}
-                    rows={4}
-                    className={`${INPUT_CLS} min-h-28 resize-y ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`}
-                  />
-                </div>
-              </div>
+              <Button type="button" variant="destructive" onClick={() => setConfirmDeleteCourse(true)}>Xóa khóa học</Button>
             </div>
-          </div>
-        </section>
-
-        {statusMsg && (
-          <p aria-live="polite" className={`mt-3 text-sm ${statusMsg.tone === 'ok' ? 'text-emerald-600' : 'text-destructive'}`}>
+          ) : null}
+        </div>
+        {statusMsg ? (
+          <p aria-live="polite" className={`mt-4 rounded-lg border px-3 py-3 text-sm ${statusMsg.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-destructive/25 bg-destructive/10 text-destructive'}`}>
             {statusMsg.text}
           </p>
-        )}
+        ) : null}
       </header>
 
-      <div className={gridFrame}>
-        <aside className="border-b border-border lg:border-b-0 lg:border-r">
-          <div className="flex flex-col lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)]">
-            <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Cấu trúc khóa học
-                {treeFetching && <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />}
-              </p>
-            </div>
-
-            {tree.length === 0 ? (
-              <div className="p-5">
-                <EmptyState
-                  className="py-8"
-                  icon={<Icon name="ri-git-branch-line" className="text-2xl text-muted-foreground" />}
-                  title="Chưa có chương nào"
-                  desc="Tạo chương đầu tiên để bắt đầu xây dựng khóa học."
-                >
-                  {isOwner ? (
-                    <Button type="button" className="mt-4" onClick={addModule} disabled={saving}>
-                      Tạo chương đầu tiên
-                    </Button>
-                  ) : (
-                    <p className="mt-4 text-xs text-muted-foreground">Bạn được phân công hỗ trợ khóa học này.</p>
-                  )}
-                </EmptyState>
-              </div>
-            ) : (
-              <div className="px-2 py-3 lg:overflow-y-auto">
-                {tree.map((module, moduleIndex) => {
-                  const moduleActive = selection?.type === 'module' && selection.id === module.id;
-                  const isExpanded = expanded[module.id] ?? true;
-
-                  return (
-                    <section key={module.id} className="mb-3 rounded-lg border border-border bg-card">
-                      <div
-                        className={`group flex items-center gap-2 rounded-t-lg px-2 py-2 ${
-                          moduleActive ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setExpanded((prev) => ({ ...prev, [module.id]: !isExpanded }))}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-card hover:text-foreground"
-                          aria-label={isExpanded ? `Thu gọn ${module.title}` : `Mở rộng ${module.title}`}
-                          title={isExpanded ? 'Thu gọn' : 'Mở rộng'}
-                        >
-                          <Icon name="ri-arrow-right-s-line" className={`transition ${isExpanded ? 'rotate-90' : ''}`} />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setSelection({ type: 'module', id: module.id })}
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                        >
-                          <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
-                            {String(moduleIndex + 1).padStart(2, '0')}
-                          </span>
-                          {renaming?.type === 'module' && renaming.id === module.id ? (
-                            <input
-                              autoFocus
-                              defaultValue={module.title}
-                              onClick={(event) => event.stopPropagation()}
-                              onBlur={(event) => {
-                                commitRenameModule(module.id, event.target.value);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
-                                if (event.key === 'Escape') setRenaming(null);
-                              }}
-                              className="min-w-0 flex-1 rounded-md border border-ring px-2 py-1 text-sm font-medium outline-none ring-2 ring-ring/25"
-                            />
-                          ) : (
-                            <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={module.title}>{module.title}</span>
-                          )}
-                          <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                            {module.lessons.length} bài
-                          </span>
-                        </button>
-
-                        {isOwner && (
-                          <StructureMenu
-                            menu={{ type: 'module', id: module.id }}
-                            openMenu={openMenu}
-                            setOpenMenu={setOpenMenu}
-                            label={`Mở menu chương ${module.title}`}
-                            actions={[
-                              {
-                                label: 'Đổi tên',
-                                onSelect: () => setRenaming({ type: 'module', id: module.id }),
-                              },
-                              {
-                                label: 'Thêm bài học',
-                                onSelect: () => {
-                                  void addLesson(module.id);
-                                },
-                              },
-                              {
-                                label: 'Xóa chương',
-                                destructive: true,
-                                separated: true,
-                                onSelect: () => setModuleToDelete(module),
-                              },
-                            ]}
-                          />
-                        )}
-                      </div>
-
-                      {isExpanded && (
-                        <div className="ml-10 mt-1 space-y-0.5 border-l border-border pl-2">
-                          {module.lessons.length === 0 && (
-                            <p className="px-2 py-3 text-xs leading-5 text-muted-foreground">
-                              Chương này chưa có bài học. Thêm bài đầu tiên để upload PDF.
-                            </p>
-                          )}
-                          {module.lessons.map((lesson, lessonIndex) => {
-                            const lessonActive = selection?.type === 'lesson' && selection.id === lesson.id;
-
-                            return (
-                              <div key={lesson.id} className="group flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelection({ type: 'lesson', id: lesson.id })}
-                                  className={`relative flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${
-                                    lessonActive
-                                      ? 'bg-accent font-medium text-primary before:absolute before:-left-[9px] before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-primary'
-                                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                                  }`}
-                                >
-                                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                    {lessonIndex + 1}
-                                  </span>
-                                  <Icon name="ri-book-open-line" className="shrink-0 text-sm text-muted-foreground" />
-                                  {renaming?.type === 'lesson' && renaming.id === lesson.id ? (
-                                    <input
-                                      autoFocus
-                                      defaultValue={lesson.title}
-                                      onClick={(event) => event.stopPropagation()}
-                                      onBlur={(event) => {
-                                        commitRenameLesson(lesson.id, event.target.value);
-                                      }}
-                                      onKeyDown={(event) => {
-                                        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
-                                        if (event.key === 'Escape') setRenaming(null);
-                                      }}
-                                      className="min-w-0 flex-1 rounded-md border border-ring px-2 py-1 text-sm outline-none ring-2 ring-ring/25"
-                                    />
-                                  ) : (
-                                    <span className="min-w-0 flex-1 truncate" title={lesson.title}>{lesson.title}</span>
-                                  )}
-                                  {lesson.slides > 0 && (
-                                    <span className="shrink-0 text-xs font-normal text-muted-foreground">{lesson.slides} trang</span>
-                                  )}
-                                </button>
-
-                                {isOwner && (
-                                  <StructureMenu
-                                    menu={{ type: 'lesson', id: lesson.id }}
-                                    openMenu={openMenu}
-                                    setOpenMenu={setOpenMenu}
-                                    label={`Mở menu bài học ${lesson.title}`}
-                                    widthClass="w-36"
-                                    actions={[
-                                      {
-                                        label: 'Đổi tên',
-                                        onSelect: () => setRenaming({ type: 'lesson', id: lesson.id }),
-                                      },
-                                      {
-                                        label: 'Xóa bài',
-                                        destructive: true,
-                                        separated: true,
-                                        onSelect: () => setLessonToDelete(lesson),
-                                      },
-                                    ]}
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-
-{isOwner && selectedModuleForAdd?.id === module.id && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            className="mt-1 w-full justify-start text-muted-foreground"
-                            onClick={() => addLesson(module.id)}
-                            disabled={saving}
-                          >
-                            <Icon name="ri-add-line" data-icon="inline-start" />
-                            {module.lessons.length === 0 ? 'Thêm bài học đầu tiên' : 'Thêm bài học'}
-                          </Button>
-                        )}
-                        </div>
-                      )}
-                    </section>
-                  );
-                })}
-
-                {isOwner && (
-                <Button type="button" variant="outline" size="sm" className="mt-2 w-full" onClick={addModule} disabled={saving}>
-                  <Icon name="ri-add-line" data-icon="inline-start" />
-                  Thêm chương
-                </Button>
-              )}
-              </div>
-            )}
+      <section aria-labelledby="course-information" className="border-b border-border py-6">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-accent text-primary"><Icon name="ri-book-2-line" aria-hidden /></span>
+          <div>
+            <h2 id="course-information" className="text-lg font-semibold text-foreground">Khóa học</h2>
+            <p className="text-sm text-muted-foreground">Thông tin hiển thị với học viên.</p>
           </div>
-        </aside>
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="course-title" className="mb-2 block text-sm font-medium text-foreground">Tên khóa học</label>
+            <input id="course-title" value={title} onChange={(event) => setTitle(event.target.value)} readOnly={!isOwner} className={`${INPUT_CLS} h-11 ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`} />
+          </div>
+          <div>
+            <label htmlFor="course-level" className="mb-2 block text-sm font-medium text-foreground">Trình độ</label>
+            <select id="course-level" value={level} onChange={(event) => setLevel(event.target.value as Level)} disabled={!isOwner} className={`${INPUT_CLS} h-11 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground`}>
+              {(Object.keys(LEVEL_LABEL) as Level[]).map((value) => <option key={value} value={value}>{LEVEL_LABEL[value]}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="course-status" className="mb-2 block text-sm font-medium text-foreground">Trạng thái</label>
+            <select id="course-status" value={status} onChange={(event) => setStatus(event.target.value as CourseStatus)} disabled={!isOwner} className={`${INPUT_CLS} h-11 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground`}>
+              <option value="draft">Bản nháp</option>
+              <option value="published">Đã xuất bản</option>
+              <option value="archived">Lưu trữ</option>
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label htmlFor="course-description" className="mb-2 block text-sm font-medium text-foreground">Mô tả</label>
+            <textarea id="course-description" value={description} onChange={(event) => setDescription(event.target.value)} readOnly={!isOwner} rows={3} className={`${INPUT_CLS} min-h-28 resize-y ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`} />
+          </div>
+        </div>
+      </section>
 
-        <main className="min-w-0">
-          {!selectedLessonContext && !selectedModule && (
-            <EmptyState
-              className="min-h-[420px] justify-center p-10"
-              icon={<Icon name="ri-book-open-line" className="text-2xl text-muted-foreground" />}
-              title="Chọn một chương hoặc bài học"
-              desc="Chọn nội dung ở danh sách bên trái để bắt đầu chỉnh sửa."
-            />
-          )}
+      <section aria-labelledby="course-outline" className="py-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 id="course-outline" className="text-lg font-semibold text-foreground">Chương và bài học</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Mở một bài học để quản lý PDF, slide trọng tâm và heatmap.</p>
+          </div>
+          {isOwner ? (
+            <Button type="button" variant="outline" onClick={addModule} disabled={saving}>
+              <Icon name="ri-add-line" data-icon="inline-start" /> Thêm chương
+            </Button>
+          ) : null}
+        </div>
 
-          {selectedModule && !selectedLessonContext && (
-            <div className="mx-auto max-w-2xl p-5 sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Chương {String(tree.findIndex((m) => m.id === selectedModule.id) + 1).padStart(2, '0')}
-              </p>
-              <h3 className="mt-2 text-xl font-semibold text-foreground">{selectedModule.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {selectedModule.lessons.length > 0
-                  ? `${selectedModule.lessons.length} bài học trong chương này.`
-                  : 'Chương này chưa có bài học.'}
-              </p>
-              {isOwner && (
-                <Button type="button" variant="outline" size="sm" className="mt-5" onClick={() => addLesson(selectedModule.id)} disabled={saving}>
-                  <Icon name="ri-add-line" data-icon="inline-start" />
-                  Thêm bài học vào chương
-                </Button>
-              )}
-            </div>
-          )}
-
-          {selectedLessonContext && (
-            <div className="mx-auto max-w-5xl p-5 sm:p-8">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bài học / PDF</p>
-                  <h3 className="mt-2 text-xl font-semibold text-foreground">{selectedLessonContext.lesson.title}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Chương {tree.findIndex((m) => m.id === selectedLessonContext.module.id) + 1} · {selectedLessonContext.module.title}
-                  </p>
-                </div>
-
-                {selectedLessonContext.lesson.slides > 0 && (
-                  <Link
-                    href={`/teacher/courses/${validCourseId}/lessons/${selectedLessonContext.lesson.id}/heatmap?from=content`}
-                    className={cn(buttonVariants({ variant: 'outline' }), 'w-full sm:w-auto')}
-                    aria-label={`Xem heatmap bài ${selectedLessonContext.lesson.title}`}
-                  >
-                    <Icon name="ri-fire-line" data-icon="inline-start" />
-                    Xem heatmap
-                  </Link>
-                )}
-              </div>
-
-              <section className="mt-8 border-b border-border pb-8">
-                  <h4 className="text-sm font-semibold text-foreground">Thông tin bài học</h4>
-                <div className="mt-4">
-                  <label htmlFor="lesson-title" className="mb-1.5 block text-sm font-medium text-foreground">
-                    Tên bài <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    key={selectedLessonContext.lesson.id}
-                    id="lesson-title"
-                    defaultValue={selectedLessonContext.lesson.title}
-                    readOnly={!isOwner}
-                    className={`${INPUT_CLS} ${isOwner ? '' : 'cursor-not-allowed bg-muted text-muted-foreground'}`}
-                    onBlur={(event) => {
-                      const value = event.target.value.trim();
-                      if (!value || value === selectedLessonContext?.lesson.title) return;
-                      void updateLesson(selectedLessonContext.lesson.id, value)
-                        .then(refreshTree)
-                        .catch((e) => flash('err', `Không đổi tên được: ${errText(e)}`));
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
-                    }}
-                  />
-                </div>
-              </section>
-
-              <section className="py-8">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h4 className="text-base font-semibold text-foreground">PDF bài học</h4>
-                    <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
-                      Upload PDF — backend render từng trang thành ảnh slide cho học viên xem.
-                      File mới sẽ thay thế toàn bộ slide cũ của bài.
-                    </p>
-                  </div>
-                </div>
-
-                <input
-                  ref={fileRef}
-                  id="lesson-pdf"
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={(event) => {
-                    if (event.target.files) void handleFiles(event.target.files);
-                    event.target.value = '';
-                  }}
-                />
-
-                {selectedLessonContext.lesson.slides === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDragOverZone(true);
-                    }}
-                    onDragLeave={() => setDragOverZone(false)}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      setDragOverZone(false);
-                      void handleFiles(event.dataTransfer.files);
-                    }}
-                    className={`mt-5 flex min-h-[260px] w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-8 py-14 text-center transition ${
-                      dragOverZone
-                        ? 'border-ring bg-accent text-primary'
-                        : 'border-border bg-muted/60 text-muted-foreground hover:border-ring hover:bg-accent/50'
-                    }`}
-                  >
-                    <Icon name="ri-upload-cloud-2-line" className="text-4xl" />
-                    <p className="mt-4 text-base font-semibold text-foreground">Chưa có PDF</p>
-                    <p className="mt-1.5 text-sm text-muted-foreground">Kéo file vào đây hoặc chọn từ máy.</p>
-                    <p className="mt-1 text-xs text-muted-foreground">PDF · tối đa {MAX_UPLOAD_LABEL}</p>
-                    <span className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">
-                      {uploading ? 'Đang render slide…' : 'Chọn file PDF'}
-                    </span>
-                  </button>
-                ) : (
-                  <div className="mt-5 flex flex-col gap-4 rounded-xl border border-border bg-background p-5">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-semibold text-foreground">PDF bài học</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{selectedLessonContext.lesson.slides} trang đã render thành slide</p>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                          {uploading ? 'Đang render…' : 'Thay file'}
-                        </Button>
-                      </div>
+        {treeFetching ? <p aria-live="polite" className="mt-4 text-sm text-muted-foreground">Đang cập nhật cấu trúc…</p> : null}
+        {tree.length === 0 ? (
+          <div className="mt-6 rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center">
+            <Icon name="ri-git-branch-line" className="mx-auto text-2xl text-muted-foreground" aria-hidden />
+            <h3 className="mt-3 text-base font-semibold text-foreground">Chưa có chương</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Tạo chương đầu tiên để bắt đầu xây dựng khóa học.</p>
+            {isOwner ? <Button type="button" className="mt-4" onClick={addModule}>Tạo chương đầu tiên</Button> : null}
+          </div>
+        ) : (
+          <div className="mt-6 overflow-hidden rounded-xl border border-border bg-card">
+            {tree.map((module, moduleIndex) => {
+              const moduleExpanded = expanded[module.id] ?? true;
+              return (
+                <section key={module.id} aria-label={`Chương ${moduleIndex + 1}: ${module.title}`} className="border-b border-border last:border-b-0">
+                  <div className="flex min-h-16 items-center gap-2 bg-muted/60 px-3 py-3 sm:px-4">
+                    <button type="button" onClick={() => setExpanded((value) => ({ ...value, [module.id]: !moduleExpanded }))} aria-expanded={moduleExpanded} aria-controls={`module-lessons-${module.id}`} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-card focus-visible:ring-3 focus-visible:ring-ring/25" aria-label={moduleExpanded ? `Thu gọn ${module.title}` : `Mở rộng ${module.title}`}>
+                      <Icon name="ri-arrow-right-s-line" className={`text-xl transition-transform ${moduleExpanded ? 'rotate-90' : ''}`} aria-hidden />
+                    </button>
+                    <span className="font-mono text-xs font-semibold tabular-nums text-muted-foreground">{String(moduleIndex + 1).padStart(2, '0')}</span>
+                    <div className="min-w-0 flex-1">
+                      {renaming?.type === 'module' && renaming.id === module.id ? (
+                        <input autoFocus defaultValue={module.title} onBlur={(event) => void commitRenameModule(module.id, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenaming(null); }} className={`${INPUT_CLS} h-10 font-semibold`} aria-label="Tên chương" />
+                      ) : (
+                        <h3 id={`module-${module.id}`} className="truncate text-base font-semibold text-foreground">{module.title}</h3>
+                      )}
+                      <p className="mt-1 text-xs text-muted-foreground">{module.lessons.length} bài học</p>
                     </div>
+                    {isOwner ? (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button type="button" variant="ghost" size="icon-lg" onClick={() => setRenaming({ type: 'module', id: module.id })} aria-label={`Đổi tên chương ${module.title}`} title="Đổi tên"><Icon name="ri-edit-line" /></Button>
+                        <Button type="button" variant="destructive" size="icon-lg" onClick={() => setModuleToDelete(module)} aria-label={`Xóa chương ${module.title}`} title="Xóa chương"><Icon name="ri-delete-bin-line" /></Button>
+                      </div>
+                    ) : null}
                   </div>
-                )}
 
-                <div className="mt-5 rounded-xl border border-border bg-muted/40 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-foreground">Trang trong tài liệu</p>
-                    <p className="text-xs tabular-nums text-muted-foreground">{selectedLessonContext.lesson.slides} trang · bấm để xem trước</p>
-                  </div>
-                  <SlidePreview
-                    key={selectedLessonContext.lesson.id}
-                    lessonId={selectedLessonContext.lesson.id}
-                    slideCount={selectedLessonContext.lesson.slides}
-                  />
-                </div>
-              </section>
-            </div>
-          )}
-        </main>
-      </div>
+                  {moduleExpanded ? (
+                    <div id={`module-lessons-${module.id}`}>
+                      {module.lessons.map((lesson, lessonIndex) => {
+                        const lessonExpanded = selection?.id === lesson.id;
+                        return (
+                          <article key={lesson.id} className="border-t border-border first:border-t-0">
+                            <div className="flex min-h-16 items-center gap-3 px-3 py-3 pl-6 sm:px-4 sm:pl-12">
+                              {renaming?.type === 'lesson' && renaming.id === lesson.id ? (
+                                <div className="flex min-w-0 flex-1 items-center gap-3">
+                                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-sm font-semibold tabular-nums text-muted-foreground">{lessonIndex + 1}</span>
+                                  <input autoFocus defaultValue={lesson.title} onBlur={(event) => void commitRenameLesson(lesson.id, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenaming(null); }} className={`${INPUT_CLS} h-10 min-w-0 flex-1`} aria-label="Tên bài học" />
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => setSelection(lessonExpanded ? null : { type: 'lesson', id: lesson.id })} aria-expanded={lessonExpanded} aria-controls={`lesson-${lesson.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/25">
+                                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-sm font-semibold tabular-nums text-muted-foreground">{lessonIndex + 1}</span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-medium text-foreground">{lesson.title}</span>
+                                    <span className="mt-1 block text-xs text-muted-foreground">{lesson.slides > 0 ? `${lesson.slides} trang slide` : 'Chưa có PDF'}</span>
+                                  </span>
+                                  <Icon name="ri-arrow-down-s-line" className={`shrink-0 text-xl text-muted-foreground transition-transform ${lessonExpanded ? 'rotate-180' : ''}`} aria-hidden />
+                                </button>
+                              )}
+                              {isOwner ? (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Button type="button" variant="ghost" size="icon-lg" onClick={() => setRenaming({ type: 'lesson', id: lesson.id })} aria-label={`Đổi tên bài ${lesson.title}`} title="Đổi tên"><Icon name="ri-edit-line" /></Button>
+                                  <Button type="button" variant="destructive" size="icon-lg" onClick={() => setLessonToDelete(lesson)} aria-label={`Xóa bài ${lesson.title}`} title="Xóa bài"><Icon name="ri-delete-bin-line" /></Button>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {lessonExpanded ? (
+                              <div id={`lesson-${lesson.id}`} className="border-t border-border bg-muted/30 px-4 py-6 sm:px-12">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <h4 className="text-base font-semibold text-foreground">Tài liệu bài học</h4>
+                                    <p className="mt-1 text-sm leading-6 text-muted-foreground">Tải PDF mới để tạo hoặc thay thế toàn bộ slide của bài học.</p>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                                      <Icon name="ri-upload-cloud-2-line" data-icon="inline-start" />
+                                      {uploading ? 'Đang tải…' : lesson.slides > 0 ? 'Thay PDF' : 'Tải PDF'}
+                                    </Button>
+                                    {lesson.slides > 0 ? (
+                                      <Link href={`/teacher/courses/${validCourseId}/lessons/${lesson.id}/heatmap?from=content`} className={cn(buttonVariants({ variant: 'outline' }))}>
+                                        <Icon name="ri-fire-line" data-icon="inline-start" /> Xem heatmap
+                                      </Link>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <input ref={fileRef} type="file" accept="application/pdf" className="sr-only" onChange={(event) => { if (event.target.files) void handleFiles(event.target.files); event.target.value = ''; }} />
+                                <button type="button" onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); setDragOverZone(true); }} onDragLeave={() => setDragOverZone(false)} onDrop={(event) => { event.preventDefault(); setDragOverZone(false); void handleFiles(event.dataTransfer.files); }} className={`mt-4 flex min-h-28 w-full items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center outline-none transition focus-visible:ring-3 focus-visible:ring-ring/25 ${dragOverZone ? 'border-ring bg-accent' : 'border-border bg-card hover:border-ring/60'}`}>
+                                  <span><Icon name="ri-file-pdf-2-line" className="mx-auto text-2xl text-muted-foreground" aria-hidden /><span className="mt-2 block text-sm font-medium text-foreground">{lesson.slides > 0 ? `${lesson.slides} trang đã sẵn sàng` : 'Kéo PDF vào đây hoặc bấm để chọn'}</span><span className="mt-1 block text-xs text-muted-foreground">PDF · tối đa {MAX_UPLOAD_LABEL}</span></span>
+                                </button>
+                                {lesson.slides > 0 ? (
+                                  <div className="mt-6 border-t border-border pt-6">
+                                    <div className="flex items-center justify-between gap-3"><h4 className="text-sm font-semibold text-foreground">Trang trong tài liệu</h4><span className="text-xs text-muted-foreground">Bấm một trang để xem trước</span></div>
+                                    <SlidePreview key={lesson.id} lessonId={lesson.id} />
+                                     <KeySlideControls lessonId={lesson.id} courseId={validCourseId} canDelete={isOwner} />
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                      {module.lessons.length === 0 ? <p className="px-6 py-6 text-sm text-muted-foreground sm:px-12">Chương này chưa có bài học.</p> : null}
+                      {isOwner ? (
+                        <div className="border-t border-border px-4 py-3 sm:pl-12"><Button type="button" variant="ghost" onClick={() => addLesson(module.id)} disabled={saving}><Icon name="ri-add-line" data-icon="inline-start" />Thêm bài học</Button></div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <ConfirmDialog
         open={moduleToDelete !== null}

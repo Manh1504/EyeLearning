@@ -1,826 +1,277 @@
 'use client';
 
-// components/admin/course-assignment.tsx — Admin: phân công giảng viên cho khóa học.
-
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import CalibrationSettings from '@/components/admin/calibration-settings';
 import {
   assignTeachers,
   fetchCourseTeachers,
   fetchTeachers,
   unassignTeacher,
   type CourseTeacher,
-  type TeacherDirectory,
 } from '@/lib/api/admin';
 import { useTeacherCourses } from '@/hooks/use-teacher';
 import { STATUS_LABEL } from '@/lib/mock/teacher';
-import type { CourseStatus, TeacherCourse } from '@/lib/types/domain';
+import type { CourseStatus } from '@/lib/types/domain';
 import { cn } from '@/lib/utils';
 
 type Filter = CourseStatus | 'all';
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'Tất cả' },
-  { key: 'published', label: 'Đã xuất bản' },
-  { key: 'draft', label: 'Nháp' },
-  { key: 'archived', label: 'Lưu trữ' },
+const STATUS_OPTIONS: Array<{ value: Filter; label: string }> = [
+  { value: 'all', label: 'Tất cả trạng thái' },
+  { value: 'published', label: 'Đã xuất bản' },
+  { value: 'draft', label: 'Bản nháp' },
+  { value: 'archived', label: 'Lưu trữ' },
 ];
 
-const STATUS_BADGE: Record<CourseStatus, string> = {
+const STATUS_CLASS: Record<CourseStatus, string> = {
   published: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   draft: 'border-amber-200 bg-amber-50 text-amber-700',
   archived: 'border-border bg-muted text-muted-foreground',
 };
 
-function getAssignedTeachers(assigned: CourseTeacher[]) {
-  return assigned.filter((teacher) => !teacher.isOwner);
-}
+function AssignmentPanel({ courseId }: { courseId: string }) {
+  const queryClient = useQueryClient();
+  const [teacherId, setTeacherId] = useState('');
+  const [notice, setNotice] = useState('');
 
-function EmptyState({
-  icon,
-  title,
-  description,
-  action,
-  tone = 'neutral',
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  action?: ReactNode;
-  tone?: 'neutral' | 'danger';
-}) {
-  return (
-    <div
-      role={tone === 'danger' ? 'alert' : undefined}
-      className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center"
-    >
-      <div className="max-w-sm">
-        <div
-          className={cn(
-            'mx-auto flex h-10 w-10 items-center justify-center rounded-lg',
-            tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground',
-          )}
-        >
-          <Icon name={icon} className="text-xl" aria-hidden />
-        </div>
-        <h2 className="mt-3 text-sm font-semibold text-foreground">{title}</h2>
-        <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p>
-        {action}
-      </div>
-    </div>
-  );
-}
+  const teachersQuery = useQuery({
+    queryKey: ['admin', 'teachers'],
+    queryFn: () => fetchTeachers(),
+  });
+  const assignedQuery = useQuery({
+    queryKey: ['admin', 'course-teachers', courseId],
+    queryFn: () => fetchCourseTeachers(courseId),
+  });
 
-function TeacherPicker({
-  teachers,
-  value,
-  onChange,
-  disabled,
-  loading,
-}: {
-  teachers: TeacherDirectory[];
-  value: string;
-  onChange: (teacherId: string) => void;
-  disabled?: boolean;
-  loading?: boolean;
-}) {
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+  const assigned = assignedQuery.data ?? [];
+  const assignedIds = new Set(assigned.map((teacher) => teacher.teacherId));
+  const available = (teachersQuery.data ?? []).filter((teacher) => !assignedIds.has(teacher.id));
 
-  const selected = teachers.find((teacher) => teacher.id === value);
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLocaleLowerCase('vi');
-    if (!keyword) return teachers;
+  const refresh = () => queryClient.invalidateQueries({
+    queryKey: ['admin', 'course-teachers', courseId],
+  });
 
-    return teachers.filter((teacher) =>
-      [teacher.name, teacher.code, teacher.email ?? '', teacher.department ?? '']
-        .join(' ')
-        .toLocaleLowerCase('vi')
-        .includes(keyword),
-    );
-  }, [query, teachers]);
+  const assign = useMutation({
+    mutationFn: () => assignTeachers(courseId, [teacherId]),
+    onSuccess: () => {
+      setTeacherId('');
+      setNotice('Đã phân công giảng viên.');
+      refresh();
+    },
+    onError: () => setNotice(''),
+  });
+  const unassign = useMutation({
+    mutationFn: (teacher: CourseTeacher) => unassignTeacher(courseId, teacher.teacherId),
+    onSuccess: () => {
+      setNotice('Đã gỡ giảng viên khỏi khóa học.');
+      refresh();
+    },
+    onError: () => setNotice(''),
+  });
 
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const updatePosition = () => {
-      const trigger = buttonRef.current?.getBoundingClientRect();
-      if (!trigger) return;
-
-      const width = Math.min(Math.max(trigger.width, 320), window.innerWidth - 24);
-      const left = Math.min(Math.max(12, trigger.left), window.innerWidth - width - 12);
-      const spaceBelow = window.innerHeight - trigger.bottom;
-      const menuHeight = Math.min(360, Math.max(180, 72 + filtered.length * 52));
-      const opensUp = spaceBelow < menuHeight + 12 && trigger.top > spaceBelow;
-
-      setMenuStyle({
-        position: 'fixed',
-        left,
-        top: opensUp ? Math.max(12, trigger.top - menuHeight - 8) : trigger.bottom + 8,
-        width,
-        maxHeight: menuHeight,
-        zIndex: 80,
-      });
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
-  }, [filtered.length, open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open]);
-
-  const handleButtonKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      setOpen(true);
-    }
-  };
+  const queryError = assignedQuery.error ?? teachersQuery.error;
+  const actionError = assign.error ?? unassign.error;
 
   return (
-    <div className="relative min-w-0">
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={handleButtonKeyDown}
-        className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 text-left text-sm outline-none transition hover:border-ring/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
-      >
-        <span className="min-w-0 truncate">
-          {loading ? 'Đang tải giảng viên...' : selected ? `${selected.name} · ${selected.code}` : 'Chọn giảng viên'}
-        </span>
-        <Icon name="ri-arrow-down-s-line" className="shrink-0 text-muted-foreground" aria-hidden />
-      </button>
-
-      {open &&
-        createPortal(
-          <div
-            ref={menuRef}
-            style={menuStyle}
-            className="overflow-y-auto rounded-xl border border-border bg-card shadow-lg shadow-brand-navy/15"
-          >
-            <div className="border-b border-border p-2">
-              <label className="relative block">
-                <span className="sr-only">Tìm giảng viên</span>
-                <Icon
-                  name="ri-search-line"
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  autoFocus
-                  placeholder="Tìm tên, email hoặc mã..."
-                  className="h-9 pl-9"
-                />
-              </label>
-            </div>
-            <div role="listbox" aria-label="Danh sách giảng viên" className="p-1">
-              {filtered.length === 0 ? (
-                <p className="px-3 py-4 text-sm text-muted-foreground">Không có giảng viên phù hợp.</p>
-              ) : (
-                filtered.map((teacher) => (
-                  <button
-                    key={teacher.id}
-                    type="button"
-                    role="option"
-                    aria-selected={teacher.id === value}
-                    onClick={() => {
-                      onChange(teacher.id);
-                      setOpen(false);
-                      buttonRef.current?.focus();
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none transition hover:bg-muted focus-visible:bg-accent',
-                      teacher.id === value && 'bg-accent text-primary',
-                    )}
-                  >
-                    <UserAvatar name={teacher.name} className="h-8 w-8" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-foreground">{teacher.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {teacher.code}{teacher.email ? ` · ${teacher.email}` : ''}
-                      </span>
+    <div className="border-t border-border bg-muted/40 px-4 py-4 sm:px-6 sm:py-6">
+      {assignedQuery.isLoading || teachersQuery.isLoading ? (
+        <p aria-live="polite" className="text-sm text-muted-foreground">Đang tải phân công…</p>
+      ) : queryError ? (
+        <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-3 text-sm text-destructive">
+          {queryError instanceof Error ? queryError.message : 'Không tải được dữ liệu phân công.'}
+        </p>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+          <section aria-labelledby={`assigned-${courseId}`}>
+            <h3 id={`assigned-${courseId}`} className="text-sm font-semibold text-foreground">
+              Giảng viên hiện tại
+            </h3>
+            <ul className="mt-3 divide-y divide-border rounded-lg border border-border bg-card">
+              {assigned.length === 0 ? (
+                <li className="px-4 py-4 text-sm text-muted-foreground">Chưa có giảng viên được phân công.</li>
+              ) : assigned.map((teacher) => (
+                <li key={teacher.teacherId} className="flex min-h-16 items-center gap-3 px-4 py-3">
+                  <UserAvatar name={teacher.name} className="h-9 w-9" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">{teacher.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {teacher.code}{teacher.email ? ` · ${teacher.email}` : ''}
                     </span>
-                    {teacher.id === value && (
-                      <Icon name="ri-check-line" className="shrink-0 text-primary" aria-hidden />
-                    )}
-                  </button>
-                ))
-              )}
+                  </span>
+                  {teacher.isOwner ? (
+                    <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+                      Chủ khóa học
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={unassign.isPending}
+                      onClick={() => unassign.mutate(teacher)}
+                      aria-label={`Gỡ ${teacher.name} khỏi khóa học`}
+                    >
+                      Gỡ
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setNotice('');
+              if (teacherId) assign.mutate();
+            }}
+            aria-labelledby={`add-teacher-${courseId}`}
+          >
+            <h3 id={`add-teacher-${courseId}`} className="text-sm font-semibold text-foreground">
+              Thêm giảng viên
+            </h3>
+            <label htmlFor={`teacher-${courseId}`} className="mt-3 block text-sm font-medium text-foreground">
+              Chọn từ danh mục
+            </label>
+            <select
+              id={`teacher-${courseId}`}
+              value={teacherId}
+              onChange={(event) => setTeacherId(event.target.value)}
+              disabled={available.length === 0 || assign.isPending}
+              className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+            >
+              <option value="">{available.length === 0 ? 'Không còn giảng viên để gán' : 'Chọn giảng viên'}</option>
+              {available.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.code}</option>
+              ))}
+            </select>
+            <Button type="submit" disabled={!teacherId || assign.isPending} className="mt-3 w-full">
+              {assign.isPending ? 'Đang phân công…' : 'Phân công giảng viên'}
+            </Button>
+            <div aria-live="polite" className="mt-3 min-h-5 text-sm">
+              {actionError ? (
+                <p role="alert" className="text-destructive">
+                  {actionError instanceof Error ? actionError.message : 'Không thực hiện được thao tác.'}
+                </p>
+              ) : null}
+              {notice ? <p className="text-emerald-700">{notice}</p> : null}
             </div>
-          </div>,
-          document.body,
-        )}
+          </form>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function CourseAssignment() {
-  const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [chosen, setChosen] = useState('');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
-  const [success, setSuccess] = useState('');
-
-  const {
-    data: courses = [],
-    isLoading,
-    isError,
-    error: coursesError,
-  } = useTeacherCourses();
-
-  const {
-    data: teachers = [],
-    isLoading: teachersLoading,
-    isError: teachersIsError,
-    error: teachersError,
-  } = useQuery({
-    queryKey: ['admin', 'teachers'],
-    queryFn: () => fetchTeachers(),
-  });
-
-  const {
-    data: assigned = [],
-    isLoading: assignedLoading,
-    isError: assignedIsError,
-    error: assignedError,
-  } = useQuery({
-    queryKey: ['admin', 'course-teachers', selectedId],
-    queryFn: () => fetchCourseTeachers(selectedId!),
-    enabled: Boolean(selectedId),
-  });
-
-  const selectedCourse = courses.find((course) => course.id === selectedId) ?? null;
-  const owner = assigned.find((teacher) => teacher.isOwner);
-  const assignedTeachers = getAssignedTeachers(assigned);
-  const assignedIds = new Set(assigned.map((teacher) => teacher.teacherId));
-  const available = teachers.filter((teacher) => !assignedIds.has(teacher.id));
-  const selectedTeacher = teachers.find((teacher) => teacher.id === chosen);
-
-  const assign = useMutation({
-    mutationFn: ({ courseId, teacherId }: { courseId: string; teacherId: string }) =>
-      assignTeachers(courseId, [teacherId]),
-    onSuccess: () => {
-      setSuccess('Đã gán giảng viên cho khóa học.');
-      setChosen('');
-      queryClient.invalidateQueries({ queryKey: ['admin', 'course-teachers', selectedId] });
-    },
-    onError: () => setSuccess(''),
-  });
-
-  const unassign = useMutation({
-    mutationFn: ({ courseId, teacherId }: { courseId: string; teacherId: string }) =>
-      unassignTeacher(courseId, teacherId),
-    onSuccess: () => {
-      setSuccess('Đã gỡ giảng viên khỏi khóa học.');
-      queryClient.invalidateQueries({ queryKey: ['admin', 'course-teachers', selectedId] });
-    },
-    onError: () => setSuccess(''),
-  });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const coursesQuery = useTeacherCourses();
+  const courses = useMemo(() => coursesQuery.data ?? [], [coursesQuery.data]);
 
   const visibleCourses = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase('vi');
-
     return courses.filter((course) => {
-      const matchQuery =
-        keyword.length === 0 ||
-        course.title.toLocaleLowerCase('vi').includes(keyword) ||
-        course.id.toLocaleLowerCase('vi').includes(keyword) ||
-        course.description.toLocaleLowerCase('vi').includes(keyword);
-      const matchFilter =
-        filter === 'all' ||
-        course.status === filter;
-
-      return matchQuery && matchFilter;
+      const matchesStatus = filter === 'all' || course.status === filter;
+      const matchesQuery = !keyword || [course.title, course.id, course.description]
+        .join(' ')
+        .toLocaleLowerCase('vi')
+        .includes(keyword);
+      return matchesStatus && matchesQuery;
     });
   }, [courses, filter, query]);
 
-  const counts = useMemo(() => ({
-    all: courses.length,
-    published: courses.filter((course) => course.status === 'published').length,
-    draft: courses.filter((course) => course.status === 'draft').length,
-    archived: courses.filter((course) => course.status === 'archived').length,
-  }), [courses]);
-
-  const resetFilters = () => {
-    setQuery('');
-    setFilter('all');
-  };
-
-  const selectCourse = (course: TeacherCourse) => {
-    setSelectedId(course.id);
-    setChosen('');
-    setSuccess('');
-    assign.reset();
-    unassign.reset();
-  };
-
-  const closeCourseDetails = () => {
-    setSelectedId(null);
-    setChosen('');
-    setSuccess('');
-    assign.reset();
-    unassign.reset();
-  };
-
-  const actionError = assign.error ?? unassign.error;
-
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 sm:py-9 lg:py-10">
-      <section className="border-b border-border pb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">
-          Quản trị
+    <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <header className="border-b border-border pb-6">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quản trị</p>
+        <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          Phân công giảng viên
         </h1>
-        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Quản lý cấu hình hệ thống và phân công giảng viên.
+        <p className="mt-2 max-w-2xl text-base leading-7 text-muted-foreground">
+          Chọn một khóa học để xem chủ sở hữu, thêm giảng viên hỗ trợ hoặc gỡ phân công hiện tại.
         </p>
+      </header>
+
+      <section aria-label="Tìm và lọc khóa học" className="grid gap-3 py-6 sm:grid-cols-[minmax(0,1fr)_240px]">
+        <label className="relative block">
+          <span className="sr-only">Tìm khóa học</span>
+          <Icon name="ri-search-line" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm theo tên hoặc mã khóa học" className="h-11 pl-10" />
+        </label>
+        <label>
+          <span className="sr-only">Lọc theo trạng thái</span>
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as Filter)}
+            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+          >
+            {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
       </section>
 
-      <section className="pt-6">
-        <CalibrationSettings />
-      </section>
-
-      <section className="border-b border-border pb-6 pt-8">
-        <h2 className="text-xl font-bold tracking-tight text-foreground">Phân công giảng viên</h2>
-        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Chọn khóa học để xem chủ sở hữu và quản lý giảng viên được phân công.
-        </p>
-      </section>
-
-      <section className="pt-6">
-        <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <label className="relative block w-full lg:max-w-[420px]">
-              <span className="sr-only">Tìm theo tên hoặc mã khóa học</span>
-              <Icon
-                name="ri-search-line"
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tìm theo tên hoặc mã khóa học..."
-                className="pl-10"
-              />
-            </label>
-
-            <div
-              role="tablist"
-              aria-label="Lọc khóa học"
-              className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1"
-            >
-              {FILTERS.map((item) => {
-                const active = filter === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setFilter(item.key)}
-                    className={cn(
-                      'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium outline-none transition focus-visible:ring-3 focus-visible:ring-ring/20',
-                      active
-                        ? 'bg-card text-primary shadow-sm'
-                        : 'text-muted-foreground hover:bg-card/70 hover:text-foreground',
-                    )}
-                  >
-                    {item.label}
-                    <span className={cn('text-xs tabular-nums', active ? 'text-primary' : 'text-muted-foreground')}>
-                      {counts[item.key]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      <section aria-labelledby="course-list-heading" className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
+          <h2 id="course-list-heading" className="text-base font-semibold text-foreground">Khóa học</h2>
+          <span className="text-sm tabular-nums text-muted-foreground">{visibleCourses.length} / {courses.length}</span>
         </div>
-      </section>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-        <Card className="min-w-0 gap-0 py-0">
-          <div className="flex flex-col gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Danh sách khóa học</h2>
-              <p className="text-xs text-muted-foreground">
-                {visibleCourses.length} / {courses.length} khóa học
-              </p>
-            </div>
-            {query.trim() || filter !== 'all' ? (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="self-start rounded-lg px-2 py-1 text-xs font-medium text-primary outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/20 sm:self-auto"
-              >
-                Xóa lọc
-              </button>
-            ) : null}
+        {coursesQuery.isLoading ? (
+          <div aria-busy="true" aria-live="polite" className="space-y-3 p-4 sm:p-6">
+            {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-16 rounded-lg bg-muted" />)}
           </div>
-
-          {isLoading ? (
-            <div aria-live="polite" aria-busy="true" className="space-y-3 p-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="rounded-lg border border-border p-4">
-                  <div className="h-5 w-2/3 rounded bg-muted" />
-                  <div className="mt-3 h-4 w-1/2 rounded bg-muted" />
-                </div>
-              ))}
-            </div>
-          ) : isError ? (
-            <div className="p-4">
-              <EmptyState
-                tone="danger"
-                icon="ri-error-warning-line"
-                title="Không tải được khóa học"
-                description={coursesError instanceof Error ? coursesError.message : 'Vui lòng thử lại sau.'}
-              />
-            </div>
-          ) : courses.length === 0 ? (
-            <div className="p-4">
-              <EmptyState
-                icon="ri-book-open-line"
-                title="Chưa có khóa học"
-                description="Hiện chưa có khóa học nào để phân công giảng viên."
-              />
-            </div>
-          ) : visibleCourses.length === 0 ? (
-            <div className="p-4">
-              <EmptyState
-                icon="ri-search-line"
-                title="Không có kết quả phù hợp"
-                description="Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc."
-                action={
-                  <Button type="button" variant="outline" onClick={resetFilters} className="mt-4">
-                    Xóa tìm kiếm và bộ lọc
-                  </Button>
-                }
-              />
-            </div>
-          ) : (
-            <>
-            <div className="grid gap-3 p-3 md:hidden">
-              {visibleCourses.map((course) => {
-                const selected = course.id === selectedId;
-                const courseAssignedTeachers = selected ? assignedTeachers : [];
-                const assignedLabel = selected
-                  ? assignedLoading
-                    ? 'Đang tải...'
-                    : courseAssignedTeachers.length > 0
-                      ? courseAssignedTeachers.map((teacher) => teacher.name).join(', ')
-                      : 'Chưa phân công'
-                  : 'Chọn để xem';
-
-                return (
-                  <article
-                    key={course.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={selected}
-                    data-selected={selected ? 'true' : undefined}
-                    onClick={() => selectCourse(course)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        selectCourse(course);
-                      }
-                    }}
+        ) : coursesQuery.isError ? (
+          <div role="alert" className="p-6 text-sm text-destructive">
+            {coursesQuery.error instanceof Error ? coursesQuery.error.message : 'Không tải được danh sách khóa học.'}
+          </div>
+        ) : visibleCourses.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <Icon name="ri-book-open-line" className="mx-auto text-2xl text-muted-foreground" aria-hidden />
+            <h2 className="mt-3 text-base font-semibold text-foreground">Không có khóa học phù hợp</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Thử thay đổi từ khóa hoặc trạng thái.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {visibleCourses.map((course) => {
+              const expanded = expandedId === course.id;
+              return (
+                <article key={course.id}>
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-controls={`assignment-${course.id}`}
+                    onClick={() => setExpandedId(expanded ? null : course.id)}
                     className={cn(
-                      'cursor-pointer rounded-xl border bg-card p-4 outline-none transition hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/20',
-                      selected ? 'border-brand-cyan/60 bg-accent ring-2 ring-ring/20' : 'border-border',
+                      'flex min-h-20 w-full items-center gap-3 px-4 py-4 text-left outline-none transition hover:bg-muted/60 focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/25 sm:px-6',
+                      expanded && 'bg-accent/60',
                     )}
                   >
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={cn(
-                          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]',
-                          selected
-                            ? 'border-primary bg-primary text-white'
-                            : 'border-border bg-card text-transparent',
-                        )}
-                        aria-hidden
-                      >
-                        <Icon name="ri-check-line" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="break-words text-sm font-semibold text-foreground">{course.title}</h3>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{course.id} · {course.students} học viên</p>
-                      </div>
-                      <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium', STATUS_BADGE[course.status])}>
-                        {STATUS_LABEL[course.status]}
-                      </span>
-                    </div>
-
-                    <dl className="mt-4 grid gap-2 text-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-muted-foreground">Chủ khóa học</dt>
-                        <dd className="min-w-0 text-right text-foreground">
-                          {selected && owner ? owner.name : course.isOwner ? 'Chủ sở hữu' : 'Chọn để xem'}
-                        </dd>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <dt className="text-muted-foreground">Giảng viên</dt>
-                        <dd className={cn('min-w-0 text-right', assignedLabel === 'Chưa phân công' ? 'font-medium text-amber-700' : 'text-foreground')}>
-                          {assignedLabel}
-                        </dd>
-                      </div>
-                    </dl>
-                  </article>
-                );
-              })}
-            </div>
-
-            <div className="hidden md:block">
-              <table className="min-w-full table-fixed divide-y divide-border">
-                <thead className="bg-muted text-left text-sm font-semibold text-muted-foreground">
-                  <tr>
-                    <th scope="col" className="w-[44%] px-4 py-3">Khóa học</th>
-                    <th scope="col" className="w-[16%] px-4 py-3">Trạng thái</th>
-                    <th scope="col" className="w-[20%] px-4 py-3">Chủ khóa học</th>
-                    <th scope="col" className="w-[20%] px-4 py-3">Giảng viên</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {visibleCourses.map((course) => {
-                    const selected = course.id === selectedId;
-                    const courseAssignedTeachers = selected ? assignedTeachers : [];
-                    const assignedLabel = selected
-                      ? assignedLoading
-                        ? 'Đang tải...'
-                        : courseAssignedTeachers.length > 0
-                          ? courseAssignedTeachers.map((teacher) => teacher.name).join(', ')
-                          : 'Chưa phân công'
-                      : 'Chọn để xem';
-
-                    return (
-                      <tr
-                        key={course.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={selected}
-                        onClick={() => selectCourse(course)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            selectCourse(course);
-                          }
-                        }}
-                        className={cn(
-                          'cursor-pointer outline-none transition hover:bg-muted focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/20',
-                          selected ? 'bg-accent' : 'bg-card',
-                        )}
-                      >
-                        <td className="px-4 py-3 align-top">
-                          <div className="group flex max-w-full items-start gap-3 text-left">
-                            <span
-                              className={cn(
-                                'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]',
-                                selected
-                                  ? 'border-primary bg-primary text-white'
-                                  : 'border-border bg-card text-transparent group-hover:border-ring/60',
-                              )}
-                              aria-hidden
-                            >
-                              <Icon name="ri-check-line" />
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-base font-semibold text-foreground" title={course.title}>
-                                {course.title}
-                              </span>
-                              <span className="mt-0.5 block truncate text-sm text-muted-foreground">
-                                {course.id} · {course.students} học viên
-                              </span>
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-xs font-medium', STATUS_BADGE[course.status])}>
-                            {STATUS_LABEL[course.status]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          {selected && owner ? (
-                            <span className="inline-flex max-w-full rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                              <span className="truncate">{owner.name}</span>
-                            </span>
-                          ) : course.isOwner ? (
-                            <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                              Chủ sở hữu
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Chọn để xem</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          <span
-                            className={cn(
-                              'block truncate text-sm',
-                              assignedLabel === 'Chưa phân công' ? 'font-medium text-amber-700' : 'text-muted-foreground',
-                            )}
-                            title={assignedLabel}
-                          >
-                            {assignedLabel}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            </>
-          )}
-        </Card>
-
-        <Card className="min-w-0 gap-0 py-0">
-          <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-foreground">Gán giảng viên</h2>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {selectedCourse ? selectedCourse.title : 'Chọn một khóa học để thao tác'}
-              </p>
-            </div>
-            {selectedCourse && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Đóng chi tiết khóa học"
-                title="Đóng"
-                onClick={closeCourseDetails}
-                className="size-10 shrink-0"
-              >
-                <Icon name="ri-close-line" className="text-lg" aria-hidden />
-              </Button>
-            )}
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
+                      <Icon name="ri-book-open-line" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-semibold text-foreground">{course.title}</span>
+                      <span className="mt-1 block text-sm text-muted-foreground">{course.id} · {course.students} học viên</span>
+                    </span>
+                    <span className={cn('hidden rounded-full border px-2 py-1 text-xs font-medium sm:inline-flex', STATUS_CLASS[course.status])}>
+                      {STATUS_LABEL[course.status]}
+                    </span>
+                    <Icon name="ri-arrow-down-s-line" className={cn('shrink-0 text-xl text-muted-foreground transition-transform', expanded && 'rotate-180')} aria-hidden />
+                  </button>
+                  {expanded ? <div id={`assignment-${course.id}`}><AssignmentPanel courseId={course.id} /></div> : null}
+                </article>
+              );
+            })}
           </div>
-
-          <div className="space-y-5 p-4">
-            {!selectedCourse ? (
-              <div className="rounded-lg border border-dashed border-border bg-muted px-4 py-6 text-center">
-                <Icon name="ri-cursor-line" className="mx-auto text-2xl text-muted-foreground" aria-hidden />
-                <p className="mt-2 text-sm font-medium text-foreground">Chưa chọn khóa học</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Chọn một dòng trong danh sách để xem chủ khóa học và giảng viên hiện tại.
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="rounded-lg border border-border bg-muted px-3 py-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Khóa học đang chọn</p>
-                  <h3 className="mt-1 text-sm font-semibold text-foreground">{selectedCourse.title}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {STATUS_LABEL[selectedCourse.status]} · {selectedCourse.students} học viên
-                  </p>
-                </div>
-
-                {assignedIsError ? (
-                  <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {assignedError instanceof Error ? assignedError.message : 'Không tải được danh sách giảng viên của khóa học.'}
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Chủ khóa học và giảng viên hiện tại</p>
-                    <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
-                      {assignedLoading ? (
-                        <li className="px-3 py-3 text-sm text-muted-foreground">Đang tải phân công...</li>
-                      ) : assigned.length === 0 ? (
-                        <li className="px-3 py-3 text-sm text-muted-foreground">Chưa phân công.</li>
-                      ) : (
-                        assigned.map((teacher) => (
-                          <li key={teacher.teacherId} className="flex items-center gap-3 px-3 py-2.5">
-                            <UserAvatar name={teacher.name} className="h-8 w-8" />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-foreground">{teacher.name}</span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {teacher.code}{teacher.email ? ` · ${teacher.email}` : ''}
-                              </span>
-                            </span>
-                            {teacher.isOwner ? (
-                              <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                                Chủ khóa học
-                              </span>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => unassign.mutate({ courseId: selectedCourse.id, teacherId: teacher.teacherId })}
-                                disabled={unassign.isPending}
-                              >
-                                {unassign.isPending ? 'Đang gỡ...' : 'Gỡ'}
-                              </Button>
-                            )}
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                <div>
-                  <label htmlFor="teacher-picker" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Giảng viên
-                  </label>
-                  <div id="teacher-picker" className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <TeacherPicker
-                      teachers={available}
-                      value={chosen}
-                      onChange={setChosen}
-                      loading={teachersLoading}
-                      disabled={teachersLoading || teachersIsError || available.length === 0 || assignedIsError}
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        if (selectedCourse && chosen) {
-                          setSuccess('');
-                          assign.mutate({ courseId: selectedCourse.id, teacherId: chosen });
-                        }
-                      }}
-                      disabled={!selectedCourse || !chosen || assign.isPending || assignedIsError}
-                      className="w-full sm:w-auto"
-                    >
-                      {assign.isPending ? 'Đang gán...' : 'Gán giảng viên'}
-                    </Button>
-                  </div>
-                  {teachersIsError && (
-                    <p role="alert" className="mt-2 text-sm text-destructive">
-                      {teachersError instanceof Error ? teachersError.message : 'Không tải được danh sách giảng viên.'}
-                    </p>
-                  )}
-                  {!teachersLoading && !teachersIsError && available.length === 0 && (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Không còn giảng viên phù hợp để phân công.
-                    </p>
-                  )}
-                  {selectedTeacher && (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Sẽ gán: <span className="font-medium text-foreground">{selectedTeacher.name}</span>
-                      {selectedTeacher.email ? ` · ${selectedTeacher.email}` : ''}
-                    </p>
-                  )}
-                </div>
-
-                <div aria-live="polite" className="space-y-2">
-                  {success && (
-                    <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                      {success}
-                    </p>
-                  )}
-                  {actionError && (
-                    <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      {(actionError as Error).message || 'Thao tác thất bại.'}
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </Card>
-      </div>
+        )}
+      </section>
     </main>
   );
 }

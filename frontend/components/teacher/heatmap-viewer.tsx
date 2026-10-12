@@ -44,10 +44,15 @@ export default function HeatmapViewer() {
 
   const lessonId = routeLessonId;
   const scope: Scope = searchParams.get('student') ?? 'class';
-  const [pageIdx, setPageIdx] = useState(0);
+  const isAoiInspection = searchParams.get('view') === 'aoi';
+  const requestedPage = Number(searchParams.get('page'));
+  const [pageIdx, setPageIdx] = useState(
+    Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage - 1 : 0,
+  );
   const [opacity, setOpacity] = useState(HEATMAP_DEFAULT_OPACITY);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(!isAoiInspection);
   const [showScatter, setShowScatter] = useState(false);
+  const [showAois, setShowAois] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [viewerSize, setViewerSize] = useState({ width: 0, height: 0 });
@@ -83,6 +88,7 @@ export default function HeatmapViewer() {
         fixations: 0,
         viewSec: 0,
         hotspots: [],
+        aois: [],
       },
     [activePageIdx, stats],
   );
@@ -320,6 +326,15 @@ export default function HeatmapViewer() {
                 className="h-4 w-4 accent-brand-cyan"
               />
             </label>
+            <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+              <span>Vùng nội dung</span>
+              <input
+                type="checkbox"
+                checked={showAois}
+                onChange={(event) => setShowAois(event.target.checked)}
+                className="h-4 w-4 accent-brand-cyan"
+              />
+            </label>
           </div>
 
           <label className="mt-4 block text-xs font-medium text-muted-foreground">
@@ -361,8 +376,35 @@ export default function HeatmapViewer() {
               <dt className="text-muted-foreground">Vùng tập trung</dt>
               <dd className="font-medium tabular-nums text-foreground">{(current.hotspots ?? []).length}</dd>
             </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Vùng nội dung</dt>
+              <dd className="font-medium tabular-nums text-foreground">{(current.aois ?? []).length}</dd>
+            </div>
           </dl>
         </section>
+
+        {isAoiInspection ? (
+          <section aria-labelledby="aoi-list-title">
+            <div className="flex items-center justify-between gap-3">
+              <p id="aoi-list-title" className="text-xs font-medium text-muted-foreground">AOI trang này</p>
+              <span className="font-mono text-xs font-medium tabular-nums text-foreground">{(current.aois ?? []).length}</span>
+            </div>
+            {(current.aois ?? []).length > 0 ? (
+              <ol className="mt-2 space-y-2">
+                {current.aois.map((region, index) => (
+                  <li key={region.id} className="flex items-start gap-2 text-xs leading-5 text-foreground">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary font-mono text-xs font-semibold text-primary-foreground">
+                      {index + 1}
+                    </span>
+                    <span className="pt-0.5">{region.name || `Vùng ${index + 1}`}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-2 text-xs leading-5 text-destructive">Trang này chưa có AOI. Quay lại nội dung bài học để tạo lại.</p>
+            )}
+          </section>
+        ) : null}
 
         {lowestOnPage && (
           <Button
@@ -411,7 +453,9 @@ export default function HeatmapViewer() {
           </Link>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
-              <h1 className="shrink-0 text-sm font-semibold text-foreground">Phân tích điểm nhìn</h1>
+              <h1 className="shrink-0 text-sm font-semibold text-foreground">
+                {isAoiInspection ? 'Kiểm tra vùng nội dung' : 'Phân tích điểm nhìn'}
+              </h1>
               <span className="hidden text-muted-foreground sm:inline">·</span>
               <p className="hidden truncate text-sm text-muted-foreground sm:block">{lesson.title}</p>
             </div>
@@ -492,9 +536,32 @@ export default function HeatmapViewer() {
                       <p className="mt-1 text-xs text-muted-foreground">Trang {activePageIdx + 1}</p>
                     </div>
                   )}
+                  {showAois && (current.aois ?? []).length > 0 && (
+                    <div className="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+                      {current.aois.map((region, index) => (
+                        <div
+                          key={region.id}
+                          title={region.name}
+                          className="absolute border-2 border-primary bg-primary/10"
+                          style={{
+                            left: `${region.xMin * 100}%`,
+                            top: `${region.yMin * 100}%`,
+                            width: `${(region.xMax - region.xMin) * 100}%`,
+                            height: `${(region.yMax - region.yMin) * 100}%`,
+                          }}
+                        >
+                          {isAoiInspection ? (
+                            <span className="absolute left-0 top-0 flex size-6 items-center justify-center rounded-br-md bg-primary font-mono text-xs font-semibold text-primary-foreground">
+                              {index + 1}
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <canvas
                     ref={canvasRef}
-                    className="pointer-events-none absolute inset-0 h-full w-full mix-blend-normal"
+                    className="pointer-events-none absolute inset-0 z-20 h-full w-full mix-blend-normal"
                     style={{ opacity }}
                   />
                 </div>

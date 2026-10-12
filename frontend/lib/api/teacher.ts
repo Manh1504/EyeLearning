@@ -177,11 +177,27 @@ export function fetchLessonSlidesAdmin(lessonId: string): Promise<SlideAdmin[]> 
   return apiFetch<SlideAdmin[]>(`/api/teacher/lessons/${lessonId}/slides`);
 }
 
+// POST /api/teacher/lessons/{id}/aoi/rebuild — trích lại và lưu AOI từ source.pdf
+export function rebuildLessonAois(
+  lessonId: string,
+): Promise<{ ok: boolean; slides: number }> {
+  return apiFetch<{ ok: boolean; slides: number }>(
+    `/api/teacher/lessons/${lessonId}/aoi/rebuild`,
+    { method: 'POST' },
+  );
+}
+
 // PATCH /api/teacher/slides/{id} — bật/tắt slide trọng tâm
 export function setSlideKey(slideId: string, isKey: boolean): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/teacher/slides/${slideId}`, {
     method: 'PATCH',
     body: { isKey },
+  });
+}
+
+export function deleteSlide(slideId: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/teacher/slides/${slideId}`, {
+    method: 'DELETE',
   });
 }
 

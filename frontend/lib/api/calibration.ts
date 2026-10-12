@@ -25,7 +25,7 @@ export interface CalPoint {
 }
 
 const GRID = 4;
-const MARGIN = 0.02; // cách mép 2% -> phủ kín viewport
+const MARGIN = 0.1; // giữ mục tiêu và focus ring trong viewport nhỏ
 
 // 16 điểm calibration (4×4) dùng chung cho luồng calibrate.
 export function buildCalibrationPoints(): CalPoint[] {

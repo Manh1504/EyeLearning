@@ -151,7 +151,7 @@ Frontend gọi giáo viên qua `NEXT_PUBLIC_API_URL` relative: thực tế reque
 ### Analytics (`routes/analytics.py`)
 | Method | Path | Hàm : dòng | Quyền |
 |---|---|---|---|
-| GET | `/teacher/lessons/{id}/heatmap` | `get_lesson_heatmap:29` | owner/admin/assigned (`studentId=` lọc cá nhân) |
+| GET | `/teacher/lessons/{id}/heatmap` | `get_lesson_heatmap:29` | owner/admin/assigned (`studentId=` lọc cá nhân); mỗi slide trả `points`, `hotspots` và hình học `aois` chuẩn hóa [0,1] |
 | POST | `/teacher/courses/{id}/recompute` | `recompute_course_analytics:53` | **owner/admin** (batch recalc aggregates) |
 
 ### Admin (`/admin`, `routes/admin.py`) — phân công giáo viên
@@ -199,7 +199,7 @@ Frontend gọi giáo viên qua `NEXT_PUBLIC_API_URL` relative: thực tế reque
 |---|---|---|
 | API client | `lib/api/client.ts` | `apiFetch:108`, `apiFetchMultipart:147`, `apiFetchBlob:182` — gọi **relative** `/api/*` (Next rewrite tới backend), tự gắn Bearer, refresh 1 lần khi 401; `resolveMediaUrl:24` (giữ `/media/*` nguyên để rewrite) |
 | Auth | `lib/api/auth.ts` | login/logout/`refreshHandlers`, event `gaze-auth-change` |
-| Domain | `lib/types/domain.ts` | `TeacherCourse`, `LessonNode`, `ModuleNode`, `StudentRow`, `SlideStat`, `Hotspot`, `EnrolledCourse`, `CourseOutline`, `MyProfile`, `ProfileUpdate`… |
+| Domain | `lib/types/domain.ts` | `TeacherCourse`, `LessonNode`, `ModuleNode`, `StudentRow`, `SlideStat` (gồm `points`, `hotspots`, `aois`), `HeatmapAoi`, `EnrolledCourse`, `CourseOutline`, `MyProfile`, `ProfileUpdate`… |
 | Student | `lib/api/student.ts` | enrollments, stats, outline, slides (`/api/lessons/{id}/contents`), learning-session, gaze-samples, progress; `getDeviceFingerprint:44` |
 | Teacher | `lib/api/teacher.ts` | courses, tree, students, heatmap (`CourseListQuery`) |
 | Admin | `lib/api/admin.ts` | `fetchTeachers`, `fetchCourseTeachers`, `assignTeachers`, `unassignTeacher` |

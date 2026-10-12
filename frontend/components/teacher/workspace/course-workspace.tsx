@@ -41,7 +41,7 @@ function SegmentedNav({
   ];
 
   return (
-    <nav aria-label="Khu vực quản lý khóa học" className="flex w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1 sm:w-auto">
+    <nav aria-label="Khu vực quản lý khóa học" className="flex w-full items-center gap-4 overflow-x-auto border-b border-border sm:w-auto sm:border-b-0">
       {items.map((item) => {
         if (isNew && item.key !== 'content') return null;
         const active = view === item.key;
@@ -49,8 +49,8 @@ function SegmentedNav({
           <Link
             key={item.key}
             href={queryFor(item.key)}
-            className={`flex h-11 shrink-0 flex-1 items-center justify-center rounded-md px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25 sm:flex-none ${
-              active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            className={`flex h-11 shrink-0 flex-1 items-center justify-center border-b-2 px-1 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/25 sm:flex-none ${
+              active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             {item.label}
@@ -82,10 +82,10 @@ export default function TeacherCourseWorkspace() {
 
   const displayTitle = isNew ? 'Khóa học mới' : (course?.title ?? 'Khóa học');
   const displayStatus = isNew ? 'draft' : (course?.status ?? 'draft');
-  const canManage = isNew || (course?.isOwner ?? true);
+  const canManage = isNew || course?.isOwner === true;
 
   return (
-    <div className="min-h-[calc(100dvh-56px)] bg-muted">
+    <div className="min-h-[calc(100dvh-56px)] bg-background">
       {/* Top bar */}
       <header className="sticky top-0 z-30 border-b border-border bg-card">
         <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center gap-3 px-4 py-2 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0 lg:px-8">
@@ -118,8 +118,8 @@ export default function TeacherCourseWorkspace() {
         </div>
       </header>
 
-      <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <div className="mx-auto w-full max-w-6xl space-y-5">
+      <main className="px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+        <div className="mx-auto w-full max-w-6xl space-y-6">
           {view === 'overview' && <OverviewTab isNew={false} />}
 
           {view === 'students' && (

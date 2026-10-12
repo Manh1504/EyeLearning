@@ -36,7 +36,7 @@ from app.schemas.course import (
     SlideOut,
 )
 from app.schemas.gaze import OkOut, ProgressPatchIn
-from app.services import aoi
+from app.services import analytics, aoi
 
 router = APIRouter(tags=["lessons"])
 
@@ -316,6 +316,7 @@ async def upload_lesson_pdf(
             detail="Không thay thế được slide — bài học đã có dữ liệu quan sát",
         ) from exc
     _prune_lesson_versions(lesson_id, version)
+    await analytics.invalidate_heatmap_cache(lesson_id)
     return {"ok": True, "slides": count, "filename": pdf.filename or "lesson.pdf"}
 
 
@@ -424,6 +425,7 @@ async def rebuild_lesson_aois(
     await _check_course_access(db, lesson, user)
     updated = await aoi.rebuild_lesson_aois(db, lesson_id)
     await db.commit()
+    await analytics.invalidate_heatmap_cache(lesson_id)
     return {"ok": True, "slides": updated}
 
 

@@ -203,6 +203,7 @@ export function slideStats(lessonId: string, slideCount: number, scope = 'class'
       fixations: Math.round(q * (30 + rand() * 40)),
       viewSec: Math.round(20 + q * 40 + rand() * 20),
       hotspots,
+      aois: [],
     };
   });
 }

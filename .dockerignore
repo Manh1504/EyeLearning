@@ -1,0 +1,16 @@
+# Build context gốc dành riêng cho image migrations (Dockerfile.migrations).
+# Chỉ cần db/migrations; loại bỏ phần còn lại để context nhẹ và tránh gửi .git.
+.git
+.idea
+.opencode
+.agent
+*.zip
+.gitignore
+frontend
+backend
+API
+nginx
+node_modules
+.next
+__pycache__
+*.pyc

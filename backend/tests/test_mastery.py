@@ -64,6 +64,13 @@ def test_slide_key_toggle_and_list(client):
     keyed = {s["orderIndex"]: s["isKey"] for s in r.json()}
     assert keyed[1] is True and keyed[2] is False
 
+    r = client.get(f"/teacher/lessons/{lesson_id}/heatmap", headers=auth(teacher))
+    assert r.status_code == 200, r.text
+    heatmap = r.json()
+    assert len(heatmap) == 2
+    assert len(heatmap[0]["aois"]) > 0
+    assert 0 <= heatmap[0]["aois"][0]["xMin"] < heatmap[0]["aois"][0]["xMax"] <= 1
+
 
 def test_mastery_endpoint(client):
     teacher, student, course_id, lesson_id = _setup_pdf_course(client)
