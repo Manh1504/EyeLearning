@@ -72,7 +72,8 @@ services:
       REDIS_URL: ${REDIS_URL_DOCKER}
       AI_HTTP_URL: http://gaze:8000
       JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS}
+      # Frontend production phục vụ cả apex và www; proxy giữ nguyên Origin.
+      CORS_ORIGINS: ${CORS_ORIGINS},https://www.eyelearning.id.vn
       CLOUDINARY_URL: ${CLOUDINARY_URL:-}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}

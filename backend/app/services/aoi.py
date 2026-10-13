@@ -23,6 +23,7 @@ from app.models.course import LessonContent
 MAX_AOIS = 40
 MIN_CHARS = 3
 MIN_AREA = 0.0008  # 0.08% diện tích trang
+MAX_VISUAL_AREA = 0.9  # ảnh quét toàn trang dùng lưới fallback chi tiết hơn
 
 
 def _clip01(v: float) -> float:
@@ -52,37 +53,151 @@ def grid_cells(cols: int, rows: int) -> list[dict]:
     return cells
 
 
+def _rect_area(rect: pymupdf.Rect) -> float:
+    return max(0.0, rect.width) * max(0.0, rect.height)
+
+
+def _contained_ratio(inner: pymupdf.Rect, outer: pymupdf.Rect) -> float:
+    area = _rect_area(inner)
+    return _rect_area(inner & outer) / area if area else 0.0
+
+
+def _display_rect(page, value) -> pymupdf.Rect:
+    """Đổi tọa độ PDF sang hệ tọa độ trang đang hiển thị."""
+    return pymupdf.Rect(value) * page.rotation_matrix
+
+
+def _merge_text_blocks(blocks: list[dict]) -> list[dict]:
+    """Gộp các block gần nhau trong cùng cột để AOI chữ không bị chia vụn."""
+    merged: list[dict] = []
+    for block in sorted(blocks, key=lambda item: (item["rect"].y0, item["rect"].x0)):
+        if merged:
+            previous = merged[-1]
+            a, b = previous["rect"], block["rect"]
+            overlap = max(0.0, min(a.x1, b.x1) - max(a.x0, b.x0))
+            min_width = min(a.width, b.width)
+            gap = b.y0 - a.y1
+            same_column = min_width > 0 and overlap / min_width >= 0.55
+            close = -2 <= gap <= max(8.0, min(a.height, b.height) * 0.6)
+            if same_column and close:
+                previous["rect"] = a | b
+                previous["text"] = f'{previous["text"]} {block["text"]}'
+                continue
+        merged.append(block.copy())
+    return merged
+
+
+def _visual_blocks(page, page_area: float) -> list[dict]:
+    visuals: list[dict] = []
+    drawings = []
+    try:
+        drawings = page.get_drawings()
+        tables = page.find_tables(paths=drawings).tables
+    except Exception:
+        tables = []
+
+    for table in tables:
+        rect = _display_rect(page, table.bbox) & page.rect
+        area = _rect_area(rect) / page_area
+        if MIN_AREA <= area <= MAX_VISUAL_AREA:
+            visuals.append({"rect": rect, "kind": "table", "name": "Bảng"})
+
+    try:
+        image_infos = page.get_image_info()
+    except Exception:
+        image_infos = []
+    for info in image_infos:
+        rect = _display_rect(page, info["bbox"]) & page.rect
+        area = _rect_area(rect) / page_area
+        if MIN_AREA <= area <= MAX_VISUAL_AREA:
+            visuals.append({"rect": rect, "kind": "image", "name": "Hình ảnh"})
+
+    if drawings:
+        try:
+            clusters = page.cluster_drawings(drawings=drawings)
+        except Exception:
+            clusters = []
+        for cluster in clusters:
+            raw_rect = pymupdf.Rect(cluster)
+            path_count = sum(
+                1
+                for drawing in drawings
+                if raw_rect.contains(pymupdf.Rect(drawing["rect"]))
+                or _rect_area(raw_rect & pymupdf.Rect(drawing["rect"])) > 0
+            )
+            rect = _display_rect(page, raw_rect) & page.rect
+            area = _rect_area(rect) / page_area
+            if path_count >= 2 and MIN_AREA <= area <= MAX_VISUAL_AREA:
+                visuals.append({"rect": rect, "kind": "diagram", "name": "Sơ đồ"})
+
+    deduplicated: list[dict] = []
+    priority = {"table": 3, "image": 2, "diagram": 1}
+    for visual in sorted(visuals, key=lambda item: priority[item["kind"]], reverse=True):
+        if any(
+            _contained_ratio(visual["rect"], kept["rect"]) >= 0.85
+            or _contained_ratio(kept["rect"], visual["rect"]) >= 0.85
+            for kept in deduplicated
+        ):
+            continue
+        deduplicated.append(visual)
+    return deduplicated
+
+
 def _page_aois(page) -> list[dict]:
     w, h = page.rect.width, page.rect.height
-    if w <= 0 or h <= 0:
+    page_area = w * h
+    if page_area <= 0:
         return []
 
-    aois: list[dict] = []
-    index = 0
-    for block in page.get_text("blocks"):
+    text_blocks: list[dict] = []
+    for block in page.get_text("blocks", sort=True):
         x0, y0, x1, y1, text, _no, block_type = block
-        nx0 = _clip01(x0 / w)
-        ny0 = _clip01(y0 / h)
-        nx1 = _clip01(x1 / w)
-        ny1 = _clip01(y1 / h)
+        if block_type != 0:
+            continue
+        clean = " ".join((text or "").split())
+        rect = _display_rect(page, (x0, y0, x1, y1)) & page.rect
+        if len(clean) >= MIN_CHARS and _rect_area(rect) / page_area >= MIN_AREA:
+            text_blocks.append({"rect": rect, "text": clean, "kind": "text"})
+
+    visuals = _visual_blocks(page, page_area)
+    text_blocks = [
+        block
+        for block in _merge_text_blocks(text_blocks)
+        if not any(
+            _contained_ratio(block["rect"], visual["rect"]) >= 0.8
+            for visual in visuals
+        )
+    ]
+
+    candidates = visuals + text_blocks
+    if len(candidates) > MAX_AOIS:
+        candidates = sorted(
+            candidates,
+            key=lambda item: (
+                item["kind"] != "text",
+                len(item.get("text", ""))
+                or _rect_area(item["rect"]) / page_area,
+            ),
+            reverse=True,
+        )[:MAX_AOIS]
+    candidates.sort(key=lambda item: (item["rect"].y0, item["rect"].x0))
+
+    aois: list[dict] = []
+    for candidate in candidates:
+        rect = candidate["rect"]
+        nx0, ny0 = _clip01(rect.x0 / w), _clip01(rect.y0 / h)
+        nx1, ny1 = _clip01(rect.x1 / w), _clip01(rect.y1 / h)
         if nx1 - nx0 < 0.0005 or ny1 - ny0 < 0.0005:
             continue
-
-        if block_type == 0:
-            clean = (text or "").strip()
-            if len(clean) < MIN_CHARS:
-                continue
-            name = (clean[:60] + "…") if len(clean) > 60 else clean
-            weight = float(len(clean))
-            char_count = len(clean)
-        else:  # ảnh / vùng không phải text
-            area = (nx1 - nx0) * (ny1 - ny0)
-            if area < MIN_AREA:
-                continue
-            name = "Hình ảnh"
-            weight = round(area * 1000, 2)
+        if candidate["kind"] == "text":
+            text = candidate["text"]
+            name = (text[:60] + "…") if len(text) > 60 else text
+            char_count = len(text)
+            weight = float(char_count)
+        else:
+            name = candidate["name"]
             char_count = 0
-
+            weight = round((nx1 - nx0) * (ny1 - ny0) * 1000, 2)
         aois.append(
             {
                 "name": name,
@@ -92,13 +207,10 @@ def _page_aois(page) -> list[dict]:
                 "y_max": round(ny1, 6),
                 "weight": weight,
                 "char_count": char_count,
-                "block_index": index,
+                "block_index": len(aois),
                 "source": "pdf",
             }
         )
-        index += 1
-        if index >= MAX_AOIS:
-            break
     return aois
 
 
