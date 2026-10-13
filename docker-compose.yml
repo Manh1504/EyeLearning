@@ -58,7 +58,7 @@ services:
   backend:
     # Pin bản backend đã qua CI; đổi tag khi phát hành backend mới để Portainer
     # luôn thay container thay vì tái sử dụng moving tag `latest` trong local cache.
-    image: ghcr.io/manh1504/eyelearning-backend:sha-6a60ebb
+    image: ghcr.io/manh1504/eyelearning-backend:sha-4634e7f
     container_name: eyetracking-backend
     pull_policy: always
     restart: unless-stopped
