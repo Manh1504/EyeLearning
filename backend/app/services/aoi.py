@@ -157,13 +157,7 @@ async def store_aois_for_content(
 
 async def rebuild_lesson_aois(db: AsyncSession, lesson_id: str) -> int:
     """Trích lại AOI cho toàn bộ slide của bài từ `source.pdf` đã lưu lúc upload.
-    Trả về số slide đã cập nhật. Bài chưa có source.pdf → trả 0."""
-    pdf_path = find_source_pdf(lesson_id)
-    if pdf_path is None:
-        return 0
-    data = pdf_path.read_bytes()
-    pages = extract_slide_aois(data)
-
+    Bài cũ không còn PDF nguồn dùng lưới dự phòng để mọi slide vẫn có AOI."""
     contents = (
         (
             await db.execute(
@@ -175,6 +169,12 @@ async def rebuild_lesson_aois(db: AsyncSession, lesson_id: str) -> int:
         .scalars()
         .all()
     )
+    if not contents:
+        return 0
+
+    pdf_path = find_source_pdf(lesson_id)
+    pages = extract_slide_aois(pdf_path.read_bytes()) if pdf_path is not None else []
+
     updated = 0
     for i, content in enumerate(contents):
         page_aois = pages[i] if i < len(pages) else []

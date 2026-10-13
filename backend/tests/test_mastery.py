@@ -72,6 +72,29 @@ def test_slide_key_toggle_and_list(client):
     assert 0 <= heatmap[0]["aois"][0]["xMin"] < heatmap[0]["aois"][0]["xMax"] <= 1
 
 
+def test_aoi_rebuild_falls_back_to_grid_without_source_pdf(client):
+    teacher, _, _, lesson_id = _setup_pdf_course(client)
+
+    from app.core.config import settings
+
+    for source in (settings.media_path / "lessons" / lesson_id).rglob("source.pdf"):
+        source.unlink()
+
+    r = client.post(
+        f"/teacher/lessons/{lesson_id}/aoi/rebuild",
+        headers=auth(teacher),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["slides"] == 2
+
+    slides = client.get(
+        f"/teacher/lessons/{lesson_id}/slides",
+        headers=auth(teacher),
+    ).json()
+    assert all(slide["aoiCount"] > 0 for slide in slides)
+    assert all(slide["aoiSource"] == "grid" for slide in slides)
+
+
 def test_mastery_endpoint(client):
     teacher, student, course_id, lesson_id = _setup_pdf_course(client)
 

@@ -208,7 +208,7 @@ function KeySlideControls({
       if (result.slides === 0) {
         setAoiMessage({
           tone: 'err',
-          text: 'Không tìm thấy PDF nguồn. Hãy tải lại PDF trước khi tạo AOI.',
+          text: 'Bài học chưa có slide để tạo AOI.',
         });
         return;
       }
