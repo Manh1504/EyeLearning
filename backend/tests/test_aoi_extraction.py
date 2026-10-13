@@ -56,3 +56,19 @@ def test_visual_regions_are_kept_when_page_exceeds_limit():
 
     assert len(aois) <= MAX_AOIS
     assert any(aoi["name"] == "Hình ảnh" for aoi in aois)
+
+
+def test_extracts_single_compound_vector_region():
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    page.insert_text((40, 40), "Diagram title", fontsize=20)
+    shape = page.new_shape()
+    shape.draw_rect(pymupdf.Rect(100, 100, 500, 330))
+    shape.draw_line((100, 215), (500, 215))
+    shape.draw_line((300, 100), (300, 330))
+    shape.finish()
+    shape.commit()
+
+    [aois] = extract_slide_aois(doc.tobytes())
+
+    assert any(aoi["name"] == "Sơ đồ" for aoi in aois)

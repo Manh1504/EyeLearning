@@ -23,6 +23,7 @@ from app.models.course import LessonContent
 MAX_AOIS = 40
 MIN_CHARS = 3
 MIN_AREA = 0.0008  # 0.08% diện tích trang
+MIN_DIAGRAM_AREA = 0.005  # bỏ qua nét/khung trang trí nhỏ
 MAX_VISUAL_AREA = 0.9  # ảnh quét toàn trang dùng lưới fallback chi tiết hơn
 
 
@@ -127,7 +128,7 @@ def _visual_blocks(page, page_area: float) -> list[dict]:
             )
             rect = _display_rect(page, raw_rect) & page.rect
             area = _rect_area(rect) / page_area
-            if path_count >= 2 and MIN_AREA <= area <= MAX_VISUAL_AREA:
+            if path_count >= 1 and MIN_DIAGRAM_AREA <= area <= MAX_VISUAL_AREA:
                 visuals.append({"rect": rect, "kind": "diagram", "name": "Sơ đồ"})
 
     deduplicated: list[dict] = []
