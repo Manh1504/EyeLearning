@@ -51,8 +51,16 @@ class Settings(BaseSettings):
 
     # Thư mục lưu slide ảnh render từ PDF (mount StaticFiles tại /media).
     media_dir: str = "media"
+    # Cloudflare R2 (S3-compatible). Để trống toàn bộ để dùng volume local.
+    r2_account_id: str = ""
+    r2_bucket_name: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_public_url: str = ""
     # Dung lượng tối đa một file PDF upload (bytes).
     max_pdf_bytes: int = 100 * 1024 * 1024
+    max_pdf_pages: int = 300
+    max_slide_render_pixels: int = 25_000_000
 
     # Tính điểm hoàn thành bài học theo độ bao phủ nội dung (AOI).
     mastery_coverage_threshold: float = 0.85      # bao phủ >= 85% → xem như đủ trang
@@ -70,6 +78,23 @@ class Settings(BaseSettings):
     @property
     def media_path(self) -> Path:
         return Path(self.media_dir).resolve()
+
+    @property
+    def r2_enabled(self) -> bool:
+        values = (
+            self.r2_account_id,
+            self.r2_bucket_name,
+            self.r2_access_key_id,
+            self.r2_secret_access_key,
+            self.r2_public_url,
+        )
+        if any(values) and not all(values):
+            raise RuntimeError("Cấu hình R2 chưa đầy đủ")
+        return all(values)
+
+    @property
+    def r2_endpoint_url(self) -> str:
+        return f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
 
 
 @lru_cache

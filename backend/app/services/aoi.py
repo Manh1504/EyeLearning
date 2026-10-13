@@ -10,7 +10,7 @@ Nguồn AOI cho một slide:
   - 'none' : chưa trích (bài cũ chưa re-upload).
 """
 
-from pathlib import Path
+import asyncio
 
 import pymupdf
 from sqlalchemy import delete, select
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.analytics import AoiRegion
 from app.models.course import LessonContent
+from app.services import media_storage
 
 MAX_AOIS = 40
 MIN_CHARS = 3
@@ -233,17 +234,6 @@ def extract_slide_aois(data: bytes) -> list[list[dict]]:
     return pages
 
 
-def find_source_pdf(lesson_id: str) -> Path | None:
-    lesson_dir = settings.media_path / "lessons" / lesson_id
-    if not lesson_dir.is_dir():
-        return None
-    candidates = [p for p in lesson_dir.rglob("source.pdf") if p.is_file()]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return candidates[0]
-
-
 async def store_aois_for_content(
     db: AsyncSession, content: LessonContent, aoi_dicts: list[dict], source: str
 ) -> None:
@@ -285,8 +275,11 @@ async def rebuild_lesson_aois(db: AsyncSession, lesson_id: str) -> int:
     if not contents:
         return 0
 
-    pdf_path = find_source_pdf(lesson_id)
-    pages = extract_slide_aois(pdf_path.read_bytes()) if pdf_path is not None else []
+    version = media_storage.version_from_url(contents[0].image_url, lesson_id)
+    pdf_data = await asyncio.to_thread(
+        media_storage.load_source_pdf, lesson_id, version
+    )
+    pages = await asyncio.to_thread(extract_slide_aois, pdf_data) if pdf_data else []
 
     updated = 0
     for i, content in enumerate(contents):

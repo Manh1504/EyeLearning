@@ -11,6 +11,14 @@ os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-pytest-please-change")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("AI_HTTP_URL", "http://127.0.0.1:8000")
 os.environ["MEDIA_DIR"] = os.path.join(tempfile.gettempdir(), "eyelearning-test-media")
+for key in (
+    "R2_ACCOUNT_ID",
+    "R2_BUCKET_NAME",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_PUBLIC_URL",
+):
+    os.environ[key] = ""
 
 import pytest
 from fastapi.testclient import TestClient

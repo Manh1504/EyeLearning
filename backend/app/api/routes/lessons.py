@@ -1,11 +1,10 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from shutil import rmtree
 
 import pymupdf
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -36,7 +35,7 @@ from app.schemas.course import (
     SlideOut,
 )
 from app.schemas.gaze import OkOut, ProgressPatchIn
-from app.services import analytics, aoi
+from app.services import analytics, aoi, media_storage
 
 router = APIRouter(tags=["lessons"])
 
@@ -144,7 +143,10 @@ async def delete_lesson(
     await _check_course_owner(db, lesson, user)
     await db.delete(lesson)
     await db.commit()
-    _clear_lesson_media(lesson_id)
+    try:
+        await asyncio.to_thread(media_storage.clear_lesson, lesson_id)
+    except media_storage.StorageError as exc:
+        media_storage.log_cleanup_failure("delete lesson", exc)
     return {"ok": True}
 
 
@@ -176,37 +178,13 @@ async def add_slide(
     return {"id": slide.id, "orderIndex": slide.order_index}
 
 
-def _lesson_media_dir(lesson_id: str) -> Path:
-    _validate_uuid(lesson_id)
-    p = settings.media_path / "lessons" / str(lesson_id)
-    # Ngăn traversal: đảm bảo nằm trong media_path
-    if not p.resolve().is_relative_to(settings.media_path.resolve()):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Lesson ID không hợp lệ")
-    return p
+def _render_pdf_slides(lesson_id: str, data: bytes) -> tuple[int, str, list[str]]:
+    """Render PDF thành JPEG và lưu qua media storage.
 
+    Trả về (số trang, version, URL ảnh). Version đổi mỗi lần upload để bust
+    cache trình duyệt/CDN.
 
-def _clear_lesson_media(lesson_id: str) -> None:
-    """Xóa toàn bộ slide ảnh đã render của bài học (file trên đĩa)."""
-    rmtree(_lesson_media_dir(lesson_id), ignore_errors=True)
-
-
-def _prune_lesson_versions(lesson_id: str, keep_version: str) -> None:
-    """Xóa các thư mục version cũ của bài, giữ lại `keep_version`.
-
-    Mỗi lần upload render vào thư mục version mới (cache-bust); sau khi commit
-    thành công thì dọn bản cũ để không tích tụ file mồ côi trên đĩa."""
-    lesson_dir = _lesson_media_dir(lesson_id)
-    if not lesson_dir.exists():
-        return
-    for child in lesson_dir.iterdir():
-        if child.is_dir() and child.name != keep_version:
-            rmtree(child, ignore_errors=True)
-
-
-def _render_pdf_slides(lesson_id: str, data: bytes) -> tuple[int, str]:
-    """Render PDF thành JPEG từng trang vào thư mục version riêng; trả về (số trang, version).
-    Lỗi PDF gọi HTTPException(400). Version đổi mỗi lần upload để bust cache trình duyệt/CDN
-    (tránh lỗi thay file mới nhưng vẫn hiện slide 1 của file cũ do trùng URL)."""
+    Lỗi PDF gọi HTTPException(400)."""
     if len(data) > settings.max_pdf_bytes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File PDF quá lớn")
     if not data.startswith(b"%PDF"):
@@ -219,32 +197,77 @@ def _render_pdf_slides(lesson_id: str, data: bytes) -> tuple[int, str]:
             status.HTTP_400_BAD_REQUEST, detail=f"Không đọc được PDF: {exc}"
         ) from exc
     if count == 0:
+        doc.close()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="PDF không có trang nào")
-
     if doc.needs_pass:
+        doc.close()
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail="PDF đang bị bảo vệ bằng mật khẩu — hãy gỡ mật khẩu trước khi tải lên",
         )
+    if count > settings.max_pdf_pages:
+        doc.close()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"PDF vượt quá {settings.max_pdf_pages} trang cho phép",
+        )
 
-    out_dir = _lesson_media_dir(lesson_id) / uuid.uuid4().hex[:12]
-    out_dir.mkdir(parents=True, exist_ok=True)
-    # Giữ lại PDF gốc để có thể trích lại AOI (text-block) về sau.
-    (out_dir / "source.pdf").write_bytes(data)
+    version = uuid.uuid4().hex[:12]
+    prefix = f"lessons/{lesson_id}/{version}"
+    try:
+        media_storage.put_bytes(f"{prefix}/source.pdf", data, "application/pdf")
+    except media_storage.StorageError as exc:
+        doc.close()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể lưu PDF lên kho tệp",
+        ) from exc
+
     # Render ~144dpi (matrix 2×2), đủ nét cho màn hình mà không quá nặng.
     zoom = pymupdf.Matrix(2, 2)
+    image_urls: list[str] = []
     try:
         for page_no in range(count):
-            pix = doc.load_page(page_no).get_pixmap(matrix=zoom, colorspace=pymupdf.csRGB)
-            target = out_dir / f"slide_{page_no + 1:03d}.jpg"
-            pix.pil_save(target, format="JPEG", quality=85)
+            page = doc.load_page(page_no)
+            render_pixels = int(page.rect.width * 2) * int(page.rect.height * 2)
+            if render_pixels > settings.max_slide_render_pixels:
+                raise ValueError(f"Trang {page_no + 1} có kích thước quá lớn")
+            pix = page.get_pixmap(matrix=zoom, colorspace=pymupdf.csRGB)
+            image = pix.tobytes("jpeg", jpg_quality=85)
+            image_urls.append(
+                media_storage.put_bytes(
+                    f"{prefix}/slide_{page_no + 1:03d}.jpg", image, "image/jpeg"
+                )
+            )
+    except media_storage.StorageError as exc:
+        try:
+            media_storage.cleanup_version(lesson_id, version)
+        except media_storage.StorageError as cleanup_exc:
+            media_storage.log_cleanup_failure("failed upload", cleanup_exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể lưu slide lên kho tệp",
+        ) from exc
     except Exception as exc:
+        try:
+            media_storage.cleanup_version(lesson_id, version)
+        except media_storage.StorageError as cleanup_exc:
+            media_storage.log_cleanup_failure("failed render", cleanup_exc)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail=f"Không render được PDF: {exc}"
         ) from exc
     finally:
         doc.close()
-    return count, out_dir.name
+    return count, version, image_urls
+
+
+async def _read_pdf_limited(pdf: UploadFile) -> bytes:
+    data = bytearray()
+    while chunk := await pdf.read(1024 * 1024):
+        data.extend(chunk)
+        if len(data) > settings.max_pdf_bytes:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File PDF quá lớn")
+    return bytes(data)
 
 
 @router.post(
@@ -264,32 +287,52 @@ async def upload_lesson_pdf(
     lesson = await _get_lesson_or_404(db, lesson_id)
     await _check_course_access(db, lesson, user)
 
-    data = await pdf.read()
-    count, version = _render_pdf_slides(lesson_id, data)
-    pages_aois = aoi.extract_slide_aois(data)
+    data = await _read_pdf_limited(pdf)
 
-    from sqlalchemy import delete
+    # Tuần tự hóa việc thay PDF cùng bài học để hai request không ghi đè nhau.
+    await db.execute(
+        select(Lesson.id).where(Lesson.id == lesson_id).with_for_update()
+    )
+    old_urls = list(
+        (
+            await db.execute(
+                select(LessonContent.image_url).where(
+                    LessonContent.lesson_id == lesson_id
+                )
+            )
+        ).scalars()
+    )
 
-    stmt = delete(LessonContent).where(LessonContent.lesson_id == lesson_id)
-    await db.execute(stmt)
-    contents: list[LessonContent] = []
-    for page_no in range(count):
-        page_aois = pages_aois[page_no] if page_no < len(pages_aois) else []
-        if not page_aois:
-            page_aois = aoi.grid_cells(settings.mastery_grid_cols, settings.mastery_grid_rows)
-            aoi_source = "grid"
-        else:
-            aoi_source = "pdf"
-        content = LessonContent(
-            lesson_id=lesson_id,
-            order_index=page_no + 1,
-            image_url=f"/media/lessons/{lesson_id}/{version}/slide_{page_no + 1:03d}.jpg",
-            content_json={"title": f"Slide {page_no + 1}"},
-            aoi_source=aoi_source,
-        )
-        db.add(content)
-        contents.append((content, page_aois))
+    version: str | None = None
     try:
+        count, version, image_urls = await asyncio.to_thread(
+            _render_pdf_slides, lesson_id, data
+        )
+        pages_aois = await asyncio.to_thread(aoi.extract_slide_aois, data)
+
+        await db.execute(
+            delete(LessonContent).where(LessonContent.lesson_id == lesson_id)
+        )
+        contents: list[tuple[LessonContent, list[dict]]] = []
+        for page_no in range(count):
+            page_aois = pages_aois[page_no] if page_no < len(pages_aois) else []
+            if not page_aois:
+                page_aois = aoi.grid_cells(
+                    settings.mastery_grid_cols, settings.mastery_grid_rows
+                )
+                aoi_source = "grid"
+            else:
+                aoi_source = "pdf"
+            content = LessonContent(
+                lesson_id=lesson_id,
+                order_index=page_no + 1,
+                image_url=image_urls[page_no],
+                content_json={"title": f"Slide {page_no + 1}"},
+                aoi_source=aoi_source,
+            )
+            db.add(content)
+            contents.append((content, page_aois))
+
         await db.flush()
         for content, page_aois in contents:
             for a in page_aois:
@@ -308,14 +351,42 @@ async def upload_lesson_pdf(
                     )
                 )
         await db.commit()
+    except HTTPException:
+        await db.rollback()
+        if version is not None:
+            try:
+                await asyncio.to_thread(
+                    media_storage.cleanup_version, lesson_id, version
+                )
+            except media_storage.StorageError as cleanup_exc:
+                media_storage.log_cleanup_failure("request rollback", cleanup_exc)
+        raise
     except Exception as exc:
-        # Commit lỗi (bài đã có dữ liệu quan sát) → dọn bản render mới, khôi phục nguyên trạng.
-        rmtree(_lesson_media_dir(lesson_id) / version, ignore_errors=True)
+        await db.rollback()
+        if version is not None:
+            try:
+                await asyncio.to_thread(
+                    media_storage.cleanup_version, lesson_id, version
+                )
+            except media_storage.StorageError as cleanup_exc:
+                media_storage.log_cleanup_failure("database rollback", cleanup_exc)
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="Không thay thế được slide — bài học đã có dữ liệu quan sát",
         ) from exc
-    _prune_lesson_versions(lesson_id, version)
+    old_versions = {
+        old_version
+        for url in old_urls
+        if (old_version := media_storage.version_from_url(url, lesson_id)) is not None
+        and old_version != version
+    }
+    for old_version in old_versions:
+        try:
+            await asyncio.to_thread(
+                media_storage.cleanup_version, lesson_id, old_version
+            )
+        except media_storage.StorageError as exc:
+            media_storage.log_cleanup_failure("prune replaced version", exc)
     await analytics.invalidate_heatmap_cache(lesson_id)
     return {"ok": True, "slides": count, "filename": pdf.filename or "lesson.pdf"}
 
@@ -423,7 +494,13 @@ async def rebuild_lesson_aois(
     """Trích lại AOI từ source.pdf đã lưu (dùng khi muốn sửa vùng đo độ bao phủ)."""
     lesson = await _get_lesson_or_404(db, lesson_id)
     await _check_course_access(db, lesson, user)
-    updated = await aoi.rebuild_lesson_aois(db, lesson_id)
+    try:
+        updated = await aoi.rebuild_lesson_aois(db, lesson_id)
+    except media_storage.StorageError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể đọc PDF nguồn từ kho tệp",
+        ) from exc
     await db.commit()
     await analytics.invalidate_heatmap_cache(lesson_id)
     return {"ok": True, "slides": updated}

@@ -25,6 +25,7 @@ from app.db.redis import close_redis, init_redis
 async def lifespan(_: FastAPI):
     if "*" in settings.cors_origin_list:
         raise RuntimeError("CORS_ORIGINS không được chứa '*' khi allow_credentials=True — hãy liệt kê origin cụ thể")
+    _ = settings.r2_enabled  # validate partial R2 configuration at startup
     settings.media_path.mkdir(parents=True, exist_ok=True)
     await init_redis()
     yield
