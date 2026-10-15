@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.7.0-cuda12.6-cudnn9-runtime@sha256:499d2335f311a92af8d4ca8606291461db8d74d955b25d2d82b7fdab845db756
+FROM pytorch/pytorch:2.7.0-cuda12.6-cudnn9-runtime@sha256:27c3135420bc184e86977170b6158c6133be3c7cc5c35e9e4fa87bdda629dc2b
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
