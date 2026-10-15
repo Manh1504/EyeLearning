@@ -7,6 +7,8 @@ __pycache__/
 backend/.venv
 frontend/.next
 frontend/frontend/
+frontend-redesign/
+backend.zip
 .idea/
 
 # Ignore Markdown documentation except README files.

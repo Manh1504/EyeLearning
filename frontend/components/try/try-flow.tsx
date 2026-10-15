@@ -1,317 +1,89 @@
-'use client';
+"use client";
 
-// components/try/try-flow.tsx — Luồng dùng thử cho KHÁCH (không cần đăng nhập).
-//   intro → calibrate (16 điểm, protocol /session) → xem 3 slide mẫu + thu gaze
-//   → heatmap tính HOÀN TOÀN local từ gaze đã thu.
-//
-// 100% không ghi DB: chỉ gọi AI service (HTTP /gaze/* qua Next rewrite + WS
-// /session/{sid}/stream). Gaze thu được giữ trong ref, không POST lên backend.
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import {
-  RiArrowLeftSLine,
-  RiArrowRightLine,
-  RiArrowRightSLine,
-  RiBarChartLine,
-  RiCameraLine,
-  RiCheckboxCircleLine,
-  RiEyeLine,
-  RiRefreshLine,
-} from '@remixicon/react';
-
-import { Button, buttonVariants } from '@/components/ui/button';
-import { HeatmapCanvas } from '@/components/heatmap/heatmap-canvas';
-import { useGazeTracker } from '@/hooks/use-gaze-tracker';
-import {
-  buildCalibrationPoints,
-  clearStoredGazeSession,
-  createGazeSession,
-  deleteGazeSession,
-  formatMaePercent,
-  MAX_TRAIN_MAE,
-  storeGazeSession,
-  submitCalibrationSample,
-  trainGazeSession,
-  type CalPoint,
-} from '@/lib/api/calibration';
-import { cn } from '@/lib/utils';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Progress } from "@/components/ui/progress";
+import { CalibrationStage } from "@/components/calibration/calibration-stage";
+import { HeatmapCanvas } from "@/components/heatmap/heatmap-canvas";
+import { useGazeTracker } from "@/hooks/use-gaze-tracker";
+import { useCalibration } from "@/hooks/use-calibration";
+import { clearStoredGazeSession } from "@/lib/api/calibration";
 
 const DEMO_SLIDES = [
-  { id: 'demo-1', title: 'Gradient Descent — Trang bìa', src: '/demo/slide-1.svg' },
-  { id: 'demo-2', title: 'Ý tưởng cốt lõi', src: '/demo/slide-2.svg' },
-  { id: 'demo-3', title: 'Tốc độ học (learning rate)', src: '/demo/slide-3.svg' },
+  { id: "demo-1", title: "Gradient Descent — Trang bìa", src: "/demo/slide-1.svg" },
+  { id: "demo-2", title: "Ý tưởng cốt lõi", src: "/demo/slide-2.svg" },
+  { id: "demo-3", title: "Tốc độ học (learning rate)", src: "/demo/slide-3.svg" },
 ];
 
-type Step = 'intro' | 'calibrate' | 'view' | 'result';
+type Step = "intro" | "calibrate" | "view" | "result";
 
 interface GazeRecord {
   slide: number;
-  x: number; // -1 = không nhìn màn (no_face)
+  x: number;
   y: number;
 }
 
-// ---------- Bước 2: hiệu chỉnh (khách) — logic như student/calibration.tsx ----------
+const STEP_LABELS: Array<{ key: Step; label: string }> = [
+  { key: "calibrate", label: "Hiệu chỉnh" },
+  { key: "view", label: "Xem bài mẫu" },
+  { key: "result", label: "Heatmap của bạn" },
+];
 
-const SAMPLES_PER_POINT = 2; // đồng bộ với student (đã giảm 5→2) — 16×2=32 request thay vì 16×5=80
-const MAX_CAPTURES_PER_POINT = 5;
-
-const CALIB_ERROR_TEXT: Record<string, string> = {
-  no_face: 'Không phát hiện khuôn mặt — hãy nhìn thẳng vào chấm đỏ rồi bấm lại.',
-  invalid_image: 'Ảnh webcam không hợp lệ — bấm lại.',
-  no_camera: 'Camera không khả dụng — hãy cho phép camera rồi thử lại.',
-  network_error: 'Không kết nối được dịch vụ AI — kiểm tra container gaze-api rồi bấm lại.',
-  insufficient: 'Chưa đủ mẫu cho điểm này — hãy bấm lại và giữ nhìn vào chấm.',
-};
-
-type CalPhase = 'calibrating' | 'sending' | 'training';
-
-function GuestCalibration({ onDone }: { onDone: () => void }) {
-  const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
-  const total = points.length;
-
-  const [idx, setIdx] = useState(0);
-  const [phase, setPhase] = useState<CalPhase>('calibrating');
-  const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionNonce, setSessionNonce] = useState(0);
-
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [camOn, setCamOn] = useState(false);
-
-  // Tạo session mới mỗi khi mount hoặc khi phải làm lại từ đầu (train fail)
-  useEffect(() => {
-    let cancelled = false;
-    const screenWidth = typeof window !== 'undefined' ? (window.innerWidth || 1280) : 1280;
-    const screenHeight = typeof window !== 'undefined' ? (window.innerHeight || 720) : 720;
-    createGazeSession(points, screenWidth, screenHeight)
-      .then((res) => {
-        if (!cancelled && res.ok && res.sessionId) setSessionId(res.sessionId);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [points, sessionNonce]);
-
-  // Làm lại từ đầu với session mới — khi train fail / MAE quá cao thì ep cali lại từ p0
-  const resetCalibration = useCallback(() => {
-    if (sessionId) deleteGazeSession(sessionId);
-    clearStoredGazeSession();
-    setSessionId(null);
-    setError(null);
-    setIdx(0);
-    setPhase('calibrating');
-    setSessionNonce((v) => v + 1);
-  }, [sessionId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: 'user' }, audio: false })
-      .then((stream) => {
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => undefined);
-        }
-        setCamOn(true);
-      })
-      .catch(() => setCamOn(false));
-
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-
-  const captureFrame = useCallback(async (): Promise<Blob | null> => {
-    const video = videoRef.current;
-    if (!video) return null;
-    let waited = 0;
-    while (video.videoWidth === 0 && waited < 1000) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      waited += 50;
-    }
-    if (video.videoWidth === 0) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return Promise.resolve(null);
-    ctx.drawImage(video, 0, 0);
-    return new Promise((resolve) => canvas.toBlob((b) => resolve(b ?? null), 'image/jpeg', 0.9));
-  }, []);
-
-  const finish = useCallback(async () => {
-    if (!sessionId) return;
-    setPhase('training');
-    const trained = await trainGazeSession(sessionId);
-    const maeLabel = trained.maePx != null ? formatMaePercent(trained.maePx) : null;
-    // Luồng thử: KHÔNG tính điểm — luôn cho qua nếu train ok (kể cả MAE cao)
-    const failed = !trained.ok;
-    if (failed) {
-      const message =
-        trained.error === 'insufficient_samples'
-          ? CALIB_ERROR_TEXT.insufficient + ' — sẽ làm lại từ đầu.'
-          : trained.error === 'network_error'
-            ? 'Không kết nối được dịch vụ AI khi huấn luyện — sẽ làm lại từ đầu.'
-            : 'Không huấn luyện được bộ hiệu chỉnh — sẽ làm lại từ đầu.';
-      console.log('[calibration:try] FAIL', { error: trained.error ?? null, maePx: trained.maePx ?? null, maePct: maeLabel });
-      resetCalibration();
-      setError(message);
-      return;
-    }
-    // Mae cao vẫn pass — chỉ log cảnh báo để debug
-    if (trained.maePx != null && trained.maePx > MAX_TRAIN_MAE) {
-      console.log('[calibration:try] PASS (high MAE allowed for try)', { maePx: trained.maePx ?? null, maePct: maeLabel });
-    } else {
-      console.log('[calibration:try] PASS', { maePx: trained.maePx ?? null, maePct: maeLabel });
-    }
-    storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
-    onDone();
-  }, [sessionId, resetCalibration, onDone]);
-
-  const handleDotClick = async () => {
-    if (phase !== 'calibrating') return;
-    if (!sessionId) {
-      setError('Dịch vụ AI chưa sẵn sàng — hãy thử lại sau một nhịp.');
-      return;
-    }
-    setPhase('sending');
-    setError(null);
-    // Chụp frame NGAY khi bấm (không delay) — mắt rời chấm chỉ sau ~200-300ms.
-
-    if (!camOn) {
-      setPhase('calibrating');
-      setError(CALIB_ERROR_TEXT.no_camera);
-      return;
-    }
-
-    const point = points[idx];
-    let accepted = 0;
-    let failed: string | null = null;
-
-    for (let attempt = 0; attempt < MAX_CAPTURES_PER_POINT && accepted < SAMPLES_PER_POINT; attempt++) {
-      const frame = await captureFrame();
-      if (frame === null) {
-        failed = 'no_camera';
-        break;
-      }
-      const result = await submitCalibrationSample(sessionId, frame, point.id);
-      if (result.status === 'accepted') {
-        accepted += 1;
-      } else if (result.status === 'no_face' || result.status === 'invalid_image') {
-        failed = result.status;
-        break;
-      } else {
-        failed = 'network_error';
-        break;
-      }
-      if (accepted < SAMPLES_PER_POINT) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-    }
-
-    if (accepted < SAMPLES_PER_POINT) {
-      setPhase('calibrating');
-      setError(failed ? (CALIB_ERROR_TEXT[failed] ?? 'Gửi điểm thất bại — bấm lại.') : CALIB_ERROR_TEXT.insufficient);
-      return;
-    }
-
-    if (idx === total - 1) {
-      await finish();
-      return;
-    }
-    setIdx(idx + 1);
-    setPhase('calibrating');
-  };
-
-  const current = points[idx];
-  const busy = phase !== 'calibrating';
-  const progress = ((idx + (phase === 'training' ? 1 : 0)) / total) * 100;
-
+function IntroStep({ onStart }: { onStart: () => void }) {
+  const steps = [
+    { icon: "ri-focus-2-line", title: "Hiệu chỉnh (16 điểm)", desc: "Nhìn vào từng chấm và bấm — mất khoảng 1 phút." },
+    { icon: "ri-eye-line", title: "Xem 3 trang bài giảng mẫu", desc: "Hệ thống thu điểm nhìn trong lúc bạn xem." },
+    { icon: "ri-bar-chart-line", title: "Nhận heatmap ngay", desc: "Bản đồ nhiệt tính tức thì từ dữ liệu vừa thu." },
+  ];
   return (
-    <div className="relative h-dvh overflow-hidden bg-muted text-foreground font-sans antialiased">
-      {/* Camera capture (ẩn) — vẫn cần để chụp frame gửi hiệu chỉnh, không hiển thị lên màn hình */}
-      <video
-        ref={(el) => {
-          videoRef.current = el;
-          if (el && streamRef.current && !el.srcObject) {
-            el.srcObject = streamRef.current;
-          }
-        }}
-        autoPlay
-        playsInline
-        muted
-        aria-hidden="true"
-        className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px opacity-0"
-      />
-
-      {phase !== 'training' && (
-        <button
-          onClick={handleDotClick}
-          disabled={busy}
-          aria-label={`Điểm hiệu chỉnh ${idx + 1}/${total}`}
-          className="group absolute z-20 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-4 focus-visible:ring-destructive/40 disabled:cursor-default"
-          style={{ left: `${current.x * 100}%`, top: `${current.y * 100}%` }}
-        >
-          <span className="absolute inset-0 rounded-full bg-destructive/20 transition group-hover:bg-destructive/30" />
-          <span className={`absolute inset-2 rounded-full bg-destructive/40 transition ${busy ? 'animate-pulse' : ''}`} />
-          <span className={`relative h-5 w-5 rounded-full border-2 border-white bg-destructive shadow-lg transition ${busy ? 'animate-pulse' : 'group-hover:scale-110'}`} />
-        </button>
-      )}
-
-      <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
-        <div className="pointer-events-none w-full max-w-sm rounded-xl border border-border bg-card px-5 py-4 text-center shadow-lg">
-          <p className="text-sm font-bold text-foreground">Hiệu chỉnh điểm nhìn</p>
-
-          {phase === 'training' ? (
-            <p role="status" aria-live="polite" className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              Đang huấn luyện bộ hiệu chỉnh…
-            </p>
-          ) : (
-            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-              Nhìn chằm chằm vào chấm đỏ rồi <span className="font-semibold text-foreground">bấm vào chấm và GIỮ mắt nhìn chấm</span> tới khi chấm tiếp theo hiện ra. Nhìn đi chỗ khác lúc này sẽ làm lệch toàn bộ kết quả.
-            </p>
-          )}
-
-          <div className="mt-3 flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-brand-cyan transition-all duration-300" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="shrink-0 text-xs font-semibold text-muted-foreground">{Math.min(idx + 1, total)}/{total}</span>
-          </div>
-
-          {error && (
-            <p role="alert" className="mt-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive">{error}</p>
-          )}
-
-          <p className="mt-3 text-xs text-muted-foreground">
-            Cần hoàn tất hiệu chỉnh để hệ thống theo dõi điểm nhìn thật của bạn.
+    <main className="flex flex-1 items-center px-4 py-12 sm:px-6">
+      <div className="mx-auto grid w-full max-w-5xl gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+        <section>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f1e6] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#52704f]">
+            <Icon name="ri-eye-line" className="size-3.5" />
+            Phiên trải nghiệm 2 phút
+          </span>
+          <h1 className="mt-5 max-w-xl text-4xl font-semibold tracking-[-0.045em] text-foreground sm:text-5xl sm:leading-[1.05]">
+            Xem cách ánh mắt tương tác với nội dung.
+          </h1>
+          <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground">
+            Không cần tài khoản. Webcam ước lượng điểm nhìn khi bạn đọc ba trang mẫu, sau đó dựng heatmap ngay trên thiết bị.
           </p>
-        </div>
+          <Button size="lg" onClick={onStart} className="mt-8 bg-black px-6 text-white shadow-xs hover:bg-[#292a27]">
+            Bắt đầu hiệu chỉnh
+            <Icon name="ri-arrow-right-line" className="size-5" />
+          </Button>
+          <p className="mt-5 flex max-w-lg items-start gap-2 text-xs leading-5 text-muted-foreground">
+            <Icon name="ri-lock-line" className="mt-0.5 size-3.5 shrink-0" />
+            Dữ liệu điểm nhìn chỉ tồn tại trong phiên trình duyệt này và không được ghi vào hệ thống.
+          </p>
+        </section>
+
+        <ol className="rounded-[20px] border border-border/80 bg-white p-3 shadow-sm sm:p-4">
+          {steps.map((s, i) => (
+            <li key={s.title} className="flex items-start gap-4 rounded-2xl px-3 py-4 sm:px-4">
+              <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border border-[#dce8d9] bg-[#e8f1e6] text-[#52704f]">
+                <Icon name={s.icon} className="size-4.5" />
+              </span>
+              <div className="min-w-0 flex-1 border-b border-border pb-4 last:border-0">
+                <p className="text-xs font-medium text-muted-foreground">0{i + 1}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{s.title}</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{s.desc}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
-    </div>
+    </main>
   );
 }
 
-// ---------- Luồng chính (heatmap vẽ bằng HeatmapCanvas dùng chung) ----------
-
-const STEP_LABELS: Array<{ key: Step; label: string }> = [
-  { key: 'calibrate', label: 'Hiệu chỉnh' },
-  { key: 'view', label: 'Xem bài mẫu' },
-  { key: 'result', label: 'Heatmap của bạn' },
-];
-
-export default function TryFlow() {
-  const [step, setStep] = useState<Step>('intro');
+export function TryFlow() {
+  const [step, setStep] = useState<Step>("intro");
   const [currentSlide, setCurrentSlide] = useState(0);
   const [gazeDot, setGazeDot] = useState<{ x: number; y: number } | null>(null);
-  // Snapshot gaze tại thời điểm bấm "Xem heatmap" để tính kết quả (ref không đọc trong render).
   const [resultRecords, setResultRecords] = useState<GazeRecord[]>([]);
   const [validCount, setValidCount] = useState(0);
 
@@ -332,33 +104,31 @@ export default function TryFlow() {
     }
   }, []);
 
-  // Luồng dùng thử bắt buộc hiệu chỉnh thật — không dùng dữ liệu mô phỏng.
   const { source: gazeSource } = useGazeTracker({
-    enabled: step === 'view',
+    enabled: step === "view",
     calibrated: true,
     onPoint: handlePoint,
     allowSimulation: false,
   });
 
-  const results = useMemo(() => {
-    return DEMO_SLIDES.map((slide, i) => {
-      const records = resultRecords.filter((r) => r.slide === i);
-      const valid = records.filter((r) => r.x >= 0 && r.x <= 1 && r.y >= 0 && r.y <= 1);
-      const onSlide = records.length ? Math.round((valid.length / records.length) * 100) : 0;
-      return {
-        slide,
-        points: valid.map((r) => [r.x, r.y] as [number, number]),
-        total: records.length,
-        valid: valid.length,
-        onSlide,
-      };
-    });
-  }, [resultRecords]);
-
-  const totalValid = useMemo(
-    () => results.reduce((sum, r) => sum + r.valid, 0),
-    [results],
+  const results = useMemo(
+    () =>
+      DEMO_SLIDES.map((slide, i) => {
+        const records = resultRecords.filter((r) => r.slide === i);
+        const valid = records.filter((r) => r.x >= 0 && r.x <= 1 && r.y >= 0 && r.y <= 1);
+        const onSlide = records.length ? Math.round((valid.length / records.length) * 100) : 0;
+        return {
+          slide,
+          points: valid.map((r) => [r.x, r.y] as [number, number]),
+          total: records.length,
+          valid: valid.length,
+          onSlide,
+        };
+      }),
+    [resultRecords],
   );
+
+  const totalValid = useMemo(() => results.reduce((sum, r) => sum + r.valid, 0), [results]);
 
   const reset = () => {
     clearStoredGazeSession();
@@ -367,181 +137,122 @@ export default function TryFlow() {
     setValidCount(0);
     setGazeDot(null);
     setCurrentSlide(0);
-    setStep('intro');
+    setStep("intro");
   };
 
-  const showResult = () => {
-    setResultRecords([...gazeRef.current]);
-    setStep('result');
-  };
-
-  // ---------- Bước 2 & 3 render toàn màn hình riêng ----------
-
-  if (step === 'calibrate') {
-    return (
-      <GuestCalibration
-        onDone={() => {
-          setStep('view');
-        }}
-      />
-    );
+  // ---- Calibration step uses shared engine ----
+  if (step === "calibrate") {
+    return <GuestCalibration onDone={() => setStep("view")} />;
   }
 
   const stepIndex = STEP_LABELS.findIndex((s) => s.key === step);
 
   return (
-    <div className="flex min-h-dvh flex-col bg-muted text-foreground">
-      <header className="sticky top-0 z-40 border-b border-border bg-card">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+    <div className={`flex flex-col bg-[#f5f6f2] text-foreground ${step === "view" ? "h-dvh overflow-hidden" : "min-h-dvh"}`}>
+      <header className="z-40 shrink-0 px-2 pt-2 sm:px-3 sm:pt-3">
+        <div className="mx-auto flex h-12 max-w-7xl items-center justify-between rounded-full border border-border/80 bg-white px-3 shadow-xs sm:px-4">
           <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+            href="/account/login"
+            className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <RiArrowLeftSLine className="h-4 w-4" />
-            Trang chủ
+            <Icon name="ri-arrow-left-s-line" className="size-4" />
+            Đăng nhập
           </Link>
 
-          <div className="hidden items-center gap-2 sm:flex">
+          <div className="hidden items-center gap-1.5 sm:flex">
             {STEP_LABELS.map((s, i) => (
               <span key={s.key} className="flex items-center gap-2">
                 <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${
-                    i <= stepIndex ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                  className={`flex size-5 items-center justify-center rounded-full text-[10px] font-semibold ${
+                    i <= stepIndex ? "bg-black text-white" : "bg-[#e8f1e6] text-[#52704f]"
                   }`}
                 >
                   {i + 1}
                 </span>
-                <span className={`text-xs font-semibold ${i <= stepIndex ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] font-medium ${i <= stepIndex ? "text-foreground" : "text-muted-foreground"}`}>
                   {s.label}
                 </span>
-                {i < STEP_LABELS.length - 1 && <span className="h-px w-6 bg-border" />}
+                {i < STEP_LABELS.length - 1 && <span className="h-px w-4 bg-border" />}
               </span>
             ))}
           </div>
 
-          <span className="text-xs font-medium text-muted-foreground">Chế độ khách</span>
+          <span className="rounded-full bg-[#e8f1e6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#52704f]">Khách</span>
         </div>
       </header>
 
-      {step === 'intro' && (
-        <main className="flex flex-1 items-center justify-center px-4 py-10">
-          <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-8 shadow-sm sm:p-12">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-ring/40 bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
-              <RiEyeLine className="h-3.5 w-3.5" />
-              Dùng thử miễn phí
-            </span>
-            <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground">
-              Trải nghiệm theo dõi điểm nhìn trong 2 phút
-            </h1>
-            <p className="mt-3 text-muted-foreground">
-              Không cần tài khoản. Hệ thống dùng webcam ước lượng bạn đang nhìn đâu,
-              sau đó vẽ lại bản đồ nhiệt (heatmap) từ chính dữ liệu của bạn.
-            </p>
+      {step === "intro" && <IntroStep onStart={() => setStep("calibrate")} />}
 
-            <ol className="mt-8 space-y-4">
-              {[
-                { icon: RiCameraLine, title: 'Hiệu chỉnh (16 điểm)', desc: 'Nhìn vào từng chấm đỏ và bấm — mất khoảng 1 phút.' },
-                { icon: RiEyeLine, title: 'Xem 3 trang bài giảng mẫu', desc: 'Hệ thống thu điểm nhìn của bạn trong lúc xem.' },
-                { icon: RiBarChartLine, title: 'Nhận heatmap ngay', desc: 'Bản đồ nhiệt tính tức thì từ dữ liệu vừa thu.' },
-              ].map((s, i) => (
-                <li key={s.title} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
-                    <s.icon className="h-4.5 w-4.5" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{i + 1}. {s.title}</p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">{s.desc}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button size="lg" onClick={() => setStep('calibrate')} className="w-full sm:w-auto">
-                Bắt đầu hiệu chỉnh
-                <RiArrowRightLine data-icon="inline-end" />
-              </Button>
-            </div>
-
-            <p className="mt-6 flex items-start gap-1.5 text-xs text-muted-foreground">
-              <RiCheckboxCircleLine className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              Dữ liệu điểm nhìn chỉ lưu trên trình duyệt của bạn trong phiên này — không ghi vào hệ thống, không cần đăng nhập.
-            </p>
-          </div>
-        </main>
-      )}
-
-      {step === 'view' && (
-        <main className="flex min-h-0 flex-1 flex-col">
-          <div className="shrink-0 border-b border-border bg-card px-4 py-3 sm:px-6">
-            <div className="mx-auto flex max-w-[1000px] items-center gap-3">
+      {step === "view" && (
+        <main className="relative m-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-border/80 bg-[#fffffb] shadow-xs sm:m-3">
+          <div className="z-10 shrink-0 px-4 py-3 sm:px-5">
+            <div className="mx-auto flex max-w-[1200px] items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-muted-foreground">Bài giảng mẫu · Gradient Descent</p>
-                <h1 className="mt-0.5 truncate text-sm font-semibold sm:text-base">{DEMO_SLIDES[currentSlide].title}</h1>
+                <p className="truncate text-[11px] text-muted-foreground">Bài mẫu · Gradient Descent</p>
+                <h1 className="mt-0.5 truncate text-sm font-medium">
+                  {DEMO_SLIDES[currentSlide].title}
+                </h1>
               </div>
-              <div className="shrink-0 text-right">
-                <p className="text-xs text-muted-foreground">Trang</p>
-                <p className="text-sm font-semibold tabular-nums">
+              <div className="shrink-0 rounded-full bg-muted px-3 py-1.5">
+                <p className="text-xs font-medium tabular-nums">
                   {currentSlide + 1}
                   <span className="font-normal text-muted-foreground"> / {total}</span>
                 </p>
               </div>
-              {gazeSource === 'real' ? (
-                <span className="hidden items-center gap-1.5 text-xs font-medium text-emerald-600 sm:flex">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                  Đang theo dõi
+              {gazeSource === "real" ? (
+                <span className="hidden items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-medium sm:flex">
+                  <span className="size-1.5 animate-pulse rounded-full bg-[#789472]" />
+                  Gaze hoạt động
                 </span>
               ) : (
-                <span className="hidden items-center gap-1.5 text-xs font-medium text-destructive sm:flex">
-                  <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                  Chưa kết nối theo dõi
+                <span className="hidden items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-medium text-muted-foreground sm:flex">
+                  <span className="size-1.5 rounded-full bg-muted-foreground" />
+                  Gaze chưa kết nối
                 </span>
               )}
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-muted px-3 py-6 sm:px-6">
-            <div className="mx-auto w-full max-w-[900px]">
-              <div className="overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border">
+          <div className="flex min-h-0 flex-1 items-center overflow-auto bg-[#f9f9f5] px-3 pb-20 pt-3 sm:px-5">
+            <div className="mx-auto w-full max-w-[min(1040px,calc((100dvh-10rem)*16/9))]">
+              <div className="relative aspect-video overflow-hidden rounded-[18px] border border-border/80 bg-white shadow-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={DEMO_SLIDES[currentSlide].src}
                   alt={DEMO_SLIDES[currentSlide].title}
-                  className="block h-auto w-full bg-white object-contain"
+                  className="absolute inset-0 block h-full w-full bg-white object-contain"
                 />
               </div>
-              <p className="mt-3 text-center text-xs text-muted-foreground">
-                Đọc trang tự nhiên — hệ thống đang ghi nhận điểm nhìn của bạn.
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                Đọc tự nhiên. Điểm nhìn đang được ghi nhận trong phiên này.
               </p>
-              {gazeSource === 'off' && (
-                <p className="mx-auto mt-3 max-w-[900px] rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-center text-xs font-medium text-destructive">
-                  Chưa kết nối được camera hoặc dịch vụ theo dõi — hãy kiểm tra camera rồi tải lại trang. Heatmap sẽ trống nếu không có dữ liệu điểm nhìn.
+              {gazeSource === "off" && (
+                <p className="mx-auto mt-2 rounded-xl bg-muted px-3 py-2 text-center text-xs font-medium text-foreground">
+                  Chưa kết nối được camera hoặc dịch vụ theo dõi — kiểm tra camera rồi tải lại trang. Heatmap sẽ
+                  trống nếu không có dữ liệu điểm nhìn.
                 </p>
               )}
             </div>
           </div>
 
-          <footer className="shrink-0 border-t border-border bg-card px-4 py-2 sm:px-6">
-            <div className="mx-auto flex max-w-[1000px] items-center gap-3">
+          <footer className="absolute inset-x-0 bottom-3 z-20 px-3 sm:bottom-4">
+            <div className="mx-auto flex max-w-xl items-center gap-2 rounded-full border border-border/80 bg-white/95 p-1.5 shadow-md backdrop-blur-md">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setCurrentSlide((v) => Math.max(0, v - 1))}
                 disabled={currentSlide === 0}
               >
-                <RiArrowLeftSLine />
+                <Icon name="ri-arrow-left-s-line" className="size-4" />
                 <span className="hidden sm:inline">Trang trước</span>
               </Button>
-
               <div className="flex min-w-0 flex-1 items-center gap-3 px-1 sm:px-3">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-brand-cyan transition-[width] duration-300"
-                    style={{ width: `${((currentSlide + 1) / total) * 100}%` }}
-                  />
-                </div>
+                <Progress
+                  value={((currentSlide + 1) / total) * 100}
+                  className="h-1 flex-1"
+                  indicatorClassName="bg-[#789472]"
+                />
               </div>
-
               {currentSlide < total - 1 ? (
                 <Button
                   variant="outline"
@@ -549,16 +260,19 @@ export default function TryFlow() {
                   onClick={() => setCurrentSlide((v) => Math.min(total - 1, v + 1))}
                 >
                   <span className="hidden sm:inline">Trang sau</span>
-                  <RiArrowRightSLine />
+                  <Icon name="ri-arrow-right-s-line" className="size-4" />
                 </Button>
               ) : (
                 <Button
                   size="sm"
-                  onClick={showResult}
+                  onClick={() => {
+                    setResultRecords([...gazeRef.current]);
+                    setStep("result");
+                  }}
                   disabled={validCount === 0}
                 >
-                  <RiBarChartLine />
-                  Xem heatmap của bạn
+                  <Icon name="ri-bar-chart-line" className="size-4" />
+                  Xem kết quả
                 </Button>
               )}
             </div>
@@ -567,7 +281,7 @@ export default function TryFlow() {
           {gazeDot && (
             <div className="pointer-events-none fixed inset-0 z-30">
               <span
-                className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-destructive shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
+                className="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-black shadow-[0_1px_5px_rgba(0,0,0,0.2)]"
                 style={{ left: `${gazeDot.x * 100}%`, top: `${gazeDot.y * 100}%` }}
               />
             </div>
@@ -575,37 +289,42 @@ export default function TryFlow() {
         </main>
       )}
 
-      {step === 'result' && (
-        <main className="flex-1 px-4 py-8 sm:px-6">
+      {step === "result" && (
+        <main className="flex-1 px-4 py-12 sm:px-6">
           <div className="mx-auto max-w-[1000px]">
-            <div className="text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Kết quả của bạn</p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">
+            <div className="mx-auto max-w-xl text-center">
+              <p className="inline-flex rounded-full bg-[#e8f1e6] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#52704f]">Kết quả phiên thử</p>
+              <h1 className="mt-4 text-4xl font-semibold tracking-[-0.04em] text-foreground">
                 Heatmap điểm nhìn
               </h1>
-              <p className="mt-2 text-muted-foreground">
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 Vùng màu đỏ là nơi bạn nhìn lâu nhất, xanh là nơi nhìn ít hơn.
               </p>
             </div>
 
-            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mt-8 grid grid-cols-1 gap-2 rounded-[20px] border border-border/80 bg-white p-2 shadow-sm sm:grid-cols-3">
               {[
-                { label: 'Tổng mẫu điểm nhìn', value: String(totalValid) },
-                { label: 'Số trang đã xem', value: `${results.filter((r) => r.total > 0).length}/${total}` },
-                { label: 'Tỷ lệ nhìn vào trang', value: `${totalValid ? Math.round((results.reduce((s, r) => s + r.valid, 0) / Math.max(1, results.reduce((s, r) => s + r.total, 0))) * 100) : 0}%` },
+                { label: "Tổng mẫu điểm nhìn", value: String(totalValid) },
+                { label: "Số trang đã xem", value: `${results.filter((r) => r.total > 0).length}/${total}` },
+                {
+                  label: "Tỷ lệ nhìn vào trang",
+                  value: `${totalValid ? Math.round((results.reduce((s, r) => s + r.valid, 0) / Math.max(1, results.reduce((s, r) => s + r.total, 0))) * 100) : 0}%`,
+                },
               ].map((s) => (
-                <div key={s.label} className="rounded-lg border border-border bg-card p-4 text-center shadow-sm">
-                  <p className="text-2xl font-bold tabular-nums text-primary">{s.value}</p>
+                <div key={s.label} className="rounded-[16px] bg-[#f5f6f2] p-5 text-center">
+                  <p className="text-2xl font-semibold tabular-nums text-foreground">{s.value}</p>
                   <p className="mt-1 text-xs font-medium text-muted-foreground">{s.label}</p>
                 </div>
               ))}
             </div>
 
-            <div className="mt-8 space-y-6">
+            <div className="mt-10 space-y-8">
               {results.map((r, i) => (
                 <div key={r.slide.id}>
-                  <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">Trang {i + 1} · {r.slide.title}</span>
+                  <div className="mb-3 flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                    <span className="font-semibold text-foreground">
+                      Trang {i + 1} · {r.slide.title}
+                    </span>
                     <span>
                       {r.valid} mẫu · nhìn vào trang {r.onSlide}%
                     </span>
@@ -615,19 +334,29 @@ export default function TryFlow() {
               ))}
             </div>
 
-            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div className="mt-12 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button variant="outline" onClick={reset}>
-                <RiRefreshLine />
+                <Icon name="ri-loader-4-line" className="hidden" />
                 Làm lại từ đầu
               </Button>
-              <Link href="/account/login" className={cn(buttonVariants())}>
-                Đăng nhập để dùng đầy đủ
-                <RiArrowRightLine data-icon="inline-end" />
-              </Link>
+              <Button asChild>
+                <Link href="/account/login">
+                  Đăng nhập để dùng đầy đủ
+                  <Icon name="ri-arrow-right-line" className="size-5" />
+                </Link>
+              </Button>
             </div>
           </div>
         </main>
       )}
     </div>
   );
+}
+
+function GuestCalibration({ onDone }: { onDone: () => void }) {
+  const engine = useCalibration({
+    onComplete: onDone,
+    persistToBackend: false,
+  });
+  return <CalibrationStage engine={engine} />;
 }

@@ -1,6 +1,8 @@
-# GazeEdu — Frontend (Next.js 16 App Router)
+# GazeEdu Frontend
 
-## Chạy
+Ung dung Next.js 16 App Router chinh cua GazeEdu, su dung giao dien redesign.
+
+## Chay local
 
 ```bash
 npm install
@@ -8,35 +10,62 @@ npm run dev
 # http://localhost:3000
 ```
 
-## Cấu trúc
+Bien moi truong duoc doc tu `.env.local`:
 
+```env
+NEXT_PUBLIC_API_URL=https://server.nmhieu.online
+NEXT_PUBLIC_GAZE_URL=http://localhost:8000
+NEXT_PUBLIC_DEMO=0
 ```
-app/                  # Router — page mỏng, không chứa logic
-  account/            # login, signup
-  student/            # học viên: (dashboard) có navbar, (viewer) fullscreen
-  teacher/            # giảng viên: (dashboard) có navbar, (viewer) fullscreen
+
+Dat `NEXT_PUBLIC_DEMO=1` de xem cac man hinh voi du lieu demo ma khong can
+backend. Che do nay chi dung cho phat trien va trinh dien.
+
+## Lenh
+
+| Lenh | Mo ta |
+|---|---|
+| `npm run dev` | Chay development server tai port 3000 |
+| `npm run build` | Tao production build |
+| `npm run start` | Chay production server tai port 3000 |
+| `npm run lint` | Kiem tra ESLint |
+| `npm run typecheck` | Kiem tra TypeScript |
+| `npm test` | Chay unit test bang Vitest |
+| `npm run test:e2e` | Chay Playwright E2E |
+| `npm run test:e2e:demo` | Chay Playwright E2E trong demo mode |
+
+## Cau truc
+
+```text
+app/                    # Routes va layouts
 components/
-  ui/                 # primitives dùng chung (button, card, icon, ...)
-  landing/            # landing page
-  account/            # form đăng nhập / đăng ký
-  student/            # my-courses, course-learning, student-shell
-  teacher/            # courses-list, heatmap-viewer, teacher-shell
-    workspace/        # course-workspace (shell) + overview/content/students tab
-lib/
-  types/domain.ts     # NGUỒN DUY NHẤT cho type domain (khớp schema DB)
-  mock/               # dữ liệu giả (teacher, student)
-  api/                # hàm API — HIỆN TRẢ MOCK, đây là nơi duy nhất cần sửa khi nối backend
-hooks/                # TanStack Query hooks (use-teacher, use-student)
-app/providers.tsx     # QueryClientProvider
+  account/              # Dang nhap
+  admin/                # Phan cong va cau hinh calibration
+  calibration/          # Calibration dung chung
+  layout/               # App shell, sidebar, topbar
+  quiz/                 # Assignment prototype
+  student/              # Dashboard, preflight, learning reader
+  teacher/              # Danh sach khoa hoc, workspace, heatmap
+  ui/                   # Radix UI primitives
+hooks/                  # TanStack Query, gaze va calibration hooks
+lib/                    # API client, types, constants va utilities
+tests/                  # Vitest unit tests
+e2e/                    # Playwright tests
 ```
 
-## Nối backend (FastAPI) khi sẵn sàng
+## Routes chinh
 
-1. Copy `.env.example` → `.env.local`, đặt `NEXT_PUBLIC_API_URL` (mặc định `api.nmhieu.online`).
-2. Sửa thân hàm trong `lib/api/*.ts` (đang trả mock từ `lib/mock/*`) sang `apiFetch(...)` với endpoint tương ứng — **giữ nguyên chữ ký hàm và type** để UI không phải đổi.
-3. Type trong `lib/types/domain.ts` là contract duy nhất, bám theo `db/migrations/*.sql`.
+| Route | Khu vuc |
+|---|---|
+| `/` | Landing page |
+| `/account/login` | Dang nhap |
+| `/student` | Trang chu hoc vien |
+| `/student/courses/[courseId]` | Learning reader |
+| `/teacher` | Danh sach khoa hoc |
+| `/teacher/courses/[courseId]` | Course workspace |
+| `/admin` | Quan tri va phan cong |
+| `/try` | Trai nghiem khach |
+| `/demo` | Danh sach man hinh demo |
 
-## Quy ước
-
-- Icons: dùng `@remixicon/react` (qua `components/ui/icon.tsx` với tên kiểu `ri-*`). Không dùng `<i className="ri-...">` trực tiếp.
-- Mọi component dùng dữ liệu → gọi qua `hooks/use-*.ts` (đã bọc TanStack Query).
+Nhung URL cu `/student/my-courses`, `/teacher/courses` va `/admin/courses`
+duoc redirect sang route moi tuong ung.

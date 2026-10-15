@@ -57,7 +57,7 @@ jobs:
         run: python -m pytest tests -v
 
   frontend:
-    name: Frontend lint + build
+    name: Frontend checks + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +72,12 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: frontend
+        run: npm test
       - name: Build
         working-directory: frontend
         run: npm run build

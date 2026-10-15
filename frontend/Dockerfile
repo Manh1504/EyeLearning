@@ -12,10 +12,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Build-time public vars (bị inlay vào client bundle: rewrite + WebSocket gaze).
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_GAZE_URL
+ARG NEXT_PUBLIC_API_URL=https://server.nmhieu.online
+ARG NEXT_PUBLIC_GAZE_URL=http://localhost:8000
+ARG NEXT_PUBLIC_DEMO=0
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_GAZE_URL=$NEXT_PUBLIC_GAZE_URL
+ENV NEXT_PUBLIC_DEMO=$NEXT_PUBLIC_DEMO
 
 RUN npm run build
 

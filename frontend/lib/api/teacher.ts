@@ -1,41 +1,38 @@
-// lib/api/teacher.ts — Hàm API khu vực giảng viên (đã nối FastAPI).
-//   GET   /api/teacher/courses?status=&q=            -> TeacherCourse[]
-//   GET   /api/teacher/courses/{id}                   -> ModuleNode[]
-//   GET   /api/teacher/courses/{id}/students          -> StudentRow[]
-//   GET   /api/teacher/lessons/{id}/heatmap           -> SlideStat[]
-
-import { apiFetch, apiFetchMultipart } from './client';
+import { apiFetch, apiFetchMultipart } from "./client";
 import type {
-  TeacherCourse, CourseStatus, Level, ModuleNode, StudentRow, SlideStat,
-  SlideAdmin, LessonMastery,
-} from '@/lib/types/domain';
-import { formatShortDate } from '@/lib/utils';
+  TeacherCourse,
+  CourseStatus,
+  Level,
+  ModuleNode,
+  StudentRow,
+  SlideStat,
+  SlideAdmin,
+  LessonMastery,
+} from "@/lib/types/domain";
+import { formatShortDate } from "@/lib/utils";
 
 export interface CourseListQuery {
   status?: CourseStatus;
   q?: string;
 }
 
-interface TeacherCourseRaw extends Omit<TeacherCourse, 'updatedAt'> {
+interface TeacherCourseRaw extends Omit<TeacherCourse, "updatedAt"> {
   updatedAt: string;
 }
 
-// GET /api/teacher/courses?status=&q=
 export function fetchTeacherCourses(query: CourseListQuery = {}): Promise<TeacherCourse[]> {
   const { status, q } = query;
-  return apiFetch<TeacherCourseRaw[]>('/api/teacher/courses', {
+  return apiFetch<TeacherCourseRaw[]>("/api/teacher/courses", {
     params: { status, q },
   }).then((courses) =>
     courses.map((course) => ({ ...course, updatedAt: formatShortDate(course.updatedAt) })),
   );
 }
 
-// GET /api/teacher/courses/{id} (kèm modules.lessons)
 export function fetchCourseTree(courseId: string): Promise<ModuleNode[]> {
   return apiFetch<ModuleNode[]>(`/api/teacher/courses/${courseId}`);
 }
 
-// GET /api/teacher/courses/{id}/students (enrollments + lesson_progress)
 export function fetchCourseStudents(courseId: string): Promise<StudentRow[]> {
   return apiFetch<StudentRow[]>(`/api/teacher/courses/${courseId}/students`);
 }
@@ -48,46 +45,42 @@ export interface StudentDirectoryEntry {
   color: string;
 }
 
-// GET /api/teacher/students?q= — danh mục học viên để thêm vào khóa học
 export function fetchStudentDirectory(q?: string): Promise<StudentDirectoryEntry[]> {
   return apiFetch<StudentDirectoryEntry[]>(
-    `/api/teacher/students${q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`,
+    `/api/teacher/students${q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`,
   );
 }
 
-// POST /api/teacher/courses/{id}/students — enroll học viên vào khóa
 export function addCourseStudents(
   courseId: string,
   studentIds: string[],
 ): Promise<{ ok: boolean; added: number }> {
   return apiFetch(`/api/teacher/courses/${courseId}/students`, {
-    method: 'POST',
+    method: "POST",
     body: { studentIds },
   });
 }
 
-// DELETE /api/teacher/courses/{id}/students/{studentId} — gỡ học viên (soft, status=dropped)
 export function removeCourseStudent(
   courseId: string,
   studentId: string,
 ): Promise<{ ok: boolean }> {
   return apiFetch(`/api/teacher/courses/${courseId}/students/${studentId}`, {
-    method: 'DELETE',
+    method: "DELETE",
   });
 }
 
-// GET /api/teacher/lessons/{id}/heatmap?student_id=&content_id=
 export function fetchHeatmap(
   lessonId: string,
   _slideCount: number,
-  scope: 'class' | string = 'class',
+  scope: "class" | string = "class",
 ): Promise<SlideStat[]> {
   return apiFetch<SlideStat[]>(`/api/teacher/lessons/${lessonId}/heatmap`, {
-    params: scope === 'class' ? {} : { student_id: scope },
+    params: scope === "class" ? {} : { student_id: scope },
   });
 }
 
-// ---- Mutations: tạo / sửa / xóa khóa học ----
+// ---- Mutations ----
 
 export interface CourseWriteInput {
   title: string;
@@ -96,127 +89,102 @@ export interface CourseWriteInput {
   status?: CourseStatus;
 }
 
-// POST /api/teacher/courses
 export function createCourse(input: CourseWriteInput): Promise<TeacherCourse> {
-  return apiFetch<TeacherCourse>('/api/teacher/courses', { method: 'POST', body: input });
+  return apiFetch<TeacherCourse>("/api/teacher/courses", { method: "POST", body: input });
 }
 
-// PATCH /api/teacher/courses/{id}
 export function updateCourse(
   courseId: string,
   patch: Partial<CourseWriteInput>,
 ): Promise<TeacherCourse> {
   return apiFetch<TeacherCourse>(`/api/teacher/courses/${courseId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: patch,
   });
 }
 
-// DELETE /api/teacher/courses/{id}
 export function deleteCourse(courseId: string): Promise<{ ok: boolean }> {
-  return apiFetch(`/api/teacher/courses/${courseId}`, { method: 'DELETE' });
+  return apiFetch(`/api/teacher/courses/${courseId}`, { method: "DELETE" });
 }
 
-// POST /api/teacher/courses/{id}/modules
 export function createModule(courseId: string, title: string): Promise<{ id: string }> {
   return apiFetch(`/api/teacher/courses/${courseId}/modules`, {
-    method: 'POST',
+    method: "POST",
     body: { title },
   });
 }
 
-// PATCH /api/teacher/modules/{id}
 export function updateModule(moduleId: string, title: string): Promise<{ id: string }> {
   return apiFetch(`/api/teacher/modules/${moduleId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: { title },
   });
 }
 
-// DELETE /api/teacher/modules/{id}
 export function deleteModule(moduleId: string): Promise<{ ok: boolean }> {
-  return apiFetch(`/api/teacher/modules/${moduleId}`, { method: 'DELETE' });
+  return apiFetch(`/api/teacher/modules/${moduleId}`, { method: "DELETE" });
 }
 
-// POST /api/teacher/modules/{id}/lessons
 export function createLesson(moduleId: string, title: string): Promise<{ id: string }> {
   return apiFetch(`/api/teacher/modules/${moduleId}/lessons`, {
-    method: 'POST',
+    method: "POST",
     body: { title },
   });
 }
 
-// PATCH /api/teacher/lessons/{id}
 export function updateLesson(lessonId: string, title: string): Promise<{ ok: boolean }> {
   return apiFetch(`/api/teacher/lessons/${lessonId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: { title },
   });
 }
 
-// DELETE /api/teacher/lessons/{id}
 export function deleteLesson(lessonId: string): Promise<{ ok: boolean }> {
-  return apiFetch(`/api/teacher/lessons/${lessonId}`, { method: 'DELETE' });
+  return apiFetch(`/api/teacher/lessons/${lessonId}`, { method: "DELETE" });
 }
 
-// POST /api/teacher/lessons/{id}/slides/upload — PDF → render slide ảnh
 export function uploadLessonPdf(
   lessonId: string,
   pdf: Blob,
   filename: string,
 ): Promise<{ ok: boolean; slides: number }> {
   const form = new FormData();
-  form.append('pdf', pdf, filename);
-  return apiFetchMultipart(`/api/teacher/lessons/${lessonId}/slides/upload`, form, 'POST');
+  form.append("pdf", pdf, filename);
+  return apiFetchMultipart(`/api/teacher/lessons/${lessonId}/slides/upload`, form, "POST");
 }
 
-// ---- Slide trọng tâm + điểm hoàn thành (mastery) ----
-
-// GET /api/teacher/lessons/{id}/slides — danh sách slide để đánh dấu trọng tâm
 export function fetchLessonSlidesAdmin(lessonId: string): Promise<SlideAdmin[]> {
   return apiFetch<SlideAdmin[]>(`/api/teacher/lessons/${lessonId}/slides`);
 }
 
-// POST /api/teacher/lessons/{id}/aoi/rebuild — trích lại và lưu AOI từ source.pdf
-export function rebuildLessonAois(
-  lessonId: string,
-): Promise<{ ok: boolean; slides: number }> {
+export function rebuildLessonAois(lessonId: string): Promise<{ ok: boolean; slides: number }> {
   return apiFetch<{ ok: boolean; slides: number }>(
     `/api/teacher/lessons/${lessonId}/aoi/rebuild`,
-    { method: 'POST' },
+    { method: "POST" },
   );
 }
 
-// PATCH /api/teacher/slides/{id} — bật/tắt slide trọng tâm
 export function setSlideKey(slideId: string, isKey: boolean): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/teacher/slides/${slideId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: { isKey },
   });
 }
 
 export function deleteSlide(slideId: string): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/teacher/slides/${slideId}`, {
-    method: 'DELETE',
+    method: "DELETE",
   });
 }
 
-// POST /api/teacher/lessons/{id}/slides/key — đặt danh sách trang trọng tâm
-export function setSlideKeys(
-  lessonId: string,
-  orderIndexes: number[],
-): Promise<{ ok: boolean }> {
+export function setSlideKeys(lessonId: string, orderIndexes: number[]): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/teacher/lessons/${lessonId}/slides/key`, {
-    method: 'POST',
+    method: "POST",
     body: { orderIndexes },
   });
 }
 
-// GET /api/teacher/lessons/{id}/mastery?studentId= — điểm hoàn thành 1 học viên
-export function fetchLessonMastery(
-  lessonId: string,
-  studentId: string,
-): Promise<LessonMastery> {
+export function fetchLessonMastery(lessonId: string, studentId: string): Promise<LessonMastery> {
   return apiFetch<LessonMastery>(`/api/teacher/lessons/${lessonId}/mastery`, {
     params: { student_id: studentId },
   });

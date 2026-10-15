@@ -10,73 +10,187 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   packages: write
 
 jobs:
-  build-push:
-    name: Build & push images
+  changes:
+    name: Detect changed images
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: backend
-            context: ./backend
-            file: ./backend/Dockerfile
-          - name: nginx
-            context: ./nginx
-            file: ./nginx/Dockerfile
-          - name: migrations
-            context: .
-            file: ./Dockerfile.migrations
-          - name: gaze
-            context: ./API
-            file: ./API/Dockerfile
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_images: ${{ steps.plan.outputs.has_images }}
+      deploy: ${{ steps.plan.outputs.deploy }}
+      source_sha: ${{ steps.source.outputs.sha }}
+      short_sha: ${{ steps.source.outputs.short_sha }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - id: source
         env:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: echo "short_sha=${SOURCE_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SOURCE_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+
+      - id: previous
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "build.yml",
+              branch: "main",
+              status: "completed",
+              per_page: 100,
+            });
+            const previous = data.workflow_runs.find((run) =>
+              run.event === "workflow_run" &&
+              run.conclusion === "success" &&
+              run.head_sha !== context.payload.workflow_run.head_sha
+            );
+            core.setOutput("sha", previous?.head_sha ?? "");
+
+      - id: fallback
+        if: github.event_name == 'workflow_run' && steps.previous.outputs.sha == ''
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.source.outputs.sha }}
+        run: echo "sha=$(git rev-parse "$HEAD_SHA^")" >> "$GITHUB_OUTPUT"
+
+      - id: filter
+        if: github.event_name == 'workflow_run'
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ steps.previous.outputs.sha || steps.fallback.outputs.sha }}
+          ref: ${{ steps.source.outputs.sha }}
+          filters: |
+            backend:
+              - 'backend/Dockerfile'
+              - 'backend/.dockerignore'
+              - 'backend/requirements.txt'
+              - 'backend/app/**'
+              - '.github/workflows/build.yml'
+            gaze:
+              - 'API/Dockerfile'
+              - 'API/.dockerignore'
+              - 'API/requirements-gpu.txt'
+              - 'API/requirements-torch.txt'
+              - 'API/entrypoint.sh'
+              - 'API/*.py'
+              - '.github/workflows/build.yml'
+            nginx:
+              - 'nginx/Dockerfile'
+              - 'nginx/default.conf'
+              - '.github/workflows/build.yml'
+            migrations:
+              - 'Dockerfile.migrations'
+              - 'db/migrations/**'
+              - '.github/workflows/build.yml'
+            deploy:
+              - 'docker-compose.yml'
+
+      - id: plan
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BACKEND: ${{ steps.filter.outputs.backend }}
+          GAZE: ${{ steps.filter.outputs.gaze }}
+          NGINX: ${{ steps.filter.outputs.nginx }}
+          MIGRATIONS: ${{ steps.filter.outputs.migrations }}
+          DEPLOY: ${{ steps.filter.outputs.deploy }}
+        run: |
+          if [[ "$EVENT_NAME" != "workflow_run" ]]; then
+            BACKEND=true
+            GAZE=true
+            NGINX=true
+            MIGRATIONS=true
+          fi
+
+          matrix='[]'
+          if [[ "$BACKEND" == "true" ]]; then
+            matrix=$(jq -c '. + [{"name":"backend","context":"./backend","file":"./backend/Dockerfile","build":true}]' <<< "$matrix")
+          fi
+          if [[ "$NGINX" == "true" ]]; then
+            matrix=$(jq -c '. + [{"name":"nginx","context":"./nginx","file":"./nginx/Dockerfile","build":true}]' <<< "$matrix")
+          fi
+          if [[ "$MIGRATIONS" == "true" ]]; then
+            matrix=$(jq -c '. + [{"name":"migrations","context":".","file":"./Dockerfile.migrations","build":true}]' <<< "$matrix")
+          fi
+          if [[ "$GAZE" == "true" ]]; then
+            matrix=$(jq -c '. + [{"name":"gaze","context":"./API","file":"./API/Dockerfile","build":true}]' <<< "$matrix")
+          fi
+
+          has_images=$(jq -r 'length > 0' <<< "$matrix")
+          if [[ "$has_images" != "true" ]]; then
+            matrix='[{"name":"noop","context":".","file":"./Dockerfile.migrations","build":false}]'
+          fi
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "has_images=$has_images" >> "$GITHUB_OUTPUT"
+          echo "deploy=${DEPLOY:-false}" >> "$GITHUB_OUTPUT"
+
+  build-push:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    needs: changes
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        if: matrix.build
+        with:
+          ref: ${{ needs.changes.outputs.source_sha }}
       - uses: docker/setup-buildx-action@v3
+        if: matrix.build
       - uses: docker/login-action@v3
+        if: matrix.build
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
+        if: matrix.build
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/manh1504/eyelearning-${{ matrix.name }}
           tags: |
-            type=raw,value=sha-${{ steps.source.outputs.short_sha }}
+            type=raw,value=sha-${{ needs.changes.outputs.short_sha }}
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' }}
       - uses: docker/build-push-action@v6
+        if: matrix.build
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+      - name: No image changes
+        if: ${{ !matrix.build }}
+        run: echo "No deployable image inputs changed."
 
   redeploy:
     name: Trigger Portainer webhook
     runs-on: ubuntu-latest
-    needs: build-push
+    needs: [changes, build-push]
     if: >-
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push'
+      needs.build-push.result == 'success' &&
+      (needs.changes.outputs.has_images == 'true' || needs.changes.outputs.deploy == 'true')
     steps:
       - name: Notify Portainer stack webhook (git pull + up -d)
         env:
           PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
-        run: |
-          curl -fsS -X POST "$PORTAINER_WEBHOOK_URL"
+        run: curl -fsS -X POST "$PORTAINER_WEBHOOK_URL"

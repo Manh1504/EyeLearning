@@ -1,33 +1,22 @@
 // lib/api/calibration.ts — Calibration + gaze stream dùng protocol /session
-// của AI service (image hieunm1501/gaze-api, uvicorn server:app trên cổng 8000).
-//
-// Protocol /session (stateful — server giữ model theo session):
-//   POST /session                 {screen_width, screen_height, points:[{id,x,y}]}
-//                                 -> { session_id }
-//   POST /session/{sid}/calibrate (multipart: image + point_id)
-//                                 -> { status: accepted|no_face|invalid_image|unknown_point, count }
-//   POST /session/{sid}/train     -> { status: ok|insufficient_samples, mae_px }
-//   WS   /session/{sid}/stream    -> binary JPEG -> { ok, x, y } | { ok:false, error }
-//
-// HTTP gọi qua đường /gaze/* (Next.js rewrite -> AI service) để tránh CORS;
-// WebSocket nối thẳng (WS không bị chặn bởi CORS).
+// của AI service. HTTP qua /gaze/* (rewrite), WebSocket nối thẳng.
+// GIỮ NGUYÊN hình học: screenGazeToSlide, screen stale detection, storage keys.
 
-const SESSION_KEY = 'gaze_session_id';
-const CALIBRATED_AT_KEY = 'gaze_calibrated_at';
-const SCREEN_W_KEY = 'gaze_screen_w';
-const SCREEN_H_KEY = 'gaze_screen_h';
-const DPR_KEY = 'gaze_dpr';
+const SESSION_KEY = "gaze_session_id";
+const CALIBRATED_AT_KEY = "gaze_calibrated_at";
+const SCREEN_W_KEY = "gaze_screen_w";
+const SCREEN_H_KEY = "gaze_screen_h";
+const DPR_KEY = "gaze_dpr";
 
 export interface CalPoint {
   id: string;
-  x: number; // chuẩn hóa [0,1]
+  x: number;
   y: number;
 }
 
 const GRID = 4;
-const MARGIN = 0.1; // giữ mục tiêu và focus ring trong viewport nhỏ
+const MARGIN = 0.1;
 
-// 16 điểm calibration (4×4) dùng chung cho luồng calibrate.
 export function buildCalibrationPoints(): CalPoint[] {
   const pos = Array.from(
     { length: GRID },
@@ -56,16 +45,16 @@ export async function createGazeSession(
   screenHeight: number,
 ): Promise<SessionCreateResult> {
   try {
-    const res = await fetch('/gaze/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/gaze/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ screen_width: screenWidth, screen_height: screenHeight, points }),
     });
     const data = (await res.json()) as { session_id?: string };
     if (data.session_id) return { ok: true, sessionId: data.session_id };
     return { ok: false, error: `session_${res.status}` };
   } catch {
-    return { ok: false, error: 'network_error' };
+    return { ok: false, error: "network_error" };
   }
 }
 
@@ -76,18 +65,17 @@ export interface SampleResult {
   error?: string;
 }
 
-// Gửi 1 frame JPEG + point_id -> server tích lũy mẫu cho điểm đó (server-side).
 export async function submitCalibrationSample(
   sessionId: string,
   imageBlob: Blob,
   pointId: string,
 ): Promise<SampleResult> {
   const form = new FormData();
-  form.append('image', imageBlob, 'frame.jpg');
-  form.append('point_id', pointId);
+  form.append("image", imageBlob, "frame.jpg");
+  form.append("point_id", pointId);
   try {
     const res = await fetch(`/gaze/session/${sessionId}/calibrate`, {
-      method: 'POST',
+      method: "POST",
       body: form,
     });
     const data = (await res.json()) as { status?: string; count?: number };
@@ -98,7 +86,7 @@ export async function submitCalibrationSample(
       error: res.ok ? undefined : `http_${res.status}`,
     };
   } catch {
-    return { ok: false, error: 'network_error' };
+    return { ok: false, error: "network_error" };
   }
 }
 
@@ -108,10 +96,6 @@ export interface TrainResult {
   error?: string;
 }
 
-/** Ngưỡng MAE train chấp nhận được (đơn vị chuẩn hóa [0,1]). VD 0.12 ≈ lệch 12% màn hình.
- *  Đã tăng 0.05→0.12 cho nhanh pass (theo yêu cầu 10-15%). Admin có thể chỉnh
- *  động qua /admin/calibration-settings (enabled + threshold).
- *  Dùng fetchCalibrationConfig() để lấy ngưỡng hiện tại trước khi train. */
 export const MAX_TRAIN_MAE = 0.12;
 export const DEFAULT_MAX_TRAIN_MAE = 0.12;
 
@@ -121,75 +105,62 @@ export function formatMaePercent(mae: number): string {
 
 export async function trainGazeSession(sessionId: string): Promise<TrainResult> {
   try {
-    const res = await fetch(`/gaze/session/${sessionId}/train`, { method: 'POST' });
-    const data = (await res.json().catch(() => ({}))) as {
-      status?: string;
-      mae_px?: number;
-    };
-    // Luôn kèm mae_px khi server trả về — caller dùng để từ chối model kém
-    // ngay cả khi status ok.
-    if (data.status === 'ok') return { ok: true, maePx: data.mae_px };
-    if (data.status === 'insufficient_samples') return { ok: false, error: 'insufficient_samples', maePx: data.mae_px };
+    const res = await fetch(`/gaze/session/${sessionId}/train`, { method: "POST" });
+    const data = (await res.json().catch(() => ({}))) as { status?: string; mae_px?: number };
+    if (data.status === "ok") return { ok: true, maePx: data.mae_px };
+    if (data.status === "insufficient_samples")
+      return { ok: false, error: "insufficient_samples", maePx: data.mae_px };
     return { ok: false, error: `train_${res.status}`, maePx: data.mae_px };
   } catch {
-    return { ok: false, error: 'network_error' };
+    return { ok: false, error: "network_error" };
   }
 }
 
 export interface SessionStatusResult {
   ok: boolean;
-  /** true khi session tồn tại và đã train xong (stream được). */
   ready: boolean;
   error?: string;
 }
 
-// Kiểm tra session đã lưu còn sống và sẵn sàng stream không.
-// Dùng ở cổng vào phiên học: session hết TTL 30' / bị xóa / chưa train
-// đều coi như chưa hiệu chỉnh để bắt làm lại, tránh rơi vào mô phỏng.
 export async function getGazeSessionStatus(sessionId: string): Promise<SessionStatusResult> {
   try {
     const res = await fetch(`/gaze/session/${encodeURIComponent(sessionId)}`);
-    if (res.status === 404) return { ok: false, ready: false, error: 'not_found' };
+    if (res.status === 404) return { ok: false, ready: false, error: "not_found" };
     if (!res.ok) return { ok: false, ready: false, error: `http_${res.status}` };
-    const data = (await res.json().catch(() => ({}))) as {
-      state?: string;
-      calibrated?: boolean;
-    };
-    const ready = data.state === 'ready' || data.calibrated === true;
+    const data = (await res.json().catch(() => ({}))) as { state?: string; calibrated?: boolean };
+    const ready = data.state === "ready" || data.calibrated === true;
     return { ok: true, ready };
   } catch {
-    return { ok: false, ready: false, error: 'network_error' };
+    return { ok: false, ready: false, error: "network_error" };
   }
 }
 
-// Xóa session phía server để không chạm trần 100 session (fire-and-forget).
 export function deleteGazeSession(sessionId: string): void {
   try {
-    void fetch(`/gaze/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {});
+    void fetch(`/gaze/session/${encodeURIComponent(sessionId)}`, { method: "DELETE" }).catch(() => {});
   } catch {
-    // ignore
+    /* ignore */
   }
 }
 
-// Kiểm tra khuôn mặt nhanh (dùng session tạm): accepted = có mặt.
-// Session tạm được xóa ngay sau khi xong để không rò rỉ slot (trần 100 session).
 export async function checkFace(imageBlob: Blob): Promise<{ ok: boolean; error?: string }> {
-  const session = await createGazeSession([{ id: 'check', x: 0.5, y: 0.5 }], 1280, 720);
-  if (!session.ok || !session.sessionId) return { ok: false, error: 'network_error' };
+  const session = await createGazeSession([{ id: "check", x: 0.5, y: 0.5 }], 1280, 720);
+  if (!session.ok || !session.sessionId) return { ok: false, error: "network_error" };
   try {
-    const r = await submitCalibrationSample(session.sessionId, imageBlob, 'check');
-    if (r.status === 'accepted') return { ok: true };
-    if (r.status === 'no_face') return { ok: false, error: 'no_face' };
-    return { ok: false, error: r.status === 'invalid_image' ? 'invalid_image' : 'network_error' };
+    const r = await submitCalibrationSample(session.sessionId, imageBlob, "check");
+    if (r.status === "accepted") return { ok: true };
+    if (r.status === "no_face") return { ok: false, error: "no_face" };
+    return { ok: false, error: r.status === "invalid_image" ? "invalid_image" : "network_error" };
   } finally {
     deleteGazeSession(session.sessionId);
   }
 }
 
-// Lưu session đã train để phiên học sau dùng stream (TTL server ~30 phút).
-// Kèm kích thước viewport lúc hiệu chỉnh để phát hiện đổi màn hình/cửa sổ
-// (model tuyến tính chỉ đúng với geometry lúc calibrate).
-export function storeGazeSession(sessionId: string, screenWidth?: number, screenHeight?: number): void {
+export function storeGazeSession(
+  sessionId: string,
+  screenWidth?: number,
+  screenHeight?: number,
+): void {
   globalThis.localStorage?.setItem(SESSION_KEY, sessionId);
   globalThis.localStorage?.setItem(CALIBRATED_AT_KEY, new Date().toISOString());
   globalThis.localStorage?.setItem(DPR_KEY, String(globalThis.devicePixelRatio || 1));
@@ -200,15 +171,14 @@ export function storeGazeSession(sessionId: string, screenWidth?: number, screen
 }
 
 export function getStoredCalibrationScreen(): { w: number; h: number } | null {
-  const w = Number(globalThis.localStorage?.getItem(SCREEN_W_KEY) ?? '');
-  const h = Number(globalThis.localStorage?.getItem(SCREEN_H_KEY) ?? '');
+  const w = Number(globalThis.localStorage?.getItem(SCREEN_W_KEY) ?? "");
+  const h = Number(globalThis.localStorage?.getItem(SCREEN_H_KEY) ?? "");
   if (!w || !h) return null;
   return { w, h };
 }
 
-/** devicePixelRatio tại thời điểm hiệu chỉnh (để bù tỷ lệ khi user zoom trang). */
 export function getStoredCalibrationDpr(): number {
-  const dpr = Number(globalThis.localStorage?.getItem(DPR_KEY) ?? '');
+  const dpr = Number(globalThis.localStorage?.getItem(DPR_KEY) ?? "");
   return dpr > 0 ? dpr : 1;
 }
 
@@ -219,10 +189,31 @@ export interface SlideRect {
   height: number;
 }
 
-// Chuyển điểm nhìn màn hình (x,y thuộc [0,1]) sang toạ độ trang slide [0,1].
-// getBoundingClientRect() và visualViewport cùng dùng CSS pixel của viewport
-// hiện tại, nên phép chiếu vẫn đúng khi browser zoom, pinch-zoom hoặc cuộn trang.
-// Trả null khi điểm nằm ngoài vùng slide (on_slide = false).
+export function getContainedImageRect(
+  container: SlideRect,
+  sourceWidth: number,
+  sourceHeight: number,
+): SlideRect | null {
+  if (
+    container.width <= 0 ||
+    container.height <= 0 ||
+    sourceWidth <= 0 ||
+    sourceHeight <= 0
+  ) {
+    return null;
+  }
+
+  const scale = Math.min(container.width / sourceWidth, container.height / sourceHeight);
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  return {
+    left: container.left + (container.width - width) / 2,
+    top: container.top + (container.height - height) / 2,
+    width,
+    height,
+  };
+}
+
 export function screenGazeToSlide(
   x: number,
   y: number,
@@ -247,9 +238,8 @@ export function screenGazeToSlide(
   return { x: sx, y: sy };
 }
 
-/** true khi kích thước cửa sổ vật lý lệch >10%; browser zoom không làm stale. */
 export function isCalibrationScreenStale(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   const stored = getStoredCalibrationScreen();
   if (!stored) return false;
   const currentDpr = window.devicePixelRatio || 1;
@@ -280,7 +270,6 @@ export function clearStoredGazeSession(): void {
   globalThis.localStorage?.removeItem(DPR_KEY);
 }
 
-// Lưu calibration lên Postgres để tái sử dụng 20-30 ngày (chưa tính 10k scale)
 export async function saveCalibrationToBackend(params: {
   deviceFingerprint: string;
   maePx: number | null;
@@ -288,9 +277,9 @@ export async function saveCalibrationToBackend(params: {
   screenHeight: number;
 }): Promise<boolean> {
   try {
-    const { apiFetch } = await import('./client');
-    await apiFetch('/api/calibrations', {
-      method: 'POST',
+    const { apiFetch } = await import("./client");
+    await apiFetch("/api/calibrations", {
+      method: "POST",
       body: {
         deviceFingerprint: params.deviceFingerprint,
         numPoints: 16,
@@ -306,11 +295,13 @@ export async function saveCalibrationToBackend(params: {
   }
 }
 
-export async function fetchActiveCalibration(deviceFingerprint: string): Promise<{ calibrated: boolean; calibratedAt: string | null } | null> {
+export async function fetchActiveCalibration(
+  deviceFingerprint: string,
+): Promise<{ calibrated: boolean; calibratedAt: string | null } | null> {
   try {
-    const { apiFetch } = await import('./client');
+    const { apiFetch } = await import("./client");
     const data = await apiFetch<{ calibrated: boolean; calibratedAt: string; maePx?: number }>(
-      '/api/calibrations/active',
+      "/api/calibrations/active",
       { params: { deviceFingerprint } },
     );
     return { calibrated: data.calibrated, calibratedAt: data.calibratedAt };
@@ -319,53 +310,45 @@ export async function fetchActiveCalibration(deviceFingerprint: string): Promise
   }
 }
 
-// Admin chỉnh ngưỡng & bật/tắt tính điểm (persist DB). Dùng cho student flow.
 export interface CalibrationSettings {
   enabled: boolean;
-  threshold: number; // 0.01-0.30
+  threshold: number;
   updatedAt?: string | null;
 }
 
 export async function fetchCalibrationConfig(): Promise<CalibrationSettings> {
   try {
-    const { apiFetch } = await import('./client');
-    const data = await apiFetch<{ enabled: boolean; threshold: number }>(
-      '/api/calibrations/config',
-    );
+    const { apiFetch } = await import("./client");
+    const data = await apiFetch<{ enabled: boolean; threshold: number }>("/api/calibrations/config");
     return { enabled: data.enabled, threshold: data.threshold };
   } catch {
-    // fallback khi chưa đăng nhập / chưa có DB
     return { enabled: true, threshold: DEFAULT_MAX_TRAIN_MAE };
   }
 }
 
 export async function fetchAdminCalibrationSettings(): Promise<CalibrationSettings> {
-  const { apiFetch } = await import('./client');
-  return apiFetch<CalibrationSettings>('/api/admin/calibration-settings');
+  const { apiFetch } = await import("./client");
+  return apiFetch<CalibrationSettings>("/api/admin/calibration-settings");
 }
 
-export async function updateAdminCalibrationSettings(patch: { enabled: boolean; threshold: number }): Promise<CalibrationSettings> {
-  const { apiFetch } = await import('./client');
-  return apiFetch<CalibrationSettings>('/api/admin/calibration-settings', {
-    method: 'PUT',
+export async function updateAdminCalibrationSettings(patch: {
+  enabled: boolean;
+  threshold: number;
+}): Promise<CalibrationSettings> {
+  const { apiFetch } = await import("./client");
+  return apiFetch<CalibrationSettings>("/api/admin/calibration-settings", {
+    method: "PUT",
     body: { enabled: patch.enabled, threshold: patch.threshold },
   });
 }
 
-// WebSocket stream (nối thẳng AI service — không qua proxy, không cần CORS).
-// Production phải dùng wss:// (TLS). Suy ra từ NEXT_PUBLIC_GAZE_URL:
-//   https://... -> wss://..., http://... -> ws://
-// Tự động nâng lên wss:// nếu trang đang chạy trên https: (tránh Mixed Content).
 function getGazeWsOrigin(): string {
-  // Hỗ trợ cả biến cũ NEXT_PUBLIC_EYE_TRACKING_WS_URL (đã set dạng ws(s)://)
   let raw = (
     process.env.NEXT_PUBLIC_GAZE_URL?.trim() ||
     (process.env as Record<string, string | undefined>).NEXT_PUBLIC_EYE_TRACKING_WS_URL?.trim() ||
     "http://localhost:8000"
   ).replace(/\/+$/, "");
 
-  // Normalize: legacy Vercel env có thể chứa :8443 (nginx chỉ listen 80 sau tunnel,
-  // Cloudflare Edge lo TLS 443). Strip :8443 để WS đi qua 443/wss chuẩn.
   raw = raw.replace(/:8443(?=\/|$)/, "");
 
   let origin: string;
@@ -376,7 +359,6 @@ function getGazeWsOrigin(): string {
   } else if (/^http:\/\//i.test(raw)) {
     origin = raw.replace(/^http:/i, "ws:").replace(/:8443(?=\/|$)/, "");
   } else {
-    // Bare host (vd: gaze.eyelearning.id.vn) — suy ra scheme theo page protocol
     const isHttps =
       typeof window !== "undefined"
         ? window.location.protocol === "https:"
@@ -384,11 +366,13 @@ function getGazeWsOrigin(): string {
     origin = `${isHttps ? "wss" : "ws"}://${raw.replace(/^\/+/, "").replace(/:8443(?=\/|$)/, "")}`;
   }
 
-  // Enforce wss khi page là https (browser chặn ws trên https)
-  if (typeof window !== "undefined" && window.location.protocol === "https:" && origin.startsWith("ws://")) {
+  if (
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    origin.startsWith("ws://")
+  ) {
     origin = origin.replace(/^ws:/, "wss:");
   }
-  // Strip :8443 lần cuối (đề phòng)
   return origin.replace(/:8443(?=\/|$)/, "");
 }
 

@@ -1,31 +1,14 @@
-// hooks/use-gaze-tracker.ts — Bật camera + WebSocket stream (AI server, image
-// hieunm1501/gaze-api) để lấy điểm nhìn THẬT từ pipeline AI. Nếu chưa có session
-// calibration (localStorage) hoặc camera / AI service không khả dụng → rơi về
-// điểm mô phỏng để demo vẫn chạy.
-//
-// Luồng (khớp server.py /session đang chạy):
-//   1. calibrated=true → đọc session id đã train từ localStorage
-//      (lưu lúc calibration), mở WS /session/{sid}/stream
-//   2. fire-and-forget: gửi binary JPEG đều đặn 10 FPS, không chờ response;
-//      server hồi đáp bất đồng bộ {"ok","x","y"} hoặc {"ok":false,"error":"no_face"}
-//      → onPoint(-1, -1) ghi "không nhìn màn".
-//
-// onPoint(x, y): x/y hợp lệ trong [0,1] = điểm nhìn THẬT; khi "no_face" hook
-// gửi onPoint(-1, -1) để phía dưới ghi nhận "không nhìn màn" (on_slide giảm
-// đúng) nhưng không đưa vào hiển thị chấm.
+"use client";
 
-'use client';
+import { useEffect, useRef, useState } from "react";
+import { gazeStreamUrl, getStoredGazeSessionId } from "@/lib/api/calibration";
 
-import { useEffect, useRef, useState } from 'react';
-import { gazeStreamUrl, getStoredGazeSessionId } from '@/lib/api/calibration';
-
-export type GazeSource = 'real' | 'simulated' | 'off';
+export type GazeSource = "real" | "simulated" | "off";
 
 export interface UseGazeTrackerOptions {
   enabled: boolean;
   calibrated: boolean;
   onPoint: (x: number, y: number, source: GazeSource) => void;
-  /** false = không dùng dữ liệu mô phỏng; khi không có camera/session thật thì source='off'. Mặc định true để tương thích luồng học cũ. */
   allowSimulation?: boolean;
 }
 
@@ -35,8 +18,8 @@ export interface GazeTrackerState {
 }
 
 const FPS = 20;
-const FRAME_INTERVAL_MS = 1000 / FPS; // 100ms
-const MAX_RECONNECTS = 5;              // tối đa lần thử mở lại WS trước khi về mô phỏng
+const FRAME_INTERVAL_MS = 1000 / FPS;
+const MAX_RECONNECTS = 5;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -49,7 +32,7 @@ export function useGazeTracker({
   allowSimulation = true,
 }: UseGazeTrackerOptions): GazeTrackerState {
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [source, setSource] = useState<GazeSource>('off');
+  const [source, setSource] = useState<GazeSource>("off");
 
   const onPointRef = useRef(onPoint);
 
@@ -62,47 +45,42 @@ export function useGazeTracker({
     let simTimer = 0;
     let streamCleanup: (() => void) | null = null;
 
-    // Khi allowSimulation=false: không sinh điểm giả, báo source='off'
-    // để UI hiển thị cảnh báo thay vì vẽ heatmap từ dữ liệu mô phỏng.
     const startSimulation = () => {
       if (!allowSimulation) {
-        setSource('off');
+        setSource("off");
         return;
       }
       simTimer = window.setInterval(() => {
         const x = 0.12 + Math.random() * 0.76;
         const y = 0.14 + Math.random() * 0.68;
-        onPointRef.current(x, y, 'simulated');
+        onPointRef.current(x, y, "simulated");
       }, 1800);
-      setSource('simulated');
+      setSource("simulated");
     };
 
     const captureFrame = async (video: HTMLVideoElement): Promise<Blob | null> => {
       if (video.videoWidth === 0 || video.videoHeight === 0) return null;
       const scale = Math.min(1, 480 / video.videoWidth);
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = Math.round(video.videoWidth * scale);
       canvas.height = Math.round(video.videoHeight * scale);
-      const context = canvas.getContext('2d');
+      const context = canvas.getContext("2d");
       if (!context) return null;
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+      return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.78));
     };
 
-    // Fire-and-forget: gửi frame đều đặn 10 FPS, không chờ response.
-    // Server hồi đáp bất đồng bộ qua ws.onmessage; drop-frame nếu bận.
-    // Trả 'retry' khi WS rớt (để ngoài thử lại), 'abort' khi component disposed.
     const runWsSession = async (
       video: HTMLVideoElement,
       url: string,
-    ): Promise<'retry' | 'abort'> => {
-      return new Promise<'retry' | 'abort'>((resolve) => {
+    ): Promise<"retry" | "abort"> => {
+      return new Promise<"retry" | "abort">((resolve) => {
         const ws = new WebSocket(url);
         let sendTimer = 0;
 
         const scheduleSend = () => {
           if (disposed) {
-            resolve('abort');
+            resolve("abort");
             return;
           }
           sendTimer = window.setTimeout(async () => {
@@ -117,7 +95,11 @@ export function useGazeTracker({
 
         ws.onopen = () => {
           if (disposed) {
-            try { ws.close(); } catch { /* ignore */ }
+            try {
+              ws.close();
+            } catch {
+              /* ignore */
+            }
             return;
           }
           scheduleSend();
@@ -131,24 +113,24 @@ export function useGazeTracker({
               x?: number;
               y?: number;
             };
-            if (data.ok && typeof data.x === 'number' && typeof data.y === 'number') {
-              onPointRef.current(data.x, data.y, 'real');
-            } else if (data.error === 'no_face') {
-              onPointRef.current(-1, -1, 'real');
+            if (data.ok && typeof data.x === "number" && typeof data.y === "number") {
+              onPointRef.current(data.x, data.y, "real");
+            } else if (data.error === "no_face") {
+              onPointRef.current(-1, -1, "real");
             }
           } catch {
-            // ignore
+            /* ignore */
           }
         };
 
         ws.onclose = () => {
           window.clearTimeout(sendTimer);
-          resolve(disposed ? 'abort' : 'retry');
+          resolve(disposed ? "abort" : "retry");
         };
 
         ws.onerror = () => {
           window.clearTimeout(sendTimer);
-          if (!disposed) resolve('retry');
+          if (!disposed) resolve("retry");
         };
       });
     };
@@ -156,7 +138,7 @@ export function useGazeTracker({
     const run = async () => {
       try {
         const media = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
           audio: false,
         });
         if (disposed) {
@@ -166,7 +148,7 @@ export function useGazeTracker({
         setStream(media);
         streamCleanup = () => media.getTracks().forEach((track) => track.stop());
 
-        const video = document.createElement('video');
+        const video = document.createElement("video");
         video.muted = true;
         video.playsInline = true;
         video.srcObject = media;
@@ -184,7 +166,6 @@ export function useGazeTracker({
           return;
         }
 
-        // Dùng session model đã train (lưu ở bước calibration) để stream ngay.
         const sessionId = getStoredGazeSessionId();
         if (disposed) return;
         if (!sessionId) {
@@ -197,7 +178,7 @@ export function useGazeTracker({
         let attempts = 0;
         while (!disposed && attempts < MAX_RECONNECTS) {
           const result = await runWsSession(video, gazeStreamUrl(sessionId));
-          if (result === 'abort') return;
+          if (result === "abort") return;
           attempts += 1;
           if (attempts >= MAX_RECONNECTS) break;
           await sleep(Math.min(5000, 500 * 1.5 ** attempts));
@@ -208,7 +189,6 @@ export function useGazeTracker({
           startSimulation();
         }
       } catch {
-        // Camera / AI service không khả dụng → mô phỏng để phiên vẫn chạy.
         if (!disposed) {
           streamCleanup?.();
           setStream(null);
@@ -229,9 +209,8 @@ export function useGazeTracker({
     }
 
     const runStart = () => {
-      // Defer ra khỏi effect body (tránh setState đồng bộ trong effect).
       queueMicrotask(() => {
-        if (!disposed) setSource('real');
+        if (!disposed) setSource("real");
       });
       void run();
     };

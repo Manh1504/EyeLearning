@@ -1,19 +1,19 @@
 import type { NextConfig } from "next";
 import path from "path";
 
-// Một biến duy nhất: origin của backend (vd https://api.yourdomain.com).
-// Tất cả rewrite (api, media, gaze) và URL都 suy ra từ đây.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://api.yourdomain.com";
-// ML service (gaze-api) — chạy riêng (local :8000, hoặc domain riêng ở prod).
-// Luồng gaze (calibration /session + WS /session/{sid}/stream) gọi THẲNG service này,
-// không qua backend chính. Rewrite dưới đây strip tiền tố /gaze để khớp protocol /session.
-const GAZE_URL = (process.env.NEXT_PUBLIC_GAZE_URL ?? "http://localhost:8000").replace(/:8443(?=\/|$)/, "");
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://server.nmhieu.online";
+const GAZE_URL = (process.env.NEXT_PUBLIC_GAZE_URL?.trim() || "http://localhost:8000").replace(/:8443(?=\/|$)/, "");
 
 const nextConfig: NextConfig = {
-  // Sửa cảnh báo Turbopack: repo có 2 lockfiles (root dummy + frontend).
-  // Ép root về thư mục frontend để alias @/* và build hoạt động đúng.
   turbopack: {
     root: path.resolve(__dirname),
+  },
+  async redirects() {
+    return [
+      { source: "/student/my-courses", destination: "/student", permanent: true },
+      { source: "/teacher/courses", destination: "/teacher", permanent: true },
+      { source: "/admin/courses", destination: "/admin", permanent: true },
+    ];
   },
   async headers() {
     return [
@@ -24,15 +24,16 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=()" },
-          // CSP: cho phép gaze wss với port 8443 (prod) + api
-          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.eyelearning.id.vn https://gaze.eyelearning.id.vn wss://gaze.eyelearning.id.vn http://localhost:* ws://localhost:*; media-src 'self' blob:" },
+          {
+            key: "Content-Security-Policy",
+            value:
+              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.eyelearning.id.vn https://gaze.eyelearning.id.vn wss://gaze.eyelearning.id.vn http://localhost:* ws://localhost:*; media-src 'self' blob:",
+          },
         ],
       },
     ];
   },
   async rewrites() {
-    // Để các rule cụ thể (/api/teacher, /api/admin) tách riêng vào beforeFiles
-    // tránh bị Next.js 16 deduplicate mất khi chúng là tập con của /api/:path*.
     return {
       beforeFiles: [
         {

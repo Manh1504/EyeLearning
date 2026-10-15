@@ -1,6 +1,9 @@
-FROM python:3.10-slim
+FROM pytorch/pytorch:2.7.0-cuda12.6-cudnn9-runtime@sha256:499d2335f311a92af8d4ca8606291461db8d74d955b25d2d82b7fdab845db756
 
-ENV PYTHONUNBUFFERED=1 DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -13,10 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements-gpu.txt ./
-RUN pip install --no-cache-dir -r requirements-gpu.txt
+COPY requirements-torch.txt ./
+RUN python -m pip install --no-cache-dir -r requirements-torch.txt \
+    && python -c "import torch, torchvision; assert torch.__version__.startswith('2.7.0'); assert torch.version.cuda == '12.6'"
 
-COPY . .
+COPY requirements-gpu.txt ./
+RUN python -m pip install --no-cache-dir -r requirements-gpu.txt
+
+COPY *.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
 EXPOSE 8000

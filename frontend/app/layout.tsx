@@ -1,27 +1,17 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Noto_Sans, EB_Garamond } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "./providers";
 
-const ebGaramondHeading = EB_Garamond({subsets:['latin'],variable:'--font-heading'});
-
-const notoSans = Noto_Sans({subsets:['latin'],variable:'--font-sans'});
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-sans" });
+const geist = Geist({ subsets: ["latin"], variable: "--font-heading" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: "GazeEdu – Webcam Eye Tracking for Learning Analytics",
   description:
-    "Nền tảng học tập sử dụng webcam eye-tracking để phân tích hành vi quan sát trên từng trang tài liệu PDF.",
+    "Nền tảng học tập sử dụng webcam eye-tracking để phân tích hành vi quan sát trên từng trang tài liệu.",
   icons: {
     icon: [
       { url: "/brand/gazeedu-icon.svg", type: "image/svg+xml" },
@@ -30,13 +20,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="vi"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", notoSans.variable, ebGaramondHeading.variable)}
+      className={cn(inter.variable, geist.variable, geistMono.variable, "h-full")}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full bg-background font-sans text-foreground antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

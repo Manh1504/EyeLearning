@@ -1,26 +1,33 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { login, primaryRole, ROLE_HOME, type AuthUser, type Role } from "@/lib/api/auth";
+import { cn } from "@/lib/utils";
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { Icon } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
-import { login, type Role } from '@/lib/api/auth';
-import { cn } from '@/lib/utils';
+const PROTECTED = ["/student", "/teacher", "/admin"] as const;
 
-function primaryRole(roles: Role[]): Role {
-  for (const code of ['teacher', 'student', 'admin'] as const) {
-    if (roles.includes(code)) return code;
-  }
-  return roles[0] ?? 'student';
+function isProtected(path: string | null): path is string {
+  if (!path) return false;
+  return PROTECTED.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
-export function LoginForm({
-  className,
-  ...props
-}: React.ComponentProps<'div'>) {
+function resolveRedirect(user: AuthUser, next: string | null): string {
+  const roles = user.roles ?? [];
+  // Ưu tiên role khớp với ?next để tránh redirect chéo role
+  if (isProtected(next)) {
+    const zone = next.split("/")[1] as Role;
+    if (roles.includes(zone)) return next;
+  }
+  return ROLE_HOME[primaryRole(roles)];
+}
+
+export function LoginForm({ className }: { className?: string }) {
   const router = useRouter();
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -31,30 +38,22 @@ export function LoginForm({
     if (pending) return;
 
     const formData = new FormData(event.currentTarget);
-    const email = String(formData.get('username') ?? '').trim();
-    const password = String(formData.get('password') ?? '');
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
     if (!email || !password) return;
 
     setPending(true);
     setError(null);
     try {
       const result = await login(email, password);
-      const role = primaryRole(result.user.roles);
-      const roleTarget =
-        role === 'student'
-          ? '/student/my-courses'
-          : role === 'admin'
-            ? '/admin/courses'
-            : '/teacher/courses';
-      // tôn trọng ?next từ middleware nếu có
-      const next = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
-      const target = next && (next.startsWith(`/${role}`) || role === 'admin' || next.startsWith('/student') || next.startsWith('/teacher') || next.startsWith('/admin')) ? next : roleTarget;
-      router.replace(target);
+      const next =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("next")
+          : null;
+      router.replace(resolveRedirect(result.user, next));
     } catch (caught) {
       setError(
-        caught instanceof Error
-          ? caught.message
-          : 'Đăng nhập thất bại — vui lòng thử lại.',
+        caught instanceof Error ? caught.message : "Đăng nhập thất bại — vui lòng thử lại.",
       );
     } finally {
       setPending(false);
@@ -62,82 +61,70 @@ export function LoginForm({
   };
 
   return (
-    <div className={cn('w-full', className)} {...props}>
-      <form onSubmit={handleSubmit} className="relative rounded-xl border border-border bg-card px-6 py-8 shadow-sm shadow-brand-navy/5 sm:px-8 sm:py-9">
-        <div className="flex flex-col items-center text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-primary">
-            Chào mừng trở lại
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Đăng nhập để tiếp tục sử dụng GazeEdu.
-          </p>
+    <div className={cn("w-full", className)}>
+      <form onSubmit={handleSubmit} noValidate className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="login-email" className="text-[13px] font-semibold text-[#2a2a2a]">
+            Email
+          </Label>
+          <Input
+            id="login-email"
+            name="email"
+            type="email"
+            autoComplete="username"
+            placeholder="ban@truong.edu.vn"
+            required
+            className="h-12 rounded-xl border-[#e8e8e3] bg-[#fdfdfa] px-4 text-[15px] text-black shadow-none placeholder:text-[#9a9a9a] hover:border-[#d7dbd2] focus-visible:border-black focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-black/10"
+            aria-invalid={error ? true : undefined}
+          />
         </div>
 
-        <FieldGroup className="mt-8 gap-5">
-          <Field>
-            <FieldLabel htmlFor="login-identifier" className="text-sm font-medium text-foreground">
-              Email
-            </FieldLabel>
+        <div className="space-y-2">
+          <Label htmlFor="login-password" className="text-[13px] font-semibold text-[#2a2a2a]">
+            Mật khẩu
+          </Label>
+          <div className="relative">
             <Input
-              id="login-identifier"
-              name="username"
-              type="email"
-              autoComplete="username"
-              pattern="[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
-              placeholder="Nhập email"
-              title="Vui lòng nhập email hợp lệ"
+              id="login-password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="Nhập mật khẩu"
               required
-              onInvalid={(event) => {
-                event.currentTarget.setCustomValidity('Vui lòng nhập email hợp lệ');
-              }}
-              onInput={(event) => {
-                event.currentTarget.setCustomValidity('');
-              }}
-              className="h-11 rounded-lg bg-background px-3"
+              className="h-12 rounded-xl border-[#e8e8e3] bg-[#fdfdfa] px-4 pr-12 text-[15px] text-black shadow-none placeholder:text-[#9a9a9a] hover:border-[#d7dbd2] focus-visible:border-black focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-black/10"
+              aria-invalid={error ? true : undefined}
             />
-          </Field>
-
-          <Field>
-            <div className="flex items-center justify-between gap-3">
-              <FieldLabel htmlFor="login-password" className="text-sm font-medium text-foreground">
-                Mật khẩu
-              </FieldLabel>
-            </div>
-
-            <div className="relative">
-              <Input
-                id="login-password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                placeholder="Nhập mật khẩu"
-                required
-                className="h-11 rounded-lg bg-background px-3 pr-11"
-              />
-              <button
-                type="button"
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                aria-pressed={showPassword}
-                title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                onClick={() => setShowPassword((value) => !value)}
-                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-              >
-                <Icon name={showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} />
-              </button>
-            </div>
-          </Field>
-
-          <Button type="submit" size="lg" className="mt-1 w-full" disabled={pending}>
-            {pending ? 'Đang đăng nhập…' : 'Đăng nhập'}
-          </Button>
-        </FieldGroup>
+            <button
+              type="button"
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              aria-pressed={showPassword}
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-[#777777] transition-colors hover:bg-[#e8f1e6] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+            >
+              <Icon name={showPassword ? "ri-eye-off-line" : "ri-eye-line"} className="size-4" />
+            </button>
+          </div>
+        </div>
 
         {error && (
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">
-            <Icon name="ri-error-warning-line" className="mt-0.5 h-4 w-4 shrink-0" />
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-xl border border-[#eadbd8] bg-[#fbf4f2] px-3.5 py-3 text-sm leading-5 text-[#8b2c25]"
+          >
+            <Icon name="ri-error-warning-line" className="mt-0.5 size-4 shrink-0" />
             <p>{error}</p>
           </div>
         )}
+
+        <Button
+          type="submit"
+          size="lg"
+          className="h-12 w-full rounded-full bg-primary text-[15px] font-semibold text-white shadow-sm hover:bg-primary-hover active:bg-primary-active"
+          disabled={pending}
+        >
+          {pending && <Spinner />}
+          {pending ? "Đang đăng nhập…" : "Đăng nhập"}
+        </Button>
       </form>
     </div>
   );

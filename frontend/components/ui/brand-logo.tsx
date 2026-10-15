@@ -1,16 +1,16 @@
-import Image from 'next/image';
-import { cn } from '@/lib/utils';
+import Image from "next/image";
+import { cn } from "@/lib/utils";
 
-type BrandLogoVariant = 'light' | 'dark' | 'icon';
+type BrandLogoVariant = "light" | "dark" | "icon";
 
 const BRAND_ASSETS: Record<BrandLogoVariant, { src: string; width: number; height: number }> = {
-  light: { src: '/brand/gazeedu-logo.svg', width: 1467, height: 338 },
-  dark: { src: '/brand/gazeedu-logo-dark-bg.png', width: 1280, height: 400 },
-  icon: { src: '/brand/gazeedu-icon.svg', width: 500, height: 338 },
+  light: { src: "/brand/gazeedu-logo.svg", width: 1467, height: 338 },
+  dark: { src: "/brand/gazeedu-logo-dark-bg.png", width: 1280, height: 400 },
+  icon: { src: "/brand/gazeedu-icon.svg", width: 500, height: 338 },
 };
 
 export function BrandLogo({
-  variant = 'light',
+  variant = "light",
   className,
   priority = false,
 }: {
@@ -27,7 +27,7 @@ export function BrandLogo({
       height={asset.height}
       alt="GazeEdu"
       priority={priority}
-      className={cn('block h-auto w-auto object-contain', className)}
+      className={cn("block h-auto w-auto object-contain", className)}
     />
   );
 }

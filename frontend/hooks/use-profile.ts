@@ -1,23 +1,22 @@
-// hooks/use-profile.ts — TanStack Query hooks cho hồ sơ người dùng.
-'use client';
+"use client";
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ProfileUpdate } from '@/lib/types/domain';
-import { fetchMyProfile, updateMyProfile } from '@/lib/api/profile';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ProfileUpdate } from "@/lib/types/domain";
+import { fetchMyProfile, MY_PROFILE_QUERY_KEY, updateMyProfile } from "@/lib/api/profile";
 
-export function useMyProfile(role: 'student' | 'teacher') {
+export function useMyProfile() {
   return useQuery({
-    queryKey: ['me', 'profile', role],
+    queryKey: MY_PROFILE_QUERY_KEY,
     queryFn: () => fetchMyProfile(),
   });
 }
 
-export function useUpdateMyProfile(role: 'student' | 'teacher') {
+export function useUpdateMyProfile() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: ProfileUpdate) => updateMyProfile(data),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['me', 'profile', role], updated);
+      queryClient.setQueryData(MY_PROFILE_QUERY_KEY, updated);
     },
   });
 }

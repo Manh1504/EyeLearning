@@ -268,3 +268,54 @@ export interface ProfileUpdate {
   program?: string | null;     // chỉ student
   department?: string | null;  // chỉ teacher
 }
+
+// ---- Quiz assignment prototype (replace local adapter with backend API later) ----
+
+export type QuizAssignmentStatus = 'draft' | 'published' | 'closed';
+
+export interface QuizOption {
+  id: string;
+  text: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  prompt: string;
+  options: QuizOption[];
+  correctOptionId: string;
+  explanation: string;
+  points: number;
+}
+
+export interface QuizAssignment {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  title: string;
+  instructions: string;
+  dueAt: string;
+  durationMinutes: number;
+  status: QuizAssignmentStatus;
+  createdAt: string;
+  questions: QuizQuestion[];
+}
+
+export interface QuizAttempt {
+  id: string;
+  assignmentId: string;
+  answers: Record<string, string>;
+  submittedAt: string;
+  score: number;
+  maxScore: number;
+}
+
+export interface QuizAssignmentInput {
+  courseId: string;
+  courseTitle: string;
+  title: string;
+  instructions: string;
+  dueAt: string;
+  durationMinutes: number;
+  status: QuizAssignmentStatus;
+  questions: QuizQuestion[];
+}

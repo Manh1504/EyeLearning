@@ -1,22 +1,27 @@
-import { LoginForm } from "@/components/account/login-form"
-import { BrandLogo } from "@/components/ui/brand-logo"
-import Link from "next/link"
+import type { Metadata } from "next";
+import { AuthLayout } from "@/components/account/auth-layout";
+import { LoginForm } from "@/components/account/login-form";
+import { DemoLoginLinks } from "@/components/account/demo-login-links";
+
+export const metadata: Metadata = {
+  title: "Đăng nhập – GazeEdu",
+};
 
 export default function LoginPage() {
+  const demo = process.env.NEXT_PUBLIC_DEMO === "1";
   return (
-    <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-background px-5 py-10">
-      <div className="mb-8 flex flex-col items-center text-center">
-        <Link href="/" aria-label="GazeEdu — Trang chủ">
-          <BrandLogo variant="light" className="h-10" priority />
-        </Link>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Nền tảng học tập phân tích điểm nhìn bằng webcam.
-        </p>
+    <AuthLayout>
+      <div className="mb-6 space-y-1.5 text-center lg:text-left">
+        <h1 className="font-[family-name:var(--font-heading)] text-2xl font-semibold tracking-tight text-foreground">
+          Chào mừng trở lại
+        </h1>
+        <p className="text-sm text-muted-foreground">Đăng nhập để tiếp tục sử dụng GazeEdu.</p>
       </div>
-
-      <div className="w-full max-w-[420px]">
-        <LoginForm />
-      </div>
-    </div>
-  )
+      <LoginForm />
+      {demo && <DemoLoginLinks />}
+      <p className="mt-6 text-center text-xs text-muted-foreground">
+        Gặp sự cố đăng nhập? Liên hệ quản trị viên trường của bạn.
+      </p>
+    </AuthLayout>
+  );
 }
