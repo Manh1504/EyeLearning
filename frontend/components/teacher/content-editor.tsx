@@ -652,7 +652,7 @@ export function ContentEditor({
         setCreateStep(`Đang tạo chương "${chapter.title.trim()}"…`);
         const mod = await createModule(created.id, chapter.title.trim());
         for (const lesson of chapter.lessons) {
-          setCreateStep(`Đang tải PDF cho bài "${lesson.title.trim()}"…`);
+          setCreateStep(`Đang tải và xử lý PDF cho bài "${lesson.title.trim()}"…`);
           const createdLesson = await createLesson(mod.id, lesson.title.trim());
           const pdf = lesson.file as File;
           await uploadLessonPdf(createdLesson.id, pdf, pdf.name);
@@ -1187,10 +1187,20 @@ export function ContentEditor({
                                     onClick={() => fileRef.current?.click()}
                                     disabled={uploading}
                                   >
-                                    <Icon name="ri-upload-cloud-2-line" className="size-4" />
-                                    {uploading ? "Đang tải…" : lesson.slides > 0 ? "Thay PDF" : "Tải PDF"}
+                                    {uploading ? (
+                                      <Icon name="ri-loader-4-line" className="size-4 animate-spin" />
+                                    ) : (
+                                      <Icon name="ri-upload-cloud-2-line" className="size-4" />
+                                    )}
+                                    {uploading ? "Đang xử lý…" : lesson.slides > 0 ? "Thay PDF" : "Tải PDF"}
                                   </Button>
                                 </div>
+                                {uploading && (
+                                  <p className="mt-2 text-xs text-black/50">
+                                    Đang tải lên và xử lý PDF… File nhiều trang có thể mất đến 1–2
+                                    phút. Vui lòng không đóng trang.
+                                  </p>
+                                )}
                                 <input
                                   ref={fileRef}
                                   type="file"

@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     gaze_downsample_hz: float = 4.0
     gaze_batch_max: int = 2000
 
+    # Dải mạng proxy tin cậy (CIDR, phẩy phân tách) — chỉ khi request đến từ
+    # peer trong dải này mới tin header X-Forwarded-For (chống giả mạo IP).
+    # Production: dải mạng docker nội bộ nơi nginx kết nối backend.
+    # Để trống → không tin bất kỳ header nào (an toàn mặc định).
+    trusted_proxy_ips: str = ""
+
     # Redis (tùy chọn). Dùng cho rate-limit + cache analytics. Để trống → fallback
     # in-memory (1 process, dev/test). Ví dụ: redis://localhost:6379/0
     redis_url: str = ""
@@ -57,9 +63,11 @@ class Settings(BaseSettings):
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_public_url: str = ""
-    # Dung lượng tối đa một file PDF upload (bytes).
-    max_pdf_bytes: int = 100 * 1024 * 1024
-    max_pdf_pages: int = 300
+    # Dung lượng tối đa một file PDF upload (bytes). 50MB khớp giới hạn FE
+    # (MAX_UPLOAD_BYTES) và đảm bảo render xong < ngưỡng ~100s của Cloudflare.
+    max_pdf_bytes: int = 50 * 1024 * 1024
+    # Trần số trang: render đồng bộ nên chặn sớm để không vượt timeout CF (524).
+    max_pdf_pages: int = 150
     max_slide_render_pixels: int = 25_000_000
 
     # Tính điểm hoàn thành bài học theo độ bao phủ nội dung (AOI).

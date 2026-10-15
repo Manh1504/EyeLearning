@@ -23,4 +23,10 @@ USER appuser
 
 EXPOSE 8001
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+# --proxy-headers: dùng X-Forwarded-For/-Proto từ proxy tin cậy để suy ra IP
+#   client thật (request.client.host) + scheme.
+# --forwarded-allow-ips: CHỈ tin header từ nginx trong mạng docker nội bộ.
+#   Backend không publish port ra host (chỉ nginx truy cập qua tên service),
+#   nên không ai ngoài nginx gửi được request tới đây → an toàn để tin.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

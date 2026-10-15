@@ -1,9 +1,11 @@
 import time
 from collections import deque
+from ipaddress import ip_address, ip_network
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, status
 
+from app.core.config import settings
 from app.db.redis import get_redis, report_failure
 
 # Fallback in-memory (1 worker). Khi Redis có sẵn thì dùng sliding-window trên
@@ -13,15 +15,49 @@ _PRUNE_EVERY = 1024  # dọn khóa rỗng sau mỗi N lần để tránh rò r�
 _CALLS = 0
 
 
+def _trusted_networks() -> list:
+    """Danh sách dải mạng proxy tin cậy (CIDR) — đọc 1 lần từ settings."""
+    nets = []
+    for raw in settings.trusted_proxy_ips.split(","):
+        cidr = raw.strip()
+        if not cidr:
+            continue
+        try:
+            nets.append(ip_network(cidr, strict=False))
+        except ValueError:
+            # Cấu hình sai → bỏ qua (fail-safe: không tin header nào).
+            continue
+    return nets
+
+
+_TRUSTED_NETWORKS = _trusted_networks()
+
+
+def _peer_is_trusted(peer: str | None) -> bool:
+    if not peer or not _TRUSTED_NETWORKS:
+        return False
+    try:
+        addr = ip_address(peer)
+    except ValueError:
+        return False
+    return any(addr in net for net in _TRUSTED_NETWORKS)
+
+
 def _real_ip(request: Request) -> str:
-    # Đứng sau nginx/cloudflare: ưu tiên X-Forwarded-For, X-Real-IP.
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    real = request.headers.get("x-real-ip")
-    if real:
-        return real.strip()
-    return request.client.host or "unknown"
+    """Lấy IP người dùng thật, chỉ tin header khi request đến từ proxy tin cậy.
+
+    Luồng production: Cloudflare → cloudflared → nginx (realip lấy
+    CF-Connecting-IP, ghi đè X-Forwarded-For = $remote_addr) → backend.
+    Vì vậy X-Forwarded-For do backend nhận LUÔN do nginx đặt, không phải do
+    client. Nếu peer không nằm trong dải tin cậy (vd. client gọi trực tiếp),
+    header bị bỏ qua để chống giả mạo IP → rate-limit không bị bypass.
+    """
+    peer = request.client.host if request.client else None
+    if _peer_is_trusted(peer):
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            return fwd.split(",")[0].strip()
+    return peer or "unknown"
 
 
 def _prune() -> None:
