@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -32,6 +35,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
@@ -42,6 +47,17 @@ jobs:
         run: |
           for f in db/migrations/*.sql; do
             echo "=== $f ==="
+            psql -h localhost -U postgres -d eyetracking_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+      # Dockerfile.migrations chạy lại toàn bộ *.sql mỗi lần deploy; nếu một
+      # file không idempotent thì backend không lên. Canh lỗi này ngay ở CI
+      # bằng cách chạy lần hai (đã xác nhận idempotent, không nhân đôi dữ liệu).
+      - name: Re-apply migrations (idempotency guard)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in db/migrations/*.sql; do
+            echo "=== rerun $f ==="
             psql -h localhost -U postgres -d eyetracking_test -v ON_ERROR_STOP=1 -f "$f"
           done
       - name: Install backend deps

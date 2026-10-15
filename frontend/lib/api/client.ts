@@ -227,6 +227,15 @@ export async function apiFetchMultipart<T>(
     if (res.status === 413) {
       throw new ApiError(413, `File tải lên vượt quá ${MAX_UPLOAD_LABEL} cho phép.`);
     }
+    // Cloudflare cắt request xử lý quá lâu: 524. Xử lý đồng bộ ở backend nên
+    // file quá lớn/nhiều trang có thể vượt ngưỡng ~100s → báo rõ để chia nhỏ.
+    if (res.status === 524 || res.status === 504) {
+      throw new ApiError(
+        res.status,
+        "Xử lý tệp mất quá nhiều thời gian (quá tải hoặc file quá lớn). " +
+          "Vui lòng thử lại với file nhỏ hơn hoặc ít trang hơn.",
+      );
+    }
     let message = `HTTP ${res.status}`;
     try {
       message = extractError(res.status, await res.json());

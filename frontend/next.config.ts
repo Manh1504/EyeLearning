@@ -5,6 +5,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://server.nmhie
 const GAZE_URL = (process.env.NEXT_PUBLIC_GAZE_URL?.trim() || "http://localhost:8000").replace(/:8443(?=\/|$)/, "");
 
 const nextConfig: NextConfig = {
+  // Standalone (chỉ khi build Docker): bundle tối thiểu, chạy `node server.js`.
+  // KHÔNG bật trên Vercel: Vercel không hỗ trợ và build sẽ lỗi
+  // (ENOENT .next/next-server.js.nft.json). Vercel build không set NEXT_STANDALONE.
+  output: process.env.NEXT_STANDALONE === "1" ? "standalone" : undefined,
   turbopack: {
     root: path.resolve(__dirname),
   },

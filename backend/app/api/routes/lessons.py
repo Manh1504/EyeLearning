@@ -209,7 +209,10 @@ def _render_pdf_slides(lesson_id: str, data: bytes) -> tuple[int, str, list[str]
         doc.close()
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail=f"PDF vượt quá {settings.max_pdf_pages} trang cho phép",
+            detail=(
+                f"PDF có {count} trang, vượt quá {settings.max_pdf_pages} trang cho phép. "
+                "Vui lòng chia nhỏ file rồi tải lên từng phần."
+            ),
         )
 
     version = uuid.uuid4().hex[:12]

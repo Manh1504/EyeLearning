@@ -1,8 +1,15 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: eyetracking-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -30,6 +37,7 @@ services:
     container_name: eyetracking-migrate
     pull_policy: always
     restart: "no"
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,6 +51,7 @@ services:
     image: redis:7-alpine
     container_name: eyetracking-redis
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     # Không publish ra host — chỉ backend dùng nội bộ qua redis:6379 (tránh conflict 6379 trên host)
     expose:
@@ -60,11 +69,12 @@ services:
     container_name: eyetracking-backend
     pull_policy: always
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER}
       REDIS_URL: ${REDIS_URL_DOCKER}
@@ -83,6 +93,9 @@ services:
       R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
       GAZE_DOWNSAMPLE_HZ: ${GAZE_DOWNSAMPLE_HZ:-4.0}
       GAZE_BATCH_MAX: ${GAZE_BATCH_MAX:-2000}
+      # Dải mạng proxy tin cậy: chỉ peer trong dải này mới được tin X-Forwarded-For
+      # (nginx trong mạng docker nội bộ). Xem nginx/default.conf set_real_ip_from.
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
       DEBUG: ${DEBUG:-false}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
@@ -101,31 +114,67 @@ services:
     container_name: eyetracking-gaze
     pull_policy: always
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - DEVICE=cuda
     volumes:
       - gaze-weights:/app/weights
     gpus: all
+    # Healthcheck gọi /health của API/server.py (python có sẵn trong image,
+    # không dùng curl). start_period dài vì entrypoint tải weights + load
+    # mediapipe/unigaze lúc khởi động (có thể > 3 phút).
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
     # Build từ ./API/Dockerfile, weights tải runtime vào volume (xem API/download_weights.py)
+
+  frontend:
+    image: ghcr.io/manh1504/eyelearning-frontend:latest
+    container_name: eyetracking-frontend
+    pull_policy: always
+    restart: unless-stopped
+    logging: *default-logging
+    # Không publish 3000 ra host — chỉ nginx truy cập nội bộ.
+    # Next.js standalone (node server.js); rewrites server-side trỏ
+    # /api,/media -> backend và /gaze -> gaze qua tên service docker.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   nginx:
     image: ghcr.io/manh1504/eyelearning-nginx:latest
     container_name: eyetracking-nginx
     pull_policy: always
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy
+      frontend:
+        condition: service_started
+      # CỐ Ý service_started (KHÔNG dùng service_healthy): gaze lỗi/calibration
+      # chậm không được chặn nginx/backend — gaze chỉ ảnh hưởng tính năng AI.
       gaze:
         condition: service_started
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: eyetracking-cloudflared
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - nginx
-    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
+    # Token truyền qua biến môi trường (không lộ trong `docker inspect` /
+    # command line / ps) thay vì tham số --token.
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: ["tunnel", "--no-autoupdate", "run"]
 
 volumes:
   pgdata:

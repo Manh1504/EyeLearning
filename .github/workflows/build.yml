@@ -9,6 +9,14 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Tránh nhiều run build chồng nhau cùng push image `latest` và gọi webhook
+# Portainer. cancel-in-progress: FALSE — KHÔNG huỷ run đang chạy: nếu đã push
+# một phần image hoặc đã gọi webhook thì huỷ giữa chừng sẽ để lại trạng thái
+# deploy nửa vời (image lệch nhau, webhook gọi dở). Thay vào đó xếp hàng chờ.
+concurrency:
+  group: build-main
+  cancel-in-progress: false
+
 permissions:
   actions: read
   contents: read
@@ -90,6 +98,18 @@ jobs:
               - 'nginx/Dockerfile'
               - 'nginx/default.conf'
               - '.github/workflows/build.yml'
+            frontend:
+              - 'frontend/Dockerfile'
+              - 'frontend/.dockerignore'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'frontend/next.config.ts'
+              - 'frontend/app/**'
+              - 'frontend/components/**'
+              - 'frontend/lib/**'
+              - 'frontend/hooks/**'
+              - 'frontend/public/**'
+              - '.github/workflows/build.yml'
             migrations:
               - 'Dockerfile.migrations'
               - 'db/migrations/**'
@@ -104,6 +124,7 @@ jobs:
           BACKEND: ${{ steps.filter.outputs.backend }}
           GAZE: ${{ steps.filter.outputs.gaze }}
           NGINX: ${{ steps.filter.outputs.nginx }}
+          FRONTEND: ${{ steps.filter.outputs.frontend }}
           MIGRATIONS: ${{ steps.filter.outputs.migrations }}
           DEPLOY: ${{ steps.filter.outputs.deploy }}
         run: |
@@ -111,6 +132,7 @@ jobs:
             BACKEND=true
             GAZE=true
             NGINX=true
+            FRONTEND=true
             MIGRATIONS=true
           fi
 
@@ -120,6 +142,9 @@ jobs:
           fi
           if [[ "$NGINX" == "true" ]]; then
             matrix=$(jq -c '. + [{"name":"nginx","context":"./nginx","file":"./nginx/Dockerfile","build":true}]' <<< "$matrix")
+          fi
+          if [[ "$FRONTEND" == "true" ]]; then
+            matrix=$(jq -c '. + [{"name":"frontend","context":"./frontend","file":"./frontend/Dockerfile","build":true}]' <<< "$matrix")
           fi
           if [[ "$MIGRATIONS" == "true" ]]; then
             matrix=$(jq -c '. + [{"name":"migrations","context":".","file":"./Dockerfile.migrations","build":true}]' <<< "$matrix")
@@ -194,3 +219,21 @@ jobs:
         env:
           PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
         run: curl -fsS -X POST "$PORTAINER_WEBHOOK_URL"
+
+      # Smoke check công khai: xác nhận backend đã lên sau deploy. Dùng biến
+      # repo vars.SMOKE_URL (vd https://api.eyelearning.id.vn/health) — KHÔNG
+      # hardcode. Nếu chưa đặt biến → bỏ qua, không làm fail pipeline.
+      # Lưu ý: gaze image lớn nên pull có thể mất vài phút → chờ tối đa
+      # 20 × 15s = 300s (5 phút). Hạn chế: check có thể pass nhờ bản CŨ còn
+      # chạy (xem đề xuất trả commit SHA trong /health).
+      - name: Smoke check sau deploy
+        if: ${{ vars.SMOKE_URL != '' }}
+        env:
+          SMOKE_URL: ${{ vars.SMOKE_URL }}
+        run: |
+          curl -fsS --retry 20 --retry-delay 15 --retry-connrefused \
+            --max-time 10 "$SMOKE_URL"
+          echo "Smoke check OK: $SMOKE_URL"
+      - name: Bỏ qua smoke check (chưa đặt vars.SMOKE_URL)
+        if: ${{ vars.SMOKE_URL == '' }}
+        run: echo "vars.SMOKE_URL chưa đặt — bỏ qua smoke check (không fail pipeline)."
