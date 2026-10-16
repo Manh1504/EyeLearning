@@ -1,4 +1,7 @@
 import ipaddress
+import asyncio
+import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +16,7 @@ from app.models.auth import User
 from app.schemas.auth import LoginRequest, RefreshRequest, TokenPair, UserSummary
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger("app.performance")
 
 
 def _client_ip(request: Request) -> str | None:
@@ -111,20 +115,50 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
+    started = time.perf_counter()
     user = await user_crud.get_user_by_email(db, body.email)
+    lookup_ms = (time.perf_counter() - started) * 1000
+    password_started = time.perf_counter()
+    password_valid = bool(
+        user
+        and user.deleted_at is None
+        and user.status.code == "active"
+        and await asyncio.to_thread(
+            security.verify_password, body.password, user.password_hash
+        )
+    )
+    password_ms = (time.perf_counter() - password_started) * 1000
     if (
         user is None
         or user.deleted_at is not None
         or user.status.code != "active"
-        or not security.verify_password(body.password, user.password_hash)
+        or not password_valid
     ):
+        logger.info(
+            "login result=denied lookup_ms=%.1f password_ms=%.1f total_ms=%.1f",
+            lookup_ms,
+            password_ms,
+            (time.perf_counter() - started) * 1000,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email hoặc mật khẩu không đúng",
         )
     pair = await _issue_tokens(db, user, request)
     await db.commit()
+    commit_ms = (time.perf_counter() - password_started) * 1000 - password_ms
     _set_auth_cookies(response, pair.access_token, pair.refresh_token)
+    response.headers["Server-Timing"] = (
+        f"auth_db;dur={lookup_ms:.1f}, password;dur={password_ms:.1f}, "
+        f"session;dur={commit_ms:.1f}"
+    )
+    logger.info(
+        "login result=success lookup_ms=%.1f password_ms=%.1f session_ms=%.1f total_ms=%.1f",
+        lookup_ms,
+        password_ms,
+        commit_ms,
+        (time.perf_counter() - started) * 1000,
+    )
     return pair
 
 

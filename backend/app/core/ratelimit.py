@@ -1,3 +1,4 @@
+import inspect
 import time
 from collections import deque
 from ipaddress import ip_address, ip_network
@@ -89,6 +90,8 @@ async def _redis_check(client, ident: str, limit: int, seconds: int) -> int:
     key = f"rl:{ident}"
     member = f"{now:.6f}:{uuid4().hex}"
     pipe = client.pipeline(transaction=False)
+    if inspect.isawaitable(pipe):
+        pipe = await pipe
     pipe.zremrangebyscore(key, 0, now - seconds)
     pipe.zadd(key, {member: now})
     pipe.zcard(key)

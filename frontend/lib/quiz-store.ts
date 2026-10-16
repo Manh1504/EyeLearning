@@ -10,6 +10,8 @@ const DEMO_ASSIGNMENT: QuizAssignment = {
   id: "quiz-python-1",
   courseId: "course-1",
   courseTitle: "Lập trình Python cơ bản",
+  lessonId: "lesson-1",
+  lessonTitle: "Bài 1: Giới thiệu",
   title: "Kiểm tra kiến thức Python nhập môn",
   instructions: "Chọn một đáp án đúng cho mỗi câu. Bạn có thể xem lại và chữa bài ngay sau khi nộp.",
   dueAt: "2026-10-20T16:00:00.000Z",

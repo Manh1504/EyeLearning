@@ -39,6 +39,7 @@ import {
   screenGazeToSlide,
 } from "@/lib/api/calibration";
 import { resolveMediaUrl } from "@/lib/api/client";
+import { LessonAssignmentList } from "@/components/quiz/lesson-assignment-list";
 
 const SLIDE_FALLBACK_IMAGE =
   "data:image/svg+xml;charset=utf-8," +
@@ -212,11 +213,11 @@ export function LearningReader({ courseId }: { courseId: string }) {
   const saveProgress = useCallback(
     async (lessonId: string, lastSlide: number, completed?: boolean) => {
       await patchLessonProgress(lessonId, lastSlide, completed);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["student", "lesson-progress", lessonId] }),
-        queryClient.invalidateQueries({ queryKey: ["student", "course-outline", courseId] }),
-        queryClient.invalidateQueries({ queryKey: ["student", "enrollments"] }),
-      ]);
+      void queryClient.invalidateQueries({ queryKey: ["student", "lesson-progress", lessonId] });
+      if (completed) {
+        void queryClient.invalidateQueries({ queryKey: ["student", "course-outline", courseId] });
+        void queryClient.invalidateQueries({ queryKey: ["student", "enrollments"] });
+      }
     },
     [courseId, queryClient],
   );
@@ -624,8 +625,9 @@ export function LearningReader({ courseId }: { courseId: string }) {
             </div>
           )}
 
-          <div className="flex min-h-0 flex-1 items-center overflow-auto bg-[#f9f9f5] px-3 pb-20 pt-3 sm:px-5 sm:pb-20">
-            <div className="mx-auto w-full max-w-[min(1120px,calc((100dvh-10.5rem)*16/9))]">
+          <div className="min-h-0 flex-1 overflow-auto bg-[#f9f9f5] px-3 pb-24 pt-3 sm:px-5">
+            <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col justify-center gap-8 py-2">
+              <div className="mx-auto w-full max-w-[min(1120px,calc((100dvh-10.5rem)*16/9))]">
               {slidesLoading ? (
                 <Skeleton className="aspect-video w-full rounded-2xl" />
               ) : slideImageUrl ? (
@@ -657,6 +659,8 @@ export function LearningReader({ courseId }: { courseId: string }) {
                   </p>
                 </div>
               )}
+              </div>
+              {activeLessonId && <LessonAssignmentList lessonId={activeLessonId} />}
             </div>
           </div>
 

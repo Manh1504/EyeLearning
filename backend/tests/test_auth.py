@@ -11,7 +11,15 @@ def test_login_success(client):
     import asyncio
 
     asyncio.run(make_user("teacher@test.vn", "teacher", full_name="GV Test"))
-    data = login(client, "teacher@test.vn")
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "teacher@test.vn", "password": "Password123!"},
+    )
+    assert response.status_code == 200
+    assert "app;dur=" in response.headers["server-timing"]
+    assert "password;dur=" in response.headers["server-timing"]
+    assert response.headers["x-request-id"]
+    data = response.json()
     assert data["accessToken"]
     assert data["refreshToken"]
     assert data["user"]["email"] == "teacher@test.vn"

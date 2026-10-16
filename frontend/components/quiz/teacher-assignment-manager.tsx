@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCreateQuizAssignment, useQuizAssignments } from "@/hooks/use-quiz";
-import { useTeacherCourses } from "@/hooks/use-teacher";
+import { useCourseTree, useTeacherCourses } from "@/hooks/use-teacher";
 import type {
   QuizAssignment,
   QuizAssignmentStatus,
@@ -88,6 +88,7 @@ function AssignmentRow({ assignment }: { assignment: QuizAssignment }) {
             {assignment.title}
           </h3>
           <p className="mt-1 truncate text-[11px] text-muted-foreground">{assignment.courseTitle}</p>
+          {assignment.lessonTitle && <p className="mt-1 truncate text-[11px] font-medium text-foreground/70">{assignment.lessonTitle}</p>}
         </div>
         <Badge variant={statusVariant} className="shrink-0 text-[10px]">
           {STATUS_LABEL[assignment.status]}
@@ -112,6 +113,7 @@ export function TeacherAssignmentManager() {
   const createAssignment = useCreateQuizAssignment();
   const [title, setTitle] = useState("");
   const [courseId, setCourseId] = useState("");
+  const [lessonId, setLessonId] = useState("");
   const [instructions, setInstructions] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(30);
@@ -119,6 +121,10 @@ export function TeacherAssignmentManager() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([{ ...INITIAL_QUESTION, options: INITIAL_QUESTION.options.map((option) => ({ ...option })) }]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [successMessage, setSuccessMessage] = useState("");
+  const courseTreeQuery = useCourseTree(courseId);
+  const lessons = courseTreeQuery.data?.flatMap((module) =>
+    module.lessons.map((lesson) => ({ ...lesson, moduleTitle: module.title })),
+  ) ?? [];
 
   const updateQuestion = (questionIndex: number, update: Partial<QuizQuestion>) => {
     setQuestions((current) => current.map((question, index) => index === questionIndex ? { ...question, ...update } : question));
@@ -155,6 +161,7 @@ export function TeacherAssignmentManager() {
     const nextErrors: FormErrors = {};
     if (!title.trim()) nextErrors.title = "Nhập tiêu đề bài kiểm tra.";
     if (!courseId) nextErrors.courseId = "Chọn khóa học nhận bài.";
+    if (!lessonId) nextErrors.lessonId = "Chọn bài học hiển thị bài tập.";
     if (!instructions.trim()) nextErrors.instructions = "Thêm hướng dẫn làm bài.";
     if (!dueAt || Number.isNaN(new Date(dueAt).getTime())) nextErrors.dueAt = "Chọn hạn nộp hợp lệ.";
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) nextErrors.durationMinutes = "Thời lượng phải từ 1 phút.";
@@ -177,6 +184,7 @@ export function TeacherAssignmentManager() {
     const question = newQuestion();
     setTitle("");
     setCourseId("");
+    setLessonId("");
     setInstructions("");
     setDueAt("");
     setDurationMinutes(30);
@@ -191,8 +199,13 @@ export function TeacherAssignmentManager() {
     if (!validate()) return;
 
     const course = coursesQuery.data?.find((item) => item.id === courseId);
+    const lesson = lessons.find((item) => item.id === lessonId);
     if (!course) {
       setErrors((current) => ({ ...current, courseId: "Khóa học không còn khả dụng." }));
+      return;
+    }
+    if (!lesson) {
+      setErrors((current) => ({ ...current, lessonId: "Bài học không còn khả dụng." }));
       return;
     }
 
@@ -201,6 +214,8 @@ export function TeacherAssignmentManager() {
         title: title.trim(),
         courseId,
         courseTitle: course.title,
+        lessonId,
+        lessonTitle: lesson.title,
         instructions: instructions.trim(),
         dueAt: new Date(dueAt).toISOString(),
         durationMinutes,
@@ -296,11 +311,18 @@ export function TeacherAssignmentManager() {
                   <Input id="assignment-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ví dụ: Kiểm tra cuối chương 2" aria-invalid={Boolean(errors.title)} />
                 </Field>
                 <Field label="Khóa học" error={errors.courseId}>
-                  <Select value={courseId} onValueChange={setCourseId} disabled={coursesQuery.isLoading || coursesQuery.isError}>
+                  <Select value={courseId} onValueChange={(value) => { setCourseId(value); setLessonId(""); }} disabled={coursesQuery.isLoading || coursesQuery.isError}>
                     <SelectTrigger aria-invalid={Boolean(errors.courseId)}><SelectValue placeholder={coursesQuery.isLoading ? "Đang tải khóa học..." : "Chọn khóa học"} /></SelectTrigger>
                     <SelectContent>{coursesQuery.data?.map((course) => <SelectItem key={course.id} value={course.id}>{course.title}</SelectItem>)}</SelectContent>
                   </Select>
                   {coursesQuery.isError && <button type="button" onClick={() => coursesQuery.refetch()} className="text-left text-xs font-medium text-destructive underline underline-offset-2">Không tải được khóa học. Thử lại</button>}
+                </Field>
+                <Field label="Bài học" error={errors.lessonId}>
+                  <Select value={lessonId} onValueChange={setLessonId} disabled={!courseId || courseTreeQuery.isLoading || courseTreeQuery.isError}>
+                    <SelectTrigger aria-invalid={Boolean(errors.lessonId)}><SelectValue placeholder={!courseId ? "Chọn khóa học trước" : courseTreeQuery.isLoading ? "Đang tải bài học..." : "Chọn bài học"} /></SelectTrigger>
+                    <SelectContent>{lessons.map((lesson) => <SelectItem key={lesson.id} value={lesson.id}>{lesson.moduleTitle} · {lesson.title}</SelectItem>)}</SelectContent>
+                  </Select>
+                  {courseTreeQuery.isError && <button type="button" onClick={() => courseTreeQuery.refetch()} className="text-left text-xs font-medium text-destructive underline underline-offset-2">Không tải được bài học. Thử lại</button>}
                 </Field>
                 <Field label="Hạn nộp" htmlFor="assignment-due" error={errors.dueAt}>
                   <Input id="assignment-due" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} aria-invalid={Boolean(errors.dueAt)} />

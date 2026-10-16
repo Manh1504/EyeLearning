@@ -24,7 +24,7 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
 
 function CourseChip({ course }: { course: TeacherCourse }) {
   return (
-    <Link href={`/teacher/courses/${course.id}`} className="flex min-h-40 flex-col rounded-[18px] border border-border/80 bg-surface p-4 shadow-xs transition hover:-translate-y-0.5 hover:border-foreground/10 hover:shadow-sm">
+    <Link prefetch={false} href={`/teacher/courses/${course.id}`} className="flex min-h-40 flex-col rounded-[18px] border border-border/80 bg-surface p-4 shadow-xs transition hover:-translate-y-0.5 hover:border-foreground/10 hover:shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <span className="flex size-8 items-center justify-center rounded-lg bg-muted"><Icon name="ri-book-open-line" className="size-4 text-muted-foreground" /></span>
         <span className="rounded-full bg-muted px-2 py-1 text-[9px] font-semibold text-muted-foreground">{STATUS_LABEL[course.status]}</span>
@@ -55,7 +55,7 @@ function Portfolio({ courses }: { courses: TeacherCourse[] }) {
       </div>
       <div className="mt-7 space-y-3.5">
         {plotted.length ? plotted.map((course, index) => (
-          <Link key={course.id} href={`/teacher/courses/${course.id}`} className="grid grid-cols-[18px_minmax(0,1fr)_36px] items-center gap-3 text-[10px]">
+          <Link key={course.id} prefetch={false} href={`/teacher/courses/${course.id}`} className="grid grid-cols-[18px_minmax(0,1fr)_36px] items-center gap-3 text-[10px]">
             <span className="font-semibold text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
             <span className="relative h-6 overflow-hidden rounded-full bg-muted">
               <span className={cn("absolute inset-y-0 left-0 rounded-full", index === 0 ? "bg-primary" : "bg-primary/20")} style={{ width: `${Math.max(4, course.completion)}%` }} />
@@ -89,7 +89,7 @@ function InsightRail({ courses, students }: { courses: TeacherCourse[]; students
 
 function CourseLine({ course }: { course: TeacherCourse }) {
   return (
-    <Link href={`/teacher/courses/${course.id}`} className="group grid gap-3 border-t border-border py-4 sm:grid-cols-[minmax(0,1fr)_110px_100px_150px_auto] sm:items-center">
+    <Link prefetch={false} href={`/teacher/courses/${course.id}`} className="group grid gap-3 border-t border-border py-4 sm:grid-cols-[minmax(0,1fr)_110px_100px_150px_auto] sm:items-center">
       <div className="min-w-0"><h3 className="truncate text-sm font-semibold">{course.title}</h3><p className="mt-1 truncate text-[11px] text-muted-foreground">{LEVEL_LABEL[course.level]} · cập nhật {course.updatedAt}</p></div>
       <span className="text-[11px] text-muted-foreground"><Icon name="ri-group-line" className="mr-1 inline size-3.5" />{course.students} học viên</span>
       <span className="w-fit rounded-full bg-muted px-2.5 py-1 text-[10px] font-medium text-muted-foreground">{STATUS_LABEL[course.status]}</span>

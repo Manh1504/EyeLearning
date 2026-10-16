@@ -31,6 +31,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 };
 
 export type AuthChangeReason = "login" | "logout" | "session-expired" | "unknown";
+const AUTH_SYNC_KEY = "gaze_auth_sync";
 
 export function primaryRole(roles: Role[] | undefined | null): Role {
   if (!roles || roles.length === 0) return "student";
@@ -42,11 +43,25 @@ export function primaryRole(roles: Role[] | undefined | null): Role {
 
 function notifyAuthChange(reason: AuthChangeReason): void {
   globalThis.window?.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT, { detail: reason }));
+  try {
+    globalThis.localStorage?.setItem(AUTH_SYNC_KEY, JSON.stringify({ reason, at: Date.now() }));
+  } catch {
+    /* Storage may be unavailable or blocked. */
+  }
 }
 
 export function subscribeAuthChange(callback: (reason: AuthChangeReason) => void): () => void {
   const fire = (event: Event) => {
-    const reason = event instanceof CustomEvent ? event.detail : "unknown";
+    if (event instanceof StorageEvent && event.key !== AUTH_SYNC_KEY) return;
+    let reason: AuthChangeReason = event instanceof CustomEvent ? event.detail : "unknown";
+    if (event instanceof StorageEvent && event.newValue) {
+      try {
+        reason = JSON.parse(event.newValue).reason as AuthChangeReason;
+      } catch {
+        reason = "unknown";
+      }
+    }
+    if (reason === "logout" || reason === "session-expired") clearMemoryToken();
     callback(reason);
   };
   globalThis.window?.addEventListener(AUTH_CHANGE_EVENT, fire);
@@ -71,6 +86,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   const data = await apiFetch<LoginResult>("/api/auth/login", {
     method: "POST",
     body: { email, password },
+    skipAuthRefresh: true,
   });
   if (data?.accessToken) setMemoryAccessToken(data.accessToken);
   else if ((data as unknown as { access_token?: string })?.access_token) {
@@ -85,6 +101,7 @@ export async function logout(): Promise<void> {
     await apiFetch<{ ok: boolean }>("/api/auth/logout", {
       method: "POST",
       body: {},
+      skipAuthRefresh: true,
     });
   } catch {
     /* vẫn clear local dù server lỗi */

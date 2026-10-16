@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { useAuthState } from "@/lib/hooks/use-stored-user";
-import { FullPageSpinner } from "@/components/ui/spinner";
 import { ErrorState } from "@/components/ui/error-state";
 import type { Role } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";
@@ -67,9 +66,7 @@ export function AppShell({
               </div>
             )}
 
-            {isLoading ? (
-              <FullPageSpinner label="Đang tải dữ liệu..." />
-            ) : isSessionExpired ? (
+            {isSessionExpired ? (
               <ErrorState
                 title="Phiên đăng nhập đã hết hạn"
                 description="Vui lòng đăng nhập lại để tiếp tục."
@@ -78,9 +75,7 @@ export function AppShell({
                 }}
                 retryLabel="Đăng nhập"
               />
-            ) : (
-              children
-            )}
+            ) : children}
           </div>
         </main>
       </div>

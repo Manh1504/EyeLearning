@@ -191,24 +191,29 @@ async def compute_slide_stats(
 
 def _count_fixations(events: list[GazeEvent]) -> int:
     fixations = 0
-    cluster: list[tuple[float, float]] = []
-
-    def flush() -> int:
-        return 1 if len(cluster) >= MIN_FIXATION_POINTS else 0
+    count = 0
+    sum_x = 0.0
+    sum_y = 0.0
 
     for e in events:
         p = (e.gaze_x, e.gaze_y)
-        if not cluster:
-            cluster.append(p)
+        if count == 0:
+            count = 1
+            sum_x = p[0]
+            sum_y = p[1]
             continue
-        cx = sum(q[0] for q in cluster) / len(cluster)
-        cy = sum(q[1] for q in cluster) / len(cluster)
+        cx = sum_x / count
+        cy = sum_y / count
         if (p[0] - cx) ** 2 + (p[1] - cy) ** 2 <= FIXATION_RADIUS**2:
-            cluster.append(p)
+            count += 1
+            sum_x += p[0]
+            sum_y += p[1]
         else:
-            fixations += flush()
-            cluster = [p]
-    fixations += flush()
+            fixations += int(count >= MIN_FIXATION_POINTS)
+            count = 1
+            sum_x = p[0]
+            sum_y = p[1]
+    fixations += int(count >= MIN_FIXATION_POINTS)
     return fixations
 
 

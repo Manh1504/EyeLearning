@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.models.auth import AuthSession, User
 
@@ -10,14 +10,26 @@ from app.models.auth import AuthSession, User
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     stmt = (
         select(User)
-        .options(selectinload(User.roles))
+        .options(
+            selectinload(User.roles),
+            noload(User.student_profile),
+            noload(User.teacher_profile),
+        )
         .where(User.email == email.lower())
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
-    stmt = select(User).options(selectinload(User.roles)).where(User.id == user_id)
+    stmt = (
+        select(User)
+        .options(
+            selectinload(User.roles),
+            noload(User.student_profile),
+            noload(User.teacher_profile),
+        )
+        .where(User.id == user_id)
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 

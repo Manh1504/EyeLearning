@@ -34,6 +34,7 @@ export interface ApiRequestOptions {
   params?: Record<string, string | number | boolean | undefined>;
   signal?: AbortSignal;
   keepalive?: boolean;
+  skipAuthRefresh?: boolean;
 }
 
 function buildUrl(path: string, params?: ApiRequestOptions["params"]) {
@@ -135,7 +136,7 @@ function extractError(status: number, data: unknown): string {
 }
 
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { method = "GET", body, params, signal, keepalive } = options;
+  const { method = "GET", body, params, signal, keepalive, skipAuthRefresh = false } = options;
 
   // Chế độ demo: trả dữ liệu giả, không gọi backend.
   if (process.env.NEXT_PUBLIC_DEMO === "1") {
@@ -165,7 +166,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
 
   let res = await doFetch();
 
-  if (res.status === 401) {
+  if (res.status === 401 && !skipAuthRefresh) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
       res = await doFetch();

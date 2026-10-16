@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { login, primaryRole, ROLE_HOME, type AuthUser, type Role } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";
+import { AUTH_USER_QUERY_KEY } from "@/lib/hooks/use-stored-user";
 
 const PROTECTED = ["/student", "/teacher", "/admin"] as const;
 
@@ -29,6 +31,7 @@ function resolveRedirect(user: AuthUser, next: string | null): string {
 
 export function LoginForm({ className }: { className?: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
@@ -50,12 +53,14 @@ export function LoginForm({ className }: { className?: string }) {
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("next")
           : null;
-      router.replace(resolveRedirect(result.user, next));
+      const destination = resolveRedirect(result.user, next);
+      queryClient.setQueryData(AUTH_USER_QUERY_KEY, result.user);
+      router.prefetch(destination);
+      router.replace(destination);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Đăng nhập thất bại — vui lòng thử lại.",
       );
-    } finally {
       setPending(false);
     }
   };

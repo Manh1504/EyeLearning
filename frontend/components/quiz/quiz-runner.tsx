@@ -25,6 +25,7 @@ import {
 import { ErrorState } from "@/components/ui/error-state";
 import { Progress } from "@/components/ui/progress";
 import { FullPageSpinner, Spinner } from "@/components/ui/spinner";
+import { FloatingQuizChat } from "@/components/quiz/floating-quiz-chat";
 
 export function QuizRunner({ assignmentId }: { assignmentId: string }) {
   const router = useRouter();
@@ -256,6 +257,7 @@ export function QuizRunner({ assignmentId }: { assignmentId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <FloatingQuizChat questions={assignment.questions} />
     </main>
   );
 }

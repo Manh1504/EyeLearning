@@ -12,6 +12,7 @@ import { useMyEnrollments, useMyLearningStats } from "@/hooks/use-student";
 import { LEVEL_LABEL } from "@/lib/constants";
 import type { EnrolledCourse } from "@/lib/types/domain";
 import { getStoredCalibration } from "@/lib/api/calibration";
+import type { LearningStats } from "@/lib/api/student";
 import { useQuizAssignments } from "@/hooks/use-quiz";
 import { cn } from "@/lib/utils";
 
@@ -172,8 +173,7 @@ function ProgressSnapshot({ enrollments }: { enrollments: EnrolledCourse[] }) {
   );
 }
 
-function SummaryRail({ enrollments }: { enrollments: EnrolledCourse[] }) {
-  const { data } = useMyLearningStats();
+function SummaryRail({ enrollments, stats }: { enrollments: EnrolledCourse[]; stats?: LearningStats }) {
   const calibrated = useSyncExternalStore(
     subscribeCalibration,
     () => getStoredCalibration().calibrated,
@@ -195,13 +195,13 @@ function SummaryRail({ enrollments }: { enrollments: EnrolledCourse[] }) {
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
         <div className="rounded-[18px] border border-border/80 bg-white p-3 shadow-xs">
           <Icon name="ri-fire-line" className="size-4 text-muted-foreground" />
-          <p className="mt-3 text-lg font-semibold tabular-nums">{data?.streakDays ?? 0}</p>
+          <p className="mt-3 text-lg font-semibold tabular-nums">{stats?.streakDays ?? 0}</p>
           <p className="text-[10px] text-muted-foreground">ngày liên tiếp</p>
         </div>
         <div className="rounded-[18px] border border-border/80 bg-white p-3 shadow-xs">
           <Icon name="ri-calendar-line" className="size-4 text-muted-foreground" />
           <p className="mt-3 text-lg font-semibold tabular-nums">
-            {Math.round((data?.weekStudyMinutes ?? 0) / 60)}h
+            {Math.round((stats?.weekStudyMinutes ?? 0) / 60)}h
           </p>
           <p className="text-[10px] text-muted-foreground">trong tuần</p>
         </div>
@@ -262,6 +262,7 @@ function CourseLine({ enrollment, index }: { enrollment: EnrolledCourse; index: 
 
 export function StudentHome() {
   const { data: enrollments = [], isLoading, isError, refetch } = useMyEnrollments();
+  const { data: learningStats } = useMyLearningStats();
   const [tab, setTab] = useState<TabKey>("all");
   const [query, setQuery] = useState("");
   const courses = useMemo(() => enrollments.filter((item) => item.status !== "dropped"), [enrollments]);
@@ -296,7 +297,7 @@ export function StudentHome() {
           {courses.slice(0, 4).map((enrollment) => <MiniCourse key={enrollment.enrollmentId} enrollment={enrollment} />)}
         </section>
         <div className="lg:col-span-6"><LearningMap enrollments={courses} /></div>
-        <div className="lg:col-span-2"><SummaryRail enrollments={courses} /></div>
+        <div className="lg:col-span-2"><SummaryRail enrollments={courses} stats={learningStats} /></div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">

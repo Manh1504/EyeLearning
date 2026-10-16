@@ -29,4 +29,21 @@ describe("apiFetch", () => {
       }),
     );
   });
+
+  it("does not refresh or retry public authentication requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({ detail: "Sai thông tin đăng nhập" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiFetch("/api/auth/login", {
+      method: "POST",
+      body: { email: "user@example.com", password: "wrong" },
+      skipAuthRefresh: true,
+    })).rejects.toMatchObject({ status: 401 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

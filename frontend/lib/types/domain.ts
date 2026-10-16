@@ -291,6 +291,8 @@ export interface QuizAssignment {
   id: string;
   courseId: string;
   courseTitle: string;
+  lessonId?: string;
+  lessonTitle?: string;
   title: string;
   instructions: string;
   dueAt: string;
@@ -312,6 +314,8 @@ export interface QuizAttempt {
 export interface QuizAssignmentInput {
   courseId: string;
   courseTitle: string;
+  lessonId: string;
+  lessonTitle: string;
   title: string;
   instructions: string;
   dueAt: string;

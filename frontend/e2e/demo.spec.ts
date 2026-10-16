@@ -27,6 +27,13 @@ test.describe("Demo mode (không backend)", () => {
     await expect(page.getByText("Lộ trình học")).toBeVisible();
   });
 
+  test("bài trắc nghiệm hiển thị bên dưới bài học", async ({ page }) => {
+    await page.goto("/student/courses/course-1?lesson=lesson-1");
+    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
+    await expect(page.getByRole("heading", { name: "Bài trắc nghiệm" })).toBeVisible();
+    await expect(page.getByText("Kiểm tra kiến thức Python nhập môn")).toBeVisible();
+  });
+
   test("vào thẳng heatmap giảng viên", async ({ page }) => {
     await page.goto("/teacher/courses/course-1/lessons/lesson-1/heatmap");
     await expect(page.getByText("Phân tích điểm nhìn")).toBeVisible();
@@ -50,6 +57,7 @@ test.describe("Demo mode (không backend)", () => {
 
   test("học viên làm bài, xem kết quả và chatbot chữa bài", async ({ page }) => {
     await page.goto("/student/assignments/quiz-python-1");
+    await expect(page.getByText("Trợ lý học tập", { exact: true })).toBeVisible();
     await page.getByText("def", { exact: true }).click();
     await page.getByRole("button", { name: /Tiếp theo/ }).click();
     await page.getByText("list", { exact: true }).click();
@@ -58,8 +66,8 @@ test.describe("Demo mode (không backend)", () => {
     await page.getByRole("button", { name: "Nộp bài" }).last().click();
     await expect(page).toHaveURL(/\/result$/);
     await expect(page.getByText("Đáp án và giải thích")).toBeVisible();
-    await expect(page.getByText("Trợ lý chữa bài")).toBeVisible();
-    await expect(page.getByText("Chế độ local - chờ AI backend")).toBeVisible();
+    await expect(page.getByText("Trợ lý học tập", { exact: true })).toBeVisible();
+    await expect(page.getByText("Luôn sẵn sàng hỗ trợ")).toBeVisible();
   });
 
   test("login demo bằng email bất kỳ", async ({ page }) => {
