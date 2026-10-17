@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# curl chỉ để dùng cho HEALTHCHECK; PyMuPDF/psycopg đều có wheel sẵn nên
+# không cần trình biên dịch.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cài dependencies trước để tận dụng cache layer
+COPY requirements.docker.txt .
+RUN pip install -r requirements.docker.txt
+
+# Chạy bằng user không phải root
+RUN useradd --create-home --uid 10001 appuser
+
+COPY --chown=appuser:appuser . .
+
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

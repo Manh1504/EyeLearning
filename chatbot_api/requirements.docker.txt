@@ -1,0 +1,30 @@
+# Dependencies cho image Docker của API service.
+# Khác với requirements.txt ở chỗ LƯỢC BỎ các gói nặng chỉ dùng cho embedding
+# local (sentence-transformers, langchain-huggingface, torch...) vì trong
+# container ta dùng EMBEDDING_NAME=api hoặc gemini.
+# Xem workflow/shared/models.py: import HuggingFaceEmbeddings đã được chuyển
+# thành lazy nên không cần cài các gói này.
+
+# Web service
+fastapi
+uvicorn[standard]
+python-dotenv
+
+# PostgreSQL + pgvector (checkpoint hội thoại & vector truy hồi)
+psycopg[binary]
+psycopg_pool
+pgvector
+langgraph
+langgraph-checkpoint-postgres
+
+# LangChain + các LLM provider (Gemini/DeepSeek/Ollama)
+langchain-core
+langchain-google-genai
+langchain-deepseek
+langchain-ollama
+langsmith
+
+# Tiện ích
+httpx
+pymupdf      # render slide PDF -> PNG (ingest)
+boto3        # đọc file từ S3/R2 (storage.py)

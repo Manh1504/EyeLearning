@@ -1,0 +1,45 @@
+# Chỉ đóng gói API service. PostgreSQL(pgvector) và Ollama/LLM được coi là
+# dịch vụ bên ngoài, cấu hình qua .env (DATABASE_URL, OLLAMA_API_URL, API keys).
+#
+#   docker compose up --build -d      # build + chạy nền
+#   docker compose logs -f api        # xem log
+#   docker compose down               # tắt
+#
+# Nếu Postgres/Ollama chạy ngay trên máy host, thêm "host.docker.internal"
+# vào DATABASE_URL / OLLAMA_API_URL (đã map sẵn qua extra_hosts bên dưới).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lms-chatbot:latest
+    container_name: lms-chatbot-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      # Cho phép container gọi service trên host qua host.docker.internal
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+# --------------------------------------------------------------------------
+# (Tùy chọn) Nếu muốn tự chạy PostgreSQL + pgvector trong compose, mở comment
+# khối dưới rồi đặt DATABASE_URL trỏ tới service "db".
+#
+#  db:
+#    image: pgvector/pgvector:pg16
+#    container_name: lms-chatbot-db
+#    environment:
+#      POSTGRES_USER: lms
+#      POSTGRES_PASSWORD: lms
+#      POSTGRES_DB: lms
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - pgdata:/var/lib/postgresql/data
+#    restart: unless-stopped
+#
+# volumes:
+#   pgdata:
