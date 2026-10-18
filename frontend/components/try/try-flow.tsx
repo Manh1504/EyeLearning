@@ -152,11 +152,11 @@ export function TryFlow() {
       <header className="z-40 shrink-0 px-2 pt-2 sm:px-3 sm:pt-3">
         <div className="mx-auto flex h-12 max-w-7xl items-center justify-between rounded-full border border-border/80 bg-white px-3 shadow-xs sm:px-4">
           <Link
-            href="/account/login"
+            href="/"
             className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             <Icon name="ri-arrow-left-s-line" className="size-4" />
-            Đăng nhập
+            Về trang chủ
           </Link>
 
           <div className="hidden items-center gap-1.5 sm:flex">
@@ -177,7 +177,17 @@ export function TryFlow() {
             ))}
           </div>
 
-          <span className="rounded-full bg-[#e8f1e6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#52704f]">Khách</span>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/account/login"
+              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Đăng nhập
+            </Link>
+            <span className="rounded-full bg-[#e8f1e6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#52704f]">
+              Khách
+            </span>
+          </div>
         </div>
       </header>
 
@@ -358,5 +368,27 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
     onComplete: onDone,
     persistToBackend: false,
   });
-  return <CalibrationStage engine={engine} />;
+  return (
+    <>
+      <CalibrationStage engine={engine} />
+      <nav
+        aria-label="Điều hướng"
+        className="pointer-events-none fixed inset-x-3 top-3 z-50 flex justify-between sm:inset-x-5 sm:top-5"
+      >
+        <Link
+          href="/"
+          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-[#111210]/85 px-3 py-2 text-xs font-medium text-white/80 shadow-sm backdrop-blur-md transition hover:bg-[#292a27] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          <Icon name="ri-arrow-left-s-line" className="size-4" />
+          Về trang chủ
+        </Link>
+        <Link
+          href="/account/login"
+          className="pointer-events-auto inline-flex items-center rounded-full border border-white/15 bg-[#111210]/85 px-3 py-2 text-xs font-medium text-white/80 shadow-sm backdrop-blur-md transition hover:bg-[#292a27] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          Đăng nhập
+        </Link>
+      </nav>
+    </>
+  );
 }

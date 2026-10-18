@@ -15,9 +15,9 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
         <div aria-hidden className="absolute -right-20 -top-20 size-72 rounded-full bg-[#e8f1e6] blur-3xl" />
 
         <Link
-          href="/account/login"
-          aria-label="GazeEdu - Đăng nhập"
-          className="relative w-fit rounded-md outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-4 focus-visible:ring-offset-[#fdfdfa]"
+          href="/"
+          aria-label="Về trang chủ GazeEdu"
+          className="relative w-fit rounded-md outline-none transition-opacity hover:opacity-75 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-4 focus-visible:ring-offset-[#fdfdfa]"
         >
           <BrandLogo priority className="h-8 w-auto grayscale" />
         </Link>
@@ -65,9 +65,9 @@ export function AuthLayout({ children }: { children: React.ReactNode }) {
         <div className="w-full max-w-[420px]">
           <div className="mb-10 flex items-center justify-between border-b border-[#e8e8e8] pb-5 lg:hidden">
             <Link
-              href="/account/login"
-              aria-label="GazeEdu - Đăng nhập"
-              className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-4"
+              href="/"
+              aria-label="Về trang chủ GazeEdu"
+              className="rounded-md outline-none transition-opacity hover:opacity-75 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-4"
             >
               <BrandLogo priority className="h-7 w-auto grayscale" />
             </Link>
