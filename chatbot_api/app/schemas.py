@@ -42,13 +42,6 @@ class ChatResponse(BaseModel):
     intent: str | None = None
 
 
-class EmbedCourseRequest(BaseModel):
-    course_id: UUIDString = Field(description="UUID khóa học cần embedding các slide còn thiếu.")
-    batch_size: int = Field(
-        default=20, ge=1, le=200, description="Số slide xử lý mỗi batch."
-    )
-
-
 class EmbedSlideRequest(BaseModel):
     lesson_content_id: UUIDString = Field(
         description="UUID slide (lesson_contents) cần embedding."

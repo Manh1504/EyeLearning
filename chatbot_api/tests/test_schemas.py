@@ -3,14 +3,13 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import ChatRequest, EmbedCourseRequest, EmbedSlideRequest
+from app.schemas import ChatRequest, EmbedSlideRequest
 
 
 @pytest.mark.parametrize(
     ("schema", "field"),
     [
         (ChatRequest, "course_id"),
-        (EmbedCourseRequest, "course_id"),
         (EmbedSlideRequest, "lesson_content_id"),
     ],
 )

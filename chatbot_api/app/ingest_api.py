@@ -10,7 +10,7 @@ import threading
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from app.schemas import EmbedCourseRequest, EmbedResult, EmbedSlideRequest
+from app.schemas import EmbedResult, EmbedSlideRequest
 from ingest import Ingestion
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -39,11 +39,6 @@ def close_ingestion() -> None:
         _ingestion = None
 
 
-def _embed_existing(course_id: str, batch_size: int) -> int:
-    with _job_lock:
-        return get_ingestion().embed_existing(course_id, batch_size)
-
-
 def _embed_new(lesson_content_id: str) -> int:
     with _job_lock:
         ingestion = get_ingestion()
@@ -51,15 +46,6 @@ def _embed_new(lesson_content_id: str) -> int:
             raise LookupError(lesson_content_id)
         ingestion.embed_new(lesson_content_id)
         return 1
-
-
-@router.post("/course", response_model=EmbedResult)
-async def embed_course(payload: EmbedCourseRequest):
-    """Embedding toàn bộ slide chưa có vector của một khóa học."""
-    processed = await run_in_threadpool(
-        _embed_existing, payload.course_id, payload.batch_size
-    )
-    return EmbedResult(processed=processed)
 
 
 @router.post("/slide", response_model=EmbedResult)
