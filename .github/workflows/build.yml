@@ -248,15 +248,22 @@ jobs:
 
       # Backfill embedding slide còn thiếu sau migrate/deploy, không cần SSH.
       # Cần:
-      #   vars.CHATBOT_API_URL  = https://api.eyelearning.id.vn (hoặc URL nội bộ backend)
+      #   vars.CHATBOT_API_URL           = https://api.eyelearning.id.vn (hoặc URL nội bộ backend)
       #   secrets.CHATBOT_INTERNAL_TOKEN = cùng giá trị với stack
-      # Nếu chưa đặt biến → bỏ qua, KHÔNG fail pipeline (tránh chặn deploy).
+      # GitHub Actions KHÔNG cho dùng `secrets.*` trong `if:` (chỉ dùng được ở
+      # `env:`/`with:`), nên điều kiện chỉ dựa vào vars.CHATBOT_API_URL.
+      # Nếu chưa đặt vars → bỏ qua; lỗi backfill không chặn deploy (continue-on-error).
       - name: Backfill embedding (reindex-all)
-        if: ${{ vars.CHATBOT_API_URL != '' && secrets.CHATBOT_INTERNAL_TOKEN != '' }}
+        if: ${{ vars.CHATBOT_API_URL != '' }}
+        continue-on-error: true
         env:
           CHATBOT_API_URL: ${{ vars.CHATBOT_API_URL }}
           CHATBOT_INTERNAL_TOKEN: ${{ secrets.CHATBOT_INTERNAL_TOKEN }}
         run: |
+          if [ -z "${CHATBOT_INTERNAL_TOKEN}" ]; then
+            echo "secrets.CHATBOT_INTERNAL_TOKEN chưa đặt — bỏ qua backfill."
+            exit 0
+          fi
           set -e
           endpoint="${CHATBOT_API_URL%/}/internal/embeddings/reindex-all"
           echo "Gọi $endpoint"
@@ -265,15 +272,20 @@ jobs:
             -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN" \
             -H "Content-Type: application/json"
       - name: Kiểm tra trạng thái embedding sau backfill
-        if: ${{ vars.CHATBOT_API_URL != '' && secrets.CHATBOT_INTERNAL_TOKEN != '' }}
+        if: ${{ vars.CHATBOT_API_URL != '' }}
+        continue-on-error: true
         env:
           CHATBOT_API_URL: ${{ vars.CHATBOT_API_URL }}
           CHATBOT_INTERNAL_TOKEN: ${{ secrets.CHATBOT_INTERNAL_TOKEN }}
         run: |
+          if [ -z "${CHATBOT_INTERNAL_TOKEN}" ]; then
+            echo "secrets.CHATBOT_INTERNAL_TOKEN chưa đặt — bỏ qua."
+            exit 0
+          fi
           set -e
           endpoint="${CHATBOT_API_URL%/}/internal/embeddings/status"
           curl -fsS --max-time 30 "$endpoint" \
             -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN"
-      - name: Bỏ qua backfill embedding (chưa đặt CHATBOT_API_URL / CHATBOT_INTERNAL_TOKEN)
-        if: ${{ vars.CHATBOT_API_URL == '' || secrets.CHATBOT_INTERNAL_TOKEN == '' }}
-        run: echo "CHATBOT_API_URL chưa đặt — bỏ qua backfill embedding (chạy tay sau)."
+      - name: Bỏ qua backfill embedding (chưa đặt CHATBOT_API_URL)
+        if: ${{ vars.CHATBOT_API_URL == '' }}
+        run: echo "vars.CHATBOT_API_URL chưa đặt — bỏ qua backfill embedding (chạy tay sau)."
