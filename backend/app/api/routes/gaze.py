@@ -153,7 +153,7 @@ async def create_learning_session(
         enrollment_id=session.enrollment_id,
         lesson_id=session.lesson_id,
         device_id=session.device_id,
-        calibrated=bool(params and params.has_params),
+        calibrated=bool(params and params.has_model),
         status=session.status,
         tracking_consent=session.tracking_consent,
         mode=mode,

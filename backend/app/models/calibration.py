@@ -64,9 +64,8 @@ class CalibrationParam(Base):
     )
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
-    # Bộ 6 tham số hiệu chỉnh [a1, a2, b1, a3, a4, b2] trả về từ
-    # POST /calibrate/fit của AI service (gaze-api) — dùng làm calibration
-    # active cho (user, device). model_ubj giữ nullable cho dữ liệu cũ.
+    # Model hiệu chỉnh (.ubj) train từ gaze service. `params` (6 tham số kappa)
+    # là protocol cũ, chỉ còn để đọc các bản ghi lịch sử.
     params: Mapped[list[Decimal] | None] = mapped_column(ARRAY(Numeric))
     model_ubj: Mapped[bytes | None] = mapped_column(LargeBinary)
     mae_px: Mapped[float | None] = mapped_column(REAL)
@@ -78,8 +77,9 @@ class CalibrationParam(Base):
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
-    def has_params(self) -> bool:
-        return bool(self.params)
+    def has_model(self) -> bool:
+        """Có model dùng được: .ubj (hiện tại) hoặc params (bản ghi cũ)."""
+        return bool(self.model_ubj or self.params)
 
 
 class CalibrationSettings(Base):

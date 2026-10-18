@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -201,3 +201,31 @@ async def counts() -> dict[str, int]:
             .group_by(LessonContent.embedding_status)
         )
         return {status: count for status, count in result.all()}
+
+
+# Đối chiếu `lesson_contents.embedding_status` (nguồn sự thật, do backend ghi)
+# với bảng vector `lesson_content_embedding` (chatbot ghi). Lệch nghĩa là có
+# người ghi vector trực tiếp không qua backend, hoặc DB khôi phục không đồng bộ.
+DRIFT_SQL = text(
+    """
+    SELECT
+        (SELECT count(*)
+           FROM lesson_contents lc
+          WHERE lc.embedding_status = 'ready'
+            AND NOT EXISTS (
+                SELECT 1 FROM lesson_content_embedding e
+                 WHERE e.lesson_content_id = lc.id
+            )) AS ready_without_vector,
+        (SELECT count(*)
+           FROM lesson_content_embedding e
+           JOIN lesson_contents lc ON lc.id = e.lesson_content_id
+          WHERE lc.embedding_status <> 'ready') AS vector_not_marked_ready
+    """
+)
+
+
+async def drift() -> dict[str, int]:
+    """Số slide lệch giữa trạng thái do backend ghi và vector thực tế."""
+    async with SessionLocal() as session:
+        row = (await session.execute(DRIFT_SQL)).mappings().one()
+        return {key: int(value) for key, value in row.items()}

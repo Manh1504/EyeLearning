@@ -1,4 +1,5 @@
 import asyncio
+import base64
 
 from tests.conftest import auth, login, make_user
 
@@ -153,24 +154,34 @@ def test_calibration_flow(client):
     asyncio.run(make_user("sv2@t.vn", "student"))
     student = login(client, "sv2@t.vn")
 
-    params_v1 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
-    params_v2 = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+    model_v1 = base64.b64encode(b"model-ubj-v1").decode()
+    model_v2 = base64.b64encode(b"model-ubj-v2").decode()
 
-    def post_params(version: str, params: list[float]):
+    def post_model(model_b64: str, mae: float = 0.02):
         return client.post(
             "/api/calibrations",
             headers=auth(student),
             json={
                 "deviceFingerprint": "fp-1",
                 "numPoints": 16,
-                "params": params,
-                "mappingModelVersion": version,
+                "modelUbjBase64": model_b64,
+                "maePx": mae,
+                "screenWidthPx": 1920,
+                "screenHeightPx": 1080,
             },
         )
 
-    r = post_params("v1", params_v1)
+    def active_model():
+        return client.get(
+            "/api/calibrations/active/model",
+            headers=auth(student),
+            params={"deviceFingerprint": "fp-1"},
+        )
+
+    r = post_model(model_v1)
     assert r.status_code == 201, r.text
-    assert r.json()["mappingModelVersion"] == "v1"
+    assert r.json()["numPoints"] == 16
+    assert abs(r.json()["maePx"] - 0.02) < 1e-6
 
     r = client.get(
         "/api/calibrations/active",
@@ -179,43 +190,31 @@ def test_calibration_flow(client):
     )
     assert r.status_code == 200
     assert r.json()["calibrated"] is True
-    assert r.json()["mappingModelVersion"] == "v1"
 
-    r = client.get(
-        "/api/calibrations/active/params",
-        headers=auth(student),
-        params={"deviceFingerprint": "fp-1"},
-    )
+    r = active_model()
     assert r.status_code == 200
-    assert r.json()["params"] == params_v1
+    assert r.json()["modelUbjBase64"] == model_v1
 
-    r = post_params("v2", params_v2)
-    assert r.status_code == 201
+    # Bộ mới thay thế bộ cũ (bộ cũ bị deactivate)
+    r = post_model(model_v2, mae=0.01)
+    assert r.status_code == 201, r.text
+    r = active_model()
+    assert r.json()["modelUbjBase64"] == model_v2
 
-    r = client.get(
-        "/api/calibrations/active",
-        headers=auth(student),
-        params={"deviceFingerprint": "fp-1"},
-    )
-    assert r.json()["mappingModelVersion"] == "v2"
+    # base64 hỏng -> 422
+    r = post_model("!!!khong-phai-base64!!!")
+    assert r.status_code == 422, r.text
 
-    r = client.get(
-        "/api/calibrations/active/params",
-        headers=auth(student),
-        params={"deviceFingerprint": "fp-1"},
-    )
-    assert r.json()["params"] == params_v2
-
+    # thiếu model -> 422 (validation)
     r = client.post(
         "/api/calibrations",
         headers=auth(student),
-        json={
-            "deviceFingerprint": "fp-1",
-            "numPoints": 16,
-            "params": [0.1, 0.2],
-        },
+        json={"deviceFingerprint": "fp-1", "numPoints": 16},
     )
     assert r.status_code == 422
+
+    # model vẫn là bộ v2 sau các request lỗi
+    assert active_model().json()["modelUbjBase64"] == model_v2
 
     r = client.get(
         "/api/calibrations/active",

@@ -1,5 +1,6 @@
+import base64
+import binascii
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
@@ -14,16 +15,19 @@ from app.models.calibration import CalibrationParam, CalibrationSession, Device
 from app.schemas.calibration import (
     CalibrationActiveOut,
     CalibrationCreateIn,
+    CalibrationModelOut,
     CalibrationOut,
-    CalibrationParamsOut,
     CalibrationSettingsOut,
 )
 
 router = APIRouter(prefix="/api/calibrations", tags=["calibrations"])
 
+# Nhãn phiên bản cho mô hình ánh xạ (pitch, yaw) -> (x, y) hiện tại. Ghi kèm mỗi
+# bản ghi để sau này đổi thuật toán còn phân biệt được model cũ/mới.
+MAPPING_MODEL_VERSION = "ubj-linreg-v1"
 
-def _to_float(value: Decimal | float) -> float:
-    return float(value)
+# Chặn trên kích thước model .ubj nhận từ client (model thật ~1-3KB).
+MAX_MODEL_UBJ_BYTES = 256 * 1024
 
 
 async def _active_param(
@@ -47,14 +51,36 @@ async def _find_device(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+def _decode_model(model_ubj_base64: str) -> bytes:
+    try:
+        raw = base64.b64decode(model_ubj_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="modelUbjBase64 không phải base64 hợp lệ",
+        ) from exc
+    if not raw:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model .ubj rỗng"
+        )
+    if len(raw) > MAX_MODEL_UBJ_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="model .ubj quá lớn",
+        )
+    return raw
+
+
 @router.post("", response_model=CalibrationOut, status_code=201)
 async def save_calibration_params(
     body: CalibrationCreateIn,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lưu bộ 6 tham số hiệu chỉnh (từ POST /calibrate/fit của AI service) làm
-    calibration ACTIVE cho (user, device). Mọi bộ cũ bị deactivate ngay."""
+    """Lưu model hiệu chỉnh (.ubj) từ gaze service làm calibration ACTIVE cho
+    (user, device). Mọi bộ cũ bị deactivate ngay."""
+    model_ubj = _decode_model(body.model_ubj_base64)
+
     device = await _upsert_device(
         db,
         user_id=user.id,
@@ -63,10 +89,11 @@ async def save_calibration_params(
         screen_height_px=body.screen_height_px,
     )
     now = datetime.now(timezone.utc)
+    num_points = max(1, min(body.num_points, 64))
     cal_session = CalibrationSession(
         user_id=user.id,
         device_id=device.id,
-        num_points=max(1, min(body.num_points, 25)),
+        num_points=num_points,
         status="completed",
         finished_at=now,
     )
@@ -86,10 +113,10 @@ async def save_calibration_params(
         calibration_session_id=cal_session.id,
         user_id=user.id,
         device_id=device.id,
-        params=[Decimal(str(v)) for v in body.params],
-        model_ubj=None,
+        params=None,  # protocol 6 tham số kappa đã bỏ
+        model_ubj=model_ubj,
         mae_px=body.mae_px,
-        mapping_model_version=body.mapping_model_version,
+        mapping_model_version=MAPPING_MODEL_VERSION,
         is_active=True,
     )
     db.add(param)
@@ -98,7 +125,7 @@ async def save_calibration_params(
     return CalibrationOut(
         id=param.id,
         mae_px=param.mae_px,
-        mapping_model_version=param.mapping_model_version,
+        num_points=num_points,
         device_fingerprint=device.device_fingerprint,
         valid_from=param.valid_from,
     )
@@ -121,34 +148,39 @@ async def get_active_calibration(
             status.HTTP_404_NOT_FOUND, detail="Chưa có calibration cho thiết bị này"
         )
     return CalibrationActiveOut(
-        calibrated=param.has_params,
+        calibrated=param.has_model,
         mae_px=param.mae_px,
-        mapping_model_version=param.mapping_model_version,
         calibrated_at=param.valid_from,
     )
 
 
-@router.get("/active/params", response_model=CalibrationParamsOut)
-async def get_active_calibration_params(
+@router.get("/active/model", response_model=CalibrationModelOut)
+async def get_active_calibration_model(
     device_fingerprint: str = Query(alias="deviceFingerprint"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Trả bộ [a1, a2, b1, a3, a4, b2] active để client gửi vào WS /infer của
-    AI service (config message) khi stream mà không cần calibrate lại."""
+    """Trả model .ubj đang active (base64) để client nạp lại vào gaze service
+    qua `POST /session/{sid}/import` mà không cần hiệu chỉnh lại."""
     device = await _find_device(db, user.id, device_fingerprint)
     if device is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, detail="Chưa có calibration cho thiết bị này"
         )
     param = await _active_param(db, user.id, device.id)
-    if param is None or not param.has_params:
+    if param is None or not param.has_model:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail="Chưa có params calibration cho thiết bị này",
+            detail="Chưa có model calibration cho thiết bị này",
         )
-    return CalibrationParamsOut(
-        params=[_to_float(v) for v in param.params],
+    if param.model_ubj is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Bản ghi calibration cũ không có model .ubj — hãy hiệu chỉnh lại",
+        )
+    return CalibrationModelOut(
+        model_ubj_base64=base64.b64encode(param.model_ubj).decode("ascii"),
+        mae_px=param.mae_px,
     )
 
 

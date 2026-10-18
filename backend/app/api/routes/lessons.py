@@ -681,5 +681,9 @@ async def internal_reindex_all():
     dependencies=[Depends(require_internal_token)],
 )
 async def internal_embedding_status():
-    """Thống kê trạng thái embedding + tiến độ job backfill."""
-    return {"counts": await embedding.counts(), "job": embedding.job_status()}
+    """Thống kê trạng thái embedding + tiến độ job backfill + độ lệch vector."""
+    return {
+        "counts": await embedding.counts(),
+        "drift": await embedding.drift(),
+        "job": embedding.job_status(),
+    }

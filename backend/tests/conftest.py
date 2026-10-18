@@ -48,6 +48,43 @@ except Exception:
     pass
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """Bỏ comment `-- ...` và `/* ... */` (không đụng vào chuỗi và $$ ... $$).
+
+    Cần thiết vì comment trong migrations có thể chứa dấu `;` (vd
+    `-- ... tham số kappa; ACTIVE duy nhất ...`), khiến bước tách statement
+    cắt sai và sinh lỗi syntax khi chạy local. CI dùng psql -f nên không dính.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    in_single = False
+    in_dollar = False
+    while i < n:
+        if not in_single and sql[i : i + 2] == "$$":
+            in_dollar = not in_dollar
+            out.append("$$")
+            i += 2
+            continue
+        if not in_dollar and sql[i] == "'":
+            in_single = not in_single
+            out.append("'")
+            i += 1
+            continue
+        if not in_single and not in_dollar:
+            if sql[i : i + 2] == "--":
+                newline = sql.find("\n", i)
+                i = n if newline == -1 else newline
+                continue
+            if sql[i : i + 2] == "/*":
+                end = sql.find("*/", i + 2)
+                i = n if end == -1 else end + 2
+                continue
+        out.append(sql[i])
+        i += 1
+    return "".join(out)
+
+
 def _split_sql(sql: str) -> list[str]:
     """Chia file SQL thành từng statement, tôn trọng $$...$$ và '...'."""
     stmts: list[str] = []
@@ -57,7 +94,8 @@ def _split_sql(sql: str) -> list[str]:
     i = 0
     import re as _re
 
-    cleaned = _re.sub(r"^\s*BEGIN\s*;\s*", "", sql, flags=_re.IGNORECASE)
+    cleaned = _strip_sql_comments(sql)
+    cleaned = _re.sub(r"^\s*BEGIN\s*;\s*", "", cleaned, flags=_re.IGNORECASE)
     cleaned = _re.sub(r"\s*COMMIT\s*;\s*$", "", cleaned, flags=_re.IGNORECASE)
     while i < len(cleaned):
         if not in_single and cleaned[i : i + 2] == "$$":
