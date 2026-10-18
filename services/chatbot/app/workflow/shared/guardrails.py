@@ -15,7 +15,7 @@ load_dotenv()
 from langchain_core.prompts import ChatPromptTemplate
 
 from ..state import GraphState
-from .models import create_llm
+from .providers import create_llm
 from .prompts import VALIDATE_SYSTEM_PROMPT
 from .retrieval import format_context
 

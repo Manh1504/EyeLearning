@@ -1,3 +1,9 @@
+"""Factory tạo LLM / embedding / VLM theo tên trong biến môi trường.
+
+`message_text` chuẩn hóa nội dung model trả về (Gemini trả list content block,
+Ollama trả string) thành string.
+"""
+
 import os
 from pathlib import Path
 

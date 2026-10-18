@@ -4,6 +4,7 @@
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
 backend/.venv
 services/chatbot/.venv/
 

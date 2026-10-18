@@ -1,0 +1,33 @@
+# Dependencies cho service chatbot: web API + ingest slide + workflow RAG.
+#
+# KHÔNG gồm các gói embedding local (sentence-transformers,
+# langchain-huggingface, torch...) vì trong container dùng EMBEDDING_NAME=api
+# hoặc gemini. Xem app/workflow/shared/providers.py: import HuggingFaceEmbeddings
+# đã được chuyển thành lazy nên không cần cài các gói này.
+
+# Web service
+fastapi
+uvicorn[standard]
+python-dotenv
+
+# PostgreSQL + pgvector (checkpoint hội thoại & vector truy hồi)
+psycopg[binary]
+psycopg_pool
+pgvector
+langgraph
+langgraph-checkpoint-postgres
+
+# LangChain + các LLM provider (Gemini/DeepSeek/Ollama)
+langchain-core
+langchain-google-genai
+langchain-deepseek
+langchain-ollama
+langsmith
+
+# Tiện ích
+httpx
+pymupdf      # render slide PDF -> PNG (ingest)
+boto3        # đọc file từ S3/R2 (app/services/storage.py)
+
+# Test (chỉ dùng khi chạy pytest; không ảnh hưởng runtime)
+pytest

@@ -26,6 +26,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.postgres import PostgresSaver
 
 from app.workflow.graph import build_graph
+from app.workflow.shared import message_text
 from app.workflow.shared.retrieval import close_retriever
 from app.settings import database_url
 from app.schemas import ChatRequest, ChatResponse
@@ -36,26 +37,6 @@ def require_internal_token(x_chatbot_token: str = Header(default="")) -> None:
     expected = os.getenv("CHATBOT_INTERNAL_TOKEN", "")
     if not expected or not secrets.compare_digest(x_chatbot_token, expected):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-
-
-def _as_text(content: object) -> str:
-    """Chuẩn hóa nội dung model trả về thành string.
-
-    Gemini có thể trả list các content block (vd text kèm metadata) thay vì
-    string; Ollama luôn trả string. Ta ghép các phần text lại.
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and isinstance(block.get("text"), str):
-                parts.append(block["text"])
-        return "".join(parts)
-    return str(content) if content is not None else ""
-
 
 
 @asynccontextmanager
@@ -106,7 +87,7 @@ async def chat(request: Request, payload: ChatRequest):
     result = await run_in_threadpool(graph.invoke, inputs, config)
 
     citations = result.get("citations") or []
-    answer = _as_text(result.get("draft_response"))
+    answer = message_text(result.get("draft_response"))
     answer = re.sub(
         r"\[(\d+)\]",
         lambda match: match.group(0) if int(match.group(1)) <= len(citations) else "",

@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
-from ...shared.models import create_llm, message_text
+from ...shared.providers import create_llm, message_text
 from ...shared.prompts import FALLBACK_SYSTEM_PROMPT
 from ...state import GraphState
 

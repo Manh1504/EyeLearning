@@ -4,10 +4,11 @@ Gom lại các factory model, prompt và công cụ truy hồi để các module
 import ngắn gọn: `from app.workflow.shared import create_llm, ...`.
 """
 
-from .models import (
+from .providers import (
     create_llm,
     create_embedding,
     create_vlm,
+    message_text,
     OllamaAPIEmbeddings,
 )
 from .prompts import (
@@ -32,6 +33,7 @@ __all__ = [
     "create_llm",
     "create_embedding",
     "create_vlm",
+    "message_text",
     "OllamaAPIEmbeddings",
     "ROUTER_SYSTEM_PROMPT",
     "QA_SYSTEM_PROMPT",

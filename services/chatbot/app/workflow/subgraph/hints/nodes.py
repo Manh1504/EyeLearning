@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
-from ...shared.models import create_llm, message_text
+from ...shared.providers import create_llm, message_text
 from ...shared.prompts import CITATION_RULE, HINTS_SYSTEM_PROMPT, STRICT_SUFFIX
 from ...shared.retrieval import format_context
 from ...state import GraphState

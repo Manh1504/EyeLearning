@@ -18,7 +18,7 @@ from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 
 from ..state import Citation, RetrievedDoc
-from .models import create_embedding
+from .providers import create_embedding
 from app.settings import database_url
 
 # Lấy slide kèm ngữ cảnh môn/chương/bài và điểm tương đồng cosine.

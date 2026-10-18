@@ -12,9 +12,7 @@ from langgraph.graph import StateGraph, START, END
 
 from .state import GraphState
 from .router import router_node
-from .subgraph.qa.graph import qa_subgraph
-from .subgraph.hints.graph import hints_subgraph
-from .subgraph.fallback.graph import fallback_subgraph
+from .subgraph import qa_subgraph, hints_subgraph, fallback_subgraph
 
 
 def route_by_intent(state: GraphState) -> str:

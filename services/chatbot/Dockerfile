@@ -16,8 +16,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Cài dependencies trước để tận dụng cache layer
-COPY requirements.docker.txt .
-RUN pip install -r requirements.docker.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 # Chạy bằng user không phải root
 RUN useradd --create-home --uid 10001 appuser
