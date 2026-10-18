@@ -8,15 +8,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket
 from fastapi.responses import JSONResponse, Response
 
-from models import Pipline
+from models import Pipeline
 from schemas import SessionRequest
 from session_manager import SessionManager
 
-MIN_SAMPLES = 2  # số mẫu tối thiểu cho mỗi điểm trước khi train
+MIN_SAMPLES = 1  # số mẫu tối thiểu cho mỗi điểm trước khi train
 
 pipeline = None
 sessions = SessionManager()
 inference_lock = threading.Lock()  # torch/mediapipe không thread-safe
+GPU_AVAILABLE = torch.cuda.is_available()  # cố định lúc khởi động (cuda không đổi runtime)
 
 
 # ===================================================== #
@@ -25,7 +26,7 @@ inference_lock = threading.Lock()  # torch/mediapipe không thread-safe
 @asynccontextmanager
 async def lifespan(app):
     global pipeline
-    pipeline = Pipline(None)  # cố định mediapipe + unigaze, load 1 lần
+    pipeline = Pipeline()  # cố định mediapipe + unigaze, load 1 lần
     task = asyncio.create_task(cleanup_loop())
     yield
     task.cancel()
@@ -56,7 +57,7 @@ def run_pipeline(frame):  # (pitch, yaw) hoặc None nếu không có khuôn m�
 def health():
     return {
         "status": "ok" if pipeline is not None else "degraded",
-        "gpu_available": torch.cuda.is_available(),
+        "gpu_available": GPU_AVAILABLE,
         "pipeline_ready": pipeline is not None,
     }
 
@@ -71,7 +72,6 @@ def session_status(sid: str):
         raise HTTPException(404, "session not found")
     return {
         "state": s.state,
-        "samples": {pid: len(ms) for pid, ms in s.samples.items()},
         "calibrated": s.state == "ready",
     }
 
@@ -80,7 +80,7 @@ def session_status(sid: str):
 def create_session(req: SessionRequest):
     try:
         points = {p.id: (p.x, p.y) for p in req.points}
-        sid = sessions.create(req.screen_width, req.screen_height, points)
+        sid = sessions.create(points)
     except RuntimeError as e:
         raise HTTPException(503, str(e))
     return {"session_id": sid}
@@ -147,7 +147,6 @@ def download_model(sid: str):
     return Response(
         s.calib.serialize(), media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="calibration_{sid}.ubj"'})
-
 
 @app.post("/session/{sid}/import")
 async def import_model(sid: str, model: UploadFile = File(...)):

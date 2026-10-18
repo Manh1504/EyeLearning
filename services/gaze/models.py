@@ -1,9 +1,18 @@
 import os
+from pathlib import Path
+
 import torch
 import numpy as np
 import unigaze.loader as loader
 import mediapipe as mp
+
+from download_weights import WEIGHTS_DIR as _WEIGHTS_DIR
 from preprocessing import Preprocessor
+
+# Cùng thư mục với download_weights.py (cạnh module, không phụ thuộc CWD).
+WEIGHTS_DIR = Path(_WEIGHTS_DIR)
+UNIGAZE_WEIGHTS = WEIGHTS_DIR / "unigaze_b16_joint.safetensors"
+MEDIAPIPE_WEIGHTS = WEIGHTS_DIR / "mediapipe.tflite"
 
 
 def get_device():
@@ -22,7 +31,7 @@ class FaceDetectorModel:
 
         options = FaceDetectorOptions(
             base_options=BaseOptions(
-                model_asset_path="weights/mediapipe.tflite",
+                model_asset_path=str(MEDIAPIPE_WEIGHTS),
                 delegate=BaseOptions.Delegate.CPU,  # luôn CPU vì model rất nhẹ 
             ),
             running_mode=VisionRunningMode.IMAGE)
@@ -50,9 +59,8 @@ class FaceDetectorModel:
 class GazeModel:
     def __init__(self, device=None):
         device = device or get_device()
-        builder_key = os.path.splitext(os.path.basename("weights/unigaze_b16_joint.safetensors"))[0]
-        self.model = loader.build_unigaze_model(builder_key)
-        self.model.load_unigaze_weights("weights/unigaze_b16_joint.safetensors")
+        self.model = loader.build_unigaze_model(UNIGAZE_WEIGHTS.stem)
+        self.model.load_unigaze_weights(str(UNIGAZE_WEIGHTS))
         self.model.to(device)
         self.model.eval()
 
@@ -64,8 +72,9 @@ class GazeModel:
     def __call__(self, preprocessed_face):
         return self.predict(preprocessed_face)
 
-class Pipline:
-    def __init__(self, args):
+
+class Pipeline:
+    def __init__(self):
         self.device = get_device()
         self.face_detector = FaceDetectorModel()
         self.gaze_estimator = GazeModel(device=self.device)

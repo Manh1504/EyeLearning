@@ -1,6 +1,6 @@
-# Gaze API — Tài liệu tích hợp cho Backend
+# Gaze API — Tài liệu tích hợp
 
-Tài liệu này mô tả đầy đủ từng API của dịch vụ ước lượng hướng nhìn (gaze estimation) để team backend có thể gọi đúng từ request đầu tiên.
+Tài liệu này mô tả đầy đủ từng API của dịch vụ ước lượng hướng nhìn (gaze estimation) để tích hợp đúng ngay từ request đầu tiên. Trong hệ thống EyeLearning, client (frontend) gọi trực tiếp qua nginx `/gaze/*`; backend chỉ lưu model `.ubj` và kiểm soát quyền.
 
 ## 1. Tổng quan
 
@@ -17,7 +17,7 @@ Dịch vụ **stateful**: server giữ session calibration trong RAM. Backend lu
 
 ```
 1. POST /session                        → tạo session, khai báo N điểm calibration
-2. POST /session/{sid}/calibrate        → gửi ảnh + point_id, lặp lại ≥ 5 lần/điểm
+2. POST /session/{sid}/calibrate        → gửi ảnh + point_id, 1 lần cho mỗi điểm
 3. POST /session/{sid}/train            → train mô hình calibration riêng cho session
 4. WS   /session/{sid}/stream           → streaming gaze thời gian thực
 ```
@@ -33,8 +33,8 @@ Dịch vụ **stateful**: server giữ session calibration trong RAM. Backend lu
 
 **Tọa độ chuẩn hóa `[0, 1]`**
 
-- Mọi `x, y` — điểm calibration khai báo, target khi train, output khi stream — đều **chuẩn hóa theo `screen_width × screen_height`** của session. `0.5` = giữa màn hình.
-- Output stream **có thể âm hoặc > 1** (người dùng nhìn ra ngoài màn hình). Đây là hành vi bình thường, không phải lỗi. Đổi sang pixel ở phía client: `px = x * screen_width`, `py = y * screen_height`.
+- Mọi `x, y` — điểm calibration khai báo, target khi train, output khi stream — đều **chuẩn hóa `[0, 1]` theo màn hình hiển thị**. `0.5` = giữa màn hình.
+- Output stream **có thể âm hoặc > 1** (người dùng nhìn ra ngoài màn hình). Đây là hành vi bình thường, không phải lỗi. Đổi sang pixel ở phía client: `px = x * innerWidth`, `py = y * innerHeight`.
 
 ### 1.2 Mô hình calibration
 
@@ -60,10 +60,10 @@ y = a3·pitch + a4·yaw + b2
 |---|---|---|
 | GET | `/health` | Kiểm tra dịch vụ đã sẵn sàng chưa |
 | POST | `/session` | Tạo session calibration, khai báo điểm |
-| GET | `/session/{sid}` | Xem trạng thái session + số mẫu từng điểm |
+| GET | `/session/{sid}` | Xem trạng thái session |
 | DELETE | `/session/{sid}` | Xóa session |
 | POST | `/session/{sid}/calibrate` | Gửi 1 frame JPEG + `point_id` để thu mẫu |
-| POST | `/session/{sid}/train` | Train mô hình calibration (cần ≥ 5 mẫu/điểm) |
+| POST | `/session/{sid}/train` | Train mô hình calibration (cần ≥ 1 mẫu/điểm) |
 | GET | `/session/{sid}/model` | Tải mô hình (.ubj) để lưu và tái sử dụng |
 | POST | `/session/{sid}/import` | Nạp lại mô hình đã lưu, bỏ qua calibration |
 | WS | `/session/{sid}/stream` | Streaming gaze: gửi binary JPEG, nhận `{x, y}` chuẩn hóa |
@@ -96,14 +96,12 @@ curl http://localhost:8000/health
 
 ### 3.2 POST `/session` — Tạo session
 
-Khai báo kích thước màn hình và danh sách N điểm calibration. Server trả về `session_id` dùng cho mọi request sau.
+Khai báo danh sách N điểm calibration. Server trả về `session_id` dùng cho mọi request sau. Toạ độ dùng thang chuẩn hóa `[0, 1]` nên không cần khai báo kích thước màn hình.
 
 **Body JSON:**
 
 | Field | Kiểu | Bắt buộc | Mô tả |
 |---|---|---|---|
-| `screen_width` | int | Có | Chiều rộng màn hình (px) |
-| `screen_height` | int | Có | Chiều cao màn hình (px) |
 | `points` | array | Có | Danh sách điểm calibration |
 | `points[].id` | string | Có | Định danh điểm (vd `"tl"`, `"c"`, ...) — dùng lại ở `/calibrate` |
 | `points[].x` | float | Có | Tọa độ chuẩn hóa `[0, 1]` |
@@ -111,8 +109,6 @@ Khai báo kích thước màn hình và danh sách N điểm calibration. Server
 
 ```json
 {
-  "screen_width": 1920,
-  "screen_height": 1080,
   "points": [
     {"id": "tl", "x": 0.125, "y": 0.167},
     {"id": "tr", "x": 0.875, "y": 0.167},
@@ -126,7 +122,7 @@ Khai báo kích thước màn hình và danh sách N điểm calibration. Server
 ```bash
 curl -X POST http://localhost:8000/session \
   -H "Content-Type: application/json" \
-  -d '{"screen_width":1920,"screen_height":1080,"points":[{"id":"tl","x":0.125,"y":0.167},{"id":"c","x":0.5,"y":0.5}]}'
+  -d '{"points":[{"id":"tl","x":0.125,"y":0.167},{"id":"c","x":0.5,"y":0.5}]}'
 ```
 
 **Thành công:**
@@ -143,7 +139,7 @@ curl -X POST http://localhost:8000/session \
 
 ### 3.3 GET `/session/{sid}` — Trạng thái session
 
-Dùng để theo dõi tiến độ thu mẫu (mỗi điểm đã có bao nhiêu mẫu) và biết khi nào train/stream được.
+Dùng để biết session còn sống và đã sẵn sàng stream chưa.
 
 ```bash
 curl http://localhost:8000/session/6f1a2b3c-...
@@ -152,7 +148,6 @@ curl http://localhost:8000/session/6f1a2b3c-...
 ```json
 {
   "state": "collecting",
-  "samples": {"tl": 5, "c": 4},
   "calibrated": false
 }
 ```
@@ -160,7 +155,6 @@ curl http://localhost:8000/session/6f1a2b3c-...
 | Field | Kiểu | Ý nghĩa |
 |---|---|---|
 | `state` | string | `collecting` (đang thu mẫu) hoặc `ready` (đã train/import) |
-| `samples` | object | Map `point_id → số mẫu đã thu` (đây là **số lượng mẫu**, không phải tọa độ) |
 | `calibrated` | bool | `true` khi `state == "ready"` — lúc này mới stream được |
 
 **Lỗi:** `404` nếu session không tồn tại.
@@ -178,7 +172,7 @@ curl -X DELETE http://localhost:8000/session/6f1a2b3c-...
 
 ### 3.5 POST `/session/{sid}/calibrate` — Thu mẫu
 
-Gửi **multipart/form-data** gồm 1 frame JPEG + `point_id` của điểm đang hiển thị trên màn hình người dùng. Server tự detect khuôn mặt, tính `(pitch, yaw)` rồi lưu 1 mẫu cho điểm đó. Lặp lại cho từng điểm tới khi mỗi điểm ≥ 5 mẫu.
+Gửi **multipart/form-data** gồm 1 frame JPEG + `point_id` của điểm đang hiển thị trên màn hình người dùng. Server tự detect khuôn mặt, tính `(pitch, yaw)` rồi lưu 1 mẫu cho điểm đó. **Mỗi điểm chỉ cần 1 mẫu** — lặp lại lần lượt cho từng điểm.
 
 | Form field | Kiểu | Mô tả |
 |---|---|---|
@@ -208,7 +202,7 @@ curl -X POST http://localhost:8000/session/6f1a2b3c.../calibrate \
 
 ### 3.6 POST `/session/{sid}/train` — Train mô hình
 
-Không cần body. Điều kiện: **mỗi điểm đã có ≥ 5 mẫu**. Server fit `LinearRegression` mapping `(pitch, yaw) → (x, y)` chuẩn hóa và đánh giá bằng 5-fold cross-validation.
+Không cần body. Điều kiện: **mỗi điểm đã có ≥ 1 mẫu**. Server fit `LinearRegression` mapping `(pitch, yaw) → (x, y)` chuẩn hóa và đánh giá bằng k-fold cross-validation (`k = min(5, số mẫu)`).
 
 ```bash
 curl -X POST http://localhost:8000/session/6f1a2b3c.../train
@@ -217,7 +211,7 @@ curl -X POST http://localhost:8000/session/6f1a2b3c.../train
 **Thành công:**
 
 ```json
-{"status": "ok", "n_samples": 25, "mae_px": 0.018}
+{"status": "ok", "n_samples": 16, "mae_px": 0.018}
 ```
 
 | Field | Kiểu | Ý nghĩa |
@@ -295,14 +289,14 @@ WebSocket gửi liên tục frame JPEG, nhận tọa độ gaze chuẩn hóa the
 | Field | Kiểu | Ý nghĩa |
 |---|---|---|
 | `ok` | bool | `false` khi frame bị bỏ qua |
-| `x`, `y` | float | Tọa độ chuẩn hóa theo `screen_width × screen_height` của session; **có thể âm hoặc > 1** |
+| `x`, `y` | float | Tọa độ chuẩn hóa theo màn hình hiển thị; **có thể âm hoặc > 1** |
 | `error` | string | `no_face` (không thấy khuôn mặt) hoặc `invalid_image` (frame hỏng) — chỉ có khi `ok = false` |
 
 **Cơ chế quan trọng khi tích hợp:**
 
 - **Drop-frame**: nếu server đang xử lý frame trước, frame mới gửi đến sẽ bị bỏ qua (không xếp hàng) để tránh trễ. Client gửi thoải mái, **không cần chờ phản hồi** của từng frame.
 - Output đã qua bộ lọc làm mượt One-Euro.
-- Đổi sang pixel ở phía client: `px = x * screen_width`, `py = y * screen_height` (lấy `screen_width/height` đã khai báo lúc tạo session).
+- Đổi sang pixel ở phía client: `px = x * innerWidth`, `py = y * innerHeight`.
 
 **Ví dụ client Python:**
 
@@ -329,7 +323,7 @@ async def main():
             resp = json.loads(await ws.recv())    # đọc response không chặn theo frame
             if resp.get("ok"):
                 x, y = resp["x"], resp["y"]       # chuẩn hóa [0, 1]
-                # px = x * screen_width; py = y * screen_height
+                # px = x * innerWidth; py = y * innerHeight
 
 
 asyncio.run(main())
@@ -351,36 +345,39 @@ ws.onmessage = (e) => {
 
 ## 4. Quy trình tích hợp end-to-end
 
-Mô tả đầy đủ vai trò của backend trong từng bước:
+Trong hệ thống EyeLearning, **frontend gọi trực tiếp** dịch vụ này qua nginx
+(`/gaze/*` → gaze) và qua WebSocket; backend chỉ giữ vai trò lưu model `.ubj`
+và kiểm soát quyền. Luồng chuẩn:
 
 ```
 Bước 1 — Bắt đầu calibration
-  Backend gọi POST /session với screen_width/height + N điểm (lấy từ cấu hình UI).
-  Lưu session_id tạm thời (gắn với user + device đang calibrate).
+  Client gọi POST /session với N điểm (lấy từ cấu hình UI) và lưu session_id.
 
-Bước 2 — Thu mẫu (client lái)
-  Client hiển thị lần lượt từng điểm; mỗi lần gửi frame JPEG + point_id
-  (qua backend hoặc gọi thẳng dịch vụ này).
-  Backend định kỳ gọi GET /session/{sid} để biết mỗi điểm đã đủ ≥ 5 mẫu chưa.
-  Nếu nhận status "no_face" / "invalid_image" → yêu cầu client chụp lại điểm đó.
+Bước 2 — Thu mẫu
+  Client hiển thị lần lượt từng điểm; mỗi điểm gửi 1 frame JPEG + point_id.
+  Nếu nhận status "no_face" / "invalid_image" → chụp lại điểm đó (tối đa vài lần).
 
 Bước 3 — Train
-  Backend gọi POST /session/{sid}/train.
-  - 422 → đọc map detail, báo client thu thêm mẫu cho các điểm còn thiếu.
-  - ok  → chuyển sang bước 4; có thể lưu lại mae_px làm chỉ số chất lượng.
+  Client gọi POST /session/{sid}/train.
+  - 422 → đọc map detail, thu thêm mẫu cho các điểm còn thiếu.
+  - ok  → sang bước 4; gửi kèm mae_px cho backend (ngưỡng pass/fail).
 
-Bước 4 — Streaming
-  Backend mở proxy WebSocket tới /session/{sid}/stream, chuyển tiếp binary JPEG
-  (client → server) và JSON kết quả (server → client) nguyên dạng.
-  Lưu ý: proxy phải giữ nguyên kiểu message — binary thì forward binary, text thì forward text.
+Bước 4 — Lưu model để tái sử dụng
+  Client gọi GET /session/{sid}/model → gửi bytes (.ubj) cho backend
+  (backend lưu vào calibration_params.model_ubj của Postgres).
+
+Bước 5 — Streaming
+  Client mở WebSocket trực tiếp tới /session/{sid}/stream, gửi binary JPEG,
+  nhận JSON {ok, x, y}. Không proxy qua backend (giảm 1 hop, không nghẽn event loop).
 
 Dọn dẹp
-  Khi phiên kết thúc (client đóng trang / stream xong), backend gọi
-  DELETE /session/{sid} để trả slot về giới hạn 100 session.
+  Khi phiên kết thúc (đóng trang / đổi bài), gọi DELETE /session/{sid}
+  để trả slot về giới hạn 100 session.
 
 Tái sử dụng calibration (bỏ qua bước 2-3)
-  Lần sau: POST /session mới → POST /session/{sid}/import với file .ubj đã lưu
-  trong DB từ lần trước → stream ngay.
+  Phiên cũ hết TTL/restart → POST /session mới → POST /session/{sid}/import với
+  file .ubj đã lưu trong DB → stream ngay, người học không phải hiệu chỉnh lại.
+  Chỉ import khi màn hình không đổi (model gắn với kích thước màn hình lúc train).
 ```
 
 Ví dụ gọi tuần tự bằng Python:
@@ -399,19 +396,20 @@ points = [
 ]
 req = urllib.request.Request(
     f"{BASE}/session",
-    data=json.dumps({"screen_width": 1920, "screen_height": 1080, "points": points}).encode(),
+    data=json.dumps({"points": points}).encode(),
     headers={"Content-Type": "application/json"},
 )
 sid = json.load(urllib.request.urlopen(req))["session_id"]
 
-# 2. Thu mẫu: lặp tới khi mỗi điểm >= 5 mẫu
-#    (kiểm tra tiến độ qua GET /session/{sid}, xem mục 3.3)
+# 2. Thu mẫu: 1 lần cho mỗi điểm (multipart: image + point_id)
 
 # 3. Train
 resp = json.load(urllib.request.urlopen(f"{BASE}/session/{sid}/train", data=b""))
-print(resp)  # {"status": "ok", "n_samples": 25, "mae_px": ...}
+print(resp)  # {"status": "ok", "n_samples": 16, "mae_px": ...}
 
-# 4. Streaming qua WebSocket — xem mục 3.9
+# 4. Lưu model: GET /session/{sid}/model -> gửi bytes cho backend
+
+# 5. Streaming qua WebSocket — xem mục 3.9
 ```
 
 ## 5. Tổng hợp mã lỗi
@@ -437,10 +435,10 @@ print(resp)  # {"status": "ok", "n_samples": 25, "mae_px": ...}
 
 - [ ] Gọi `GET /health` khi khởi động; chặn tính năng nếu `pipeline_ready = false`.
 - [ ] Luôn khởi tạo qua `POST /session`, không gọi thẳng endpoint con.
-- [ ] Theo dõi `GET /session/{sid}` trong lúc thu mẫu để biết điểm nào còn thiếu.
+- [ ] Mỗi điểm chỉ cần 1 mẫu; retry khi `no_face` / `invalid_image`.
 - [ ] Xử lý `status` (không chỉ HTTP code) ở `/calibrate` và `/import`.
 - [ ] Nhân kích thước viewport ở client khi hiển thị; chấp nhận tọa độ âm / > 1.
-- [ ] Proxy WebSocket phải forward nguyên dạng binary/text, không ép kiểu message.
 - [ ] Gọi `DELETE /session/{sid}` khi kết thúc để không chạm giới hạn 100 session.
 - [ ] Lưu file `.ubj` từ `/model` vào DB để tái sử dụng qua `/import` (tránh calibration lại mỗi phiên).
+- [ ] Chỉ `/import` khi màn hình không đổi so với lúc train.
 - [ ] Tự bảo vệ API này (không có auth), không để lộ `session_id` ra ngoài phạm vi kiểm soát.

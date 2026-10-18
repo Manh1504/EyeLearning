@@ -67,10 +67,10 @@ def transform_frame(frame, device, size):
     return transformers(frame_rgb).unsqueeze(0).to(device)
 
 
-def estimate_head_pose(landmarks, face_model, camera, distortion, iterate=True):
+def estimate_head_pose(landmarks, face_model, camera, distortion):
     ret, rvec, tvec = cv2.solvePnP(face_model, landmarks, camera, distortion, flags=cv2.SOLVEPNP_EPNP)
-    if iterate:
-        ret, rvec, tvec = cv2.solvePnP(face_model, landmarks, camera, distortion, rvec, tvec, True)
+    # Chạy lại từ nghiệm đầu để hội tụ chính xác hơn
+    ret, rvec, tvec = cv2.solvePnP(face_model, landmarks, camera, distortion, rvec, tvec, True)
     return rvec, tvec
 
 
@@ -123,15 +123,6 @@ def normalize_image(img, landmarks, focal_norm, distance_norm, roi_size, center,
 
     return img_warped, R, hR_norm, landmarks_warped, W
 
-
-# ============================================== #
-# THÊM THAM SỐ TINH NHẰM KHẮC PHỤC ĐỘ LỆCH KAPPA #
-# ============================================== #
-def apply_correction(pitch_raw, yaw_raw, params):
-    a1, a2, b1, a3, a4, b2 = params
-    pitch_c = a1 * pitch_raw + a2 * yaw_raw + b1
-    yaw_c = a3 * yaw_raw + a4 * pitch_raw + b2
-    return pitch_c, yaw_c
 
 # ========================= #
 #  ĐÓNG GÓI THÀNH PIPELINE  #

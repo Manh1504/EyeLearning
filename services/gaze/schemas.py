@@ -8,6 +8,4 @@ class CalibPoint(BaseModel):
 
 
 class SessionRequest(BaseModel):
-    screen_width: int
-    screen_height: int
     points: list[CalibPoint]

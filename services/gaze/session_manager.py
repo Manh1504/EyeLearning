@@ -6,8 +6,7 @@ from preprocessing import OneEuroFilter2D
 
 
 class Session:
-    def __init__(self, screen_w, screen_h, points):  # points: dict id -> (x, y)
-        self.screen = (screen_w, screen_h)
+    def __init__(self, points):  # points: dict id -> (x, y)
         self.points = points
         self.samples = {}          # point_id -> list [(pitch, yaw, x, y)]
         self.calib = Calibration()
@@ -22,11 +21,11 @@ class SessionManager:
         self.sessions = {}         # sid -> Session
         self.ttl, self.max = ttl, max_sessions
 
-    def create(self, screen_w, screen_h, points):
+    def create(self, points):
         if len(self.sessions) >= self.max:
             raise RuntimeError("too many sessions")
         sid = str(uuid.uuid4())
-        self.sessions[sid] = Session(screen_w, screen_h, points)
+        self.sessions[sid] = Session(points)
         return sid
 
     def get(self, sid):
