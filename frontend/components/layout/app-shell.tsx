@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { useAuthState } from "@/lib/hooks/use-stored-user";
+import { useAuthState } from "@/hooks/use-stored-user";
 import { ErrorState } from "@/components/ui/error-state";
 import type { Role } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";

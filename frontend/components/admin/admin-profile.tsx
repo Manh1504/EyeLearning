@@ -5,7 +5,7 @@ import { Icon } from "@/components/ui/icon";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuthState } from "@/lib/hooks/use-stored-user";
+import { useAuthState } from "@/hooks/use-stored-user";
 import { ROLE_LABEL } from "@/lib/api/auth";
 import { initialsOf } from "@/lib/utils";
 

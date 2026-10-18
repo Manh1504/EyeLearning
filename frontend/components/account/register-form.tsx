@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { register, ROLE_HOME, type AuthUser } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";
-import { AUTH_USER_QUERY_KEY } from "@/lib/hooks/use-stored-user";
+import { AUTH_USER_QUERY_KEY } from "@/hooks/use-stored-user";
 
 const inputClass =
   "h-12 rounded-xl border-[#e8e8e3] bg-[#fdfdfa] px-4 text-[15px] text-black shadow-none placeholder:text-[#9a9a9a] hover:border-[#d7dbd2] focus-visible:border-black focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-black/10";

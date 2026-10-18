@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { login, primaryRole, ROLE_HOME, type AuthUser, type Role } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";
-import { AUTH_USER_QUERY_KEY } from "@/lib/hooks/use-stored-user";
+import { AUTH_USER_QUERY_KEY } from "@/hooks/use-stored-user";
 
 const PROTECTED = ["/student", "/teacher", "/admin"] as const;
 
