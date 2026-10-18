@@ -29,6 +29,7 @@ from app.models.course import (
 )
 from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
 from app.models.profile import Gender, StudentProfile, TeacherProfile, UserProfile
+from app.models.quiz import QuizAssignment, QuizAttempt, QuizAttemptSession
 
 __all__ = [
     "AoiDwellStat",
@@ -57,6 +58,9 @@ __all__ = [
     "Permission",
     "Role",
     "RolePermission",
+    "QuizAssignment",
+    "QuizAttempt",
+    "QuizAttemptSession",
     "SlideCoverageStat",
     "StudentProfile",
     "TeacherProfile",

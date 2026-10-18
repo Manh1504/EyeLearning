@@ -63,6 +63,11 @@ class OllamaAPIEmbeddings(Embeddings):
                 f"{list(data)}"
             )
 
+        expected_dim = int(os.getenv("EMBEDDING_DIM", "4096"))
+        if len(embeddings) != len(texts):
+            raise ValueError("Số vector embedding không khớp số văn bản")
+        if any(len(vector) != expected_dim for vector in embeddings):
+            raise ValueError(f"Embedding phải có đúng {expected_dim} chiều")
         return embeddings
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -75,14 +80,22 @@ class OllamaAPIEmbeddings(Embeddings):
 def create_llm(llm_name: str) -> BaseChatModel:
     if llm_name == "gemini":
         return ChatGoogleGenerativeAI(
-            model="gemini-3.5-flash-lite"
+            model=os.getenv("GEMINI_LLM_MODEL", "gemini-flash-lite-latest"),
+            temperature=0,
+            timeout=float(os.getenv("GEMINI_TIMEOUT", "45")),
+            max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "1")),
         )
     elif llm_name == "deepseek":
-        return ChatDeepSeek()
+        return ChatDeepSeek(
+            model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            temperature=0,
+        )
     elif llm_name == "local":
         return ChatOllama(
-            model="qwen3.5:9b",
+            model=os.getenv("OLLAMA_LLM_MODEL", "qwen3.5:9b"),
             temperature=0,
+            reasoning=False,
+            num_predict=int(os.getenv("OLLAMA_NUM_PREDICT", "512")),
         )
 
     raise ValueError(f"LLM không được hỗ trợ: {llm_name!r}")
@@ -114,7 +127,8 @@ def create_embedding(embedding_name: str) -> Embeddings:
 
     elif embedding_name == "gemini":
         embedding = GoogleGenerativeAIEmbeddings(
-            model="gemini-embedding-2"
+            model="gemini-embedding-2",
+            output_dimensionality=int(os.getenv("EMBEDDING_DIM", "4096")),
         )        
 
     elif embedding_name == "api":
@@ -128,7 +142,7 @@ def create_embedding(embedding_name: str) -> Embeddings:
 def create_vlm(vlm_name: str) -> BaseChatModel:
     if vlm_name == "local":
         vlm = ChatOllama(
-            model="qwen3-vl:8b-instruct",
+            model=os.getenv("OLLAMA_VLM_MODEL", "qwen3-vl:8b-instruct"),
             temperature=0,
             reasoning=False
         )
@@ -136,3 +150,20 @@ def create_vlm(vlm_name: str) -> BaseChatModel:
         raise ValueError(f"VLM không được hỗ trợ: {vlm_name!r}")
 
     return vlm
+
+def message_text(content: object) -> str:
+    """Chuẩn hóa nội dung trả về của model thành string.
+
+    Gemini có thể trả list content block; Ollama trả string. Ghép các phần text.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content) if content is not None else ""

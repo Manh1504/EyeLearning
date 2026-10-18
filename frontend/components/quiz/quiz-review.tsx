@@ -72,7 +72,7 @@ export function QuizReview({ assignmentId }: { assignmentId: string }) {
             </Badge>
             <h1 className="mt-4 font-display text-3xl leading-tight text-balance sm:text-4xl">{assignment.title}</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Xem lại đáp án và phần giải thích bên dưới. Trợ lý local có thể giúp bạn tập trung vào những câu chưa đúng.
+               Xem lại đáp án và phần giải thích bên dưới. Trợ lý học tập có thể giúp bạn tập trung vào những câu chưa đúng.
             </p>
             <Progress value={percentage} className="mt-6 max-w-xl" indicatorClassName="bg-[#789472]" />
           </div>
@@ -137,7 +137,7 @@ export function QuizReview({ assignmentId }: { assignmentId: string }) {
         </section>
 
       </div>
-      <FloatingQuizChat questions={assignment.questions} attempt={attempt} />
+      <FloatingQuizChat assignmentId={assignment.id} questions={assignment.questions} attempt={attempt} />
     </div>
   );
 }

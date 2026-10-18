@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,6 +26,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Progress } from "@/components/ui/progress";
 import { FullPageSpinner, Spinner } from "@/components/ui/spinner";
 import { FloatingQuizChat } from "@/components/quiz/floating-quiz-chat";
+import { ApiError } from "@/lib/api/client";
 
 export function QuizRunner({ assignmentId }: { assignmentId: string }) {
   const router = useRouter();
@@ -35,11 +36,20 @@ export function QuizRunner({ assignmentId }: { assignmentId: string }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [expired, setExpired] = useState(false);
+  const expiresAt = assignmentQuery.data?.expiresAt;
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const delay = Math.max(0, new Date(expiresAt).getTime() - Date.now());
+    const timeout = window.setTimeout(() => setExpired(true), delay);
+    return () => window.clearTimeout(timeout);
+  }, [expiresAt]);
 
   if (assignmentQuery.isLoading || attemptQuery.isLoading) {
     return <FullPageSpinner label="Đang chuẩn bị bài làm..." />;
   }
-  if (assignmentQuery.isError || !assignmentQuery.data) {
+  if (assignmentQuery.isError || attemptQuery.isError || !assignmentQuery.data) {
     return (
       <div className="mx-auto max-w-xl px-4 py-20">
         <ErrorState
@@ -75,6 +85,19 @@ export function QuizRunner({ assignmentId }: { assignmentId: string }) {
           </Button>
         </div>
       </main>
+    );
+  }
+
+  if (assignment.status === "closed" || expired) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-20">
+        <ErrorState
+          title="Bài tập đã đóng"
+          description="Hạn nộp hoặc thời gian làm bài đã kết thúc. Bài chưa nộp không thể ghi điểm."
+          onRetry={() => router.push("/student/assignments")}
+          retryLabel="Về danh sách"
+        />
+      </div>
     );
   }
 
@@ -118,7 +141,7 @@ export function QuizRunner({ assignmentId }: { assignmentId: string }) {
             <RiTimeLine className="size-4" />
             {assignment.durationMinutes} phút
           </div>
-          <Button size="sm" onClick={requestSubmit} disabled={submitAttempt.isPending}>
+          <Button size="sm" onClick={requestSubmit} disabled={submitAttempt.isPending || expired}>
             {submitAttempt.isPending && <Spinner />}
             Nộp bài
           </Button>
@@ -193,7 +216,9 @@ export function QuizRunner({ assignmentId }: { assignmentId: string }) {
           </div>
           {submitAttempt.isError && (
             <p role="alert" className="mt-4 text-center text-sm text-destructive">
-              Chưa thể lưu bài làm. Vui lòng thử nộp lại.
+              {submitAttempt.error instanceof ApiError
+                ? submitAttempt.error.message
+                : "Chưa thể lưu bài làm. Vui lòng thử nộp lại."}
             </p>
           )}
         </section>
@@ -257,7 +282,7 @@ export function QuizRunner({ assignmentId }: { assignmentId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <FloatingQuizChat questions={assignment.questions} />
+      <FloatingQuizChat assignmentId={assignment.id} questions={assignment.questions} />
     </main>
   );
 }

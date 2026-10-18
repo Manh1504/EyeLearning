@@ -10,6 +10,7 @@ Slide đã được `Ingestion` (ingest.py) nhúng vector và lưu vào bảng
 """
 
 import os
+import threading
 
 import psycopg
 from pgvector import Vector
@@ -69,7 +70,7 @@ class Retriever:
     def search(
         self,
         query: str,
-        course_id: int,
+        course_id: str,
         k: int | None = None,
         threshold: float | None = None,
     ) -> list[RetrievedDoc]:
@@ -91,17 +92,23 @@ class Retriever:
 
     def close(self):
         self.conn.close()
+        http = getattr(self.embedding, "http", None)
+        if http is not None:
+            http.close()
 
 
 # --- Singleton: dùng chung 1 kết nối trong toàn bộ tiến trình -------------
 _retriever: Retriever | None = None
+_retriever_lock = threading.Lock()
 
 
 def get_retriever() -> Retriever:
     """Lazy singleton để không mở nhiều kết nối DB không cần thiết."""
     global _retriever
     if _retriever is None:
-        _retriever = Retriever()
+        with _retriever_lock:
+            if _retriever is None:
+                _retriever = Retriever()
     return _retriever
 
 

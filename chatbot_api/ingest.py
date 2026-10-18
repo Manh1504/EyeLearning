@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 
 class Ingestion:
     # Số chiều vector embedding, đọc từ env cho linh hoạt khi đổi EMBEDDING_NAME:
+    #   api   (qwen3-embedding:8b-ctx16k) -> 4096 (production)
     #   local (Qwen3-Embedding-0.6B)      -> 1024
-    #   api   (qwen3-embedding:8b-ctx16k) -> 4096
-    VECTOR_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
+    # Phải khớp VECTOR(<dim>) của bảng lesson_content_embedding (migration 011).
+    VECTOR_DIM = int(os.getenv("EMBEDDING_DIM", "4096"))
 
     # Số ảnh tải trước, song song với lúc VLM đang xử lý slide hiện tại
     PREFETCH = 4
@@ -60,36 +61,19 @@ class Ingestion:
 
         # Kết nối DB
         self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
-        self._init_db()
         register_vector(self.conn)
 
-    def _init_db(self):
-        with self.conn.transaction():
-            self.conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-
-            self.conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS lesson_content_embedding (
-                    lesson_content_id BIGINT PRIMARY KEY
-                        REFERENCES lesson_contents(id)
-                        ON DELETE CASCADE,
-
-                    embedding_content TEXT NOT NULL,
-                    embedding VECTOR({self.VECTOR_DIM}) NOT NULL
-                )
-            """)
-
-            self.conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_lesson_content_embedding
-                ON lesson_content_embedding
-                USING hnsw (embedding vector_cosine_ops)
-                WITH (m = 16, ef_construction = 64)
-            """)
-
     # Lấy các slide chưa embedding theo từng batch (keyset pagination)
-    def _load_slides(self, course_id: int, last_id: int, batch_size: int):
-        query = self.SLIDE_QUERY + """
+    def _load_slides(
+        self,
+        course_id: str,
+        last_id: str | None,
+        batch_size: int,
+    ):
+        cursor_filter = "" if last_id is None else "AND lc.id > %s"
+        query = self.SLIDE_QUERY + f"""
             WHERE c.id = %s
-            AND lc.id > %s
+            {cursor_filter}
 
             AND NOT EXISTS (
                 SELECT 1
@@ -101,12 +85,17 @@ class Ingestion:
             LIMIT %s
         """
 
+        params = (course_id, batch_size) if last_id is None else (
+            course_id,
+            last_id,
+            batch_size,
+        )
         with self.conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(query, (course_id, last_id, batch_size))
+            cur.execute(query, params)
             return cur.fetchall()
 
     # Lấy một slide cụ thể
-    def _load_slide(self, lesson_content_id: int):
+    def _load_slide(self, lesson_content_id: str):
         query = self.SLIDE_QUERY + " WHERE lc.id = %s"
 
         with self.conn.cursor(row_factory=dict_row) as cur:
@@ -210,8 +199,8 @@ class Ingestion:
         return len(data)
 
     # Embedding các slide cũ chưa có trong DB
-    def embed_existing(self, course_id: int, batch_size: int = 20) -> int:
-        last_id = 0
+    def embed_existing(self, course_id: str, batch_size: int = 20) -> int:
+        last_id: str | None = None
         total = 0
 
         while True:
@@ -228,7 +217,7 @@ class Ingestion:
         return total
 
     # Embedding một slide mới hoặc cập nhật lại
-    def embed_new(self, lesson_content_id: int) -> None:
+    def embed_new(self, lesson_content_id: str) -> None:
         slide = self._load_slide(lesson_content_id)
         self._embed_batch([slide])
 

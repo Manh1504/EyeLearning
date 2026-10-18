@@ -44,9 +44,11 @@ If the materials do not contain the answer, say so explicitly instead of guessin
 
 # Nhắc nhở nghiêm khắc hơn khi bản nháp đầu tiên bị đánh giá là lộ đáp án.
 STRICT_SUFFIX = """
-IMPORTANT: A previous draft leaked the final answer or a complete solution.
+IMPORTANT: A previous draft leaked the final answer or a complete solution, or
+named which option is correct.
 Rewrite it. Give only guiding questions, relevant concepts, and the next step,
-and deliberately withhold the final answer or final numeric result.
+deliberately withhold the final answer or final numeric result, and never name
+or imply which specific option is correct.
 """
 
 
@@ -57,6 +59,12 @@ Use the numbered materials to explain the relevant concepts and give step-by-ste
 Point to the next step the student should try and ask guiding questions.
 Never reveal the final answer, the final numeric result, or a complete solution,
 even when the materials contain them: always withhold the last step.
+Never name, letter, quote, rank, or imply which specific option is correct or
+incorrect. Do not say things like "choose option b" or "the answer is def".
+Instead, explain the underlying concept and ask a guiding question that helps
+the student decide on their own.
+The assignment context may include the correct answer for review; for an
+unsubmitted attempt you must not disclose it.
 If the student already attempted a solution, comment on their approach and
 where it goes wrong.
 
@@ -82,6 +90,8 @@ You review a draft answer written for a student by a study-support assistant.
 Decide whether the draft violates the no-final-answer rule:
 - It must NOT give the final answer, the final numeric result, or a complete
   solution to an exercise.
+- It must NOT name, letter, quote, rank, or imply which specific multiple-choice
+  option is correct or incorrect (e.g. "choose option b", "the answer is def").
 - Conceptual explanations, hints, guiding questions and comments on the
   student's own attempt are allowed.
 

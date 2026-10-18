@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     jwt_secret: str
     cors_origins: str
     ai_http_url: str
+    chatbot_url: str = ""
+    chatbot_timeout_seconds: float = 60.0
+    chatbot_ingest_timeout_seconds: float = 600.0
+    chatbot_internal_token: str = ""
 
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

@@ -299,6 +299,7 @@ export interface QuizAssignment {
   durationMinutes: number;
   status: QuizAssignmentStatus;
   createdAt: string;
+  expiresAt?: string;
   questions: QuizQuestion[];
 }
 
@@ -320,6 +321,6 @@ export interface QuizAssignmentInput {
   instructions: string;
   dueAt: string;
   durationMinutes: number;
-  status: QuizAssignmentStatus;
+  status: Exclude<QuizAssignmentStatus, 'closed'>;
   questions: QuizQuestion[];
 }

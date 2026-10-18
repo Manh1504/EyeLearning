@@ -1,4 +1,6 @@
 import os
+import ipaddress
+import socket
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 
@@ -13,12 +15,21 @@ class FileStorage:
     """
 
     # Provider -> tên biến môi trường chứa bucket tương ứng
-    BUCKET_ENV = {"s3": "S3_BUCKET", "r2": "R2_BUCKET"}
+    BUCKET_ENV = {"s3": "S3_BUCKET", "r2": "R2_BUCKET_NAME"}
 
     def __init__(self):
         self.provider = os.getenv("STORAGE_PROVIDER", "local").lower()
+        self.local_root = Path(os.getenv("LOCAL_MEDIA_DIR", "/app/media")).resolve()
+        public_url = os.getenv("R2_PUBLIC_URL", "")
+        configured_hosts = os.getenv("STORAGE_HTTP_ALLOWED_HOSTS", "")
+        self.allowed_http_hosts = {
+            host.strip().lower() for host in configured_hosts.split(",") if host.strip()
+        }
+        if public_url and (host := urlparse(public_url).hostname):
+            self.allowed_http_hosts.add(host.lower())
+        self.max_bytes = int(os.getenv("STORAGE_MAX_BYTES", str(50 * 1024 * 1024)))
         # Tái sử dụng 1 client để tận dụng connection pooling
-        self.http = httpx.Client(timeout=60, follow_redirects=True)
+        self.http = httpx.Client(timeout=60, follow_redirects=False)
         self._clients = {}
 
     def load(self, source: str) -> bytes:
@@ -35,15 +46,33 @@ class FileStorage:
 
         # URL công khai hoặc presigned URL
         if parsed.scheme in ("http", "https"):
-            return self.http.get(source).content
+            host = (parsed.hostname or "").lower()
+            if host not in self.allowed_http_hosts:
+                raise ValueError("HTTP slide host is not allowed")
+            for address in socket.getaddrinfo(host, parsed.port or 443):
+                ip = ipaddress.ip_address(address[4][0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    raise ValueError("Private slide host is not allowed")
+            response = self.http.get(source)
+            response.raise_for_status()
+            if len(response.content) > self.max_bytes:
+                raise ValueError("Slide file is too large")
+            return response.content
 
         # file:///duong/dan
         if parsed.scheme == "file":
-            return Path(unquote(parsed.path)).read_bytes()
+            raise ValueError("file:// sources are not allowed")
 
         # Không có scheme -> đường dẫn local hoặc object key (theo provider)
         if self.provider == "local":
-            return Path(source).read_bytes()
+            relative = source.removeprefix("/media/").lstrip("/")
+            path = (self.local_root / relative).resolve()
+            if path != self.local_root and self.local_root not in path.parents:
+                raise ValueError("Local slide path escapes media directory")
+            data = path.read_bytes()
+            if len(data) > self.max_bytes:
+                raise ValueError("Slide file is too large")
+            return data
 
         return self._load_object(
             self.provider,

@@ -86,6 +86,9 @@ jobs:
               - 'backend/requirements.txt'
               - 'backend/app/**'
               - '.github/workflows/build.yml'
+            chatbot:
+              - 'chatbot_api/**'
+              - '.github/workflows/build.yml'
             gaze:
               - 'API/Dockerfile'
               - 'API/.dockerignore'
@@ -122,6 +125,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BACKEND: ${{ steps.filter.outputs.backend }}
+          CHATBOT: ${{ steps.filter.outputs.chatbot }}
           GAZE: ${{ steps.filter.outputs.gaze }}
           NGINX: ${{ steps.filter.outputs.nginx }}
           FRONTEND: ${{ steps.filter.outputs.frontend }}
@@ -130,6 +134,7 @@ jobs:
         run: |
           if [[ "$EVENT_NAME" != "workflow_run" ]]; then
             BACKEND=true
+            CHATBOT=true
             GAZE=true
             NGINX=true
             FRONTEND=true
@@ -139,6 +144,9 @@ jobs:
           matrix='[]'
           if [[ "$BACKEND" == "true" ]]; then
             matrix=$(jq -c '. + [{"name":"backend","context":"./backend","file":"./backend/Dockerfile","build":true}]' <<< "$matrix")
+          fi
+          if [[ "$CHATBOT" == "true" ]]; then
+            matrix=$(jq -c '. + [{"name":"chatbot","context":"./chatbot_api","file":"./chatbot_api/Dockerfile","build":true}]' <<< "$matrix")
           fi
           if [[ "$NGINX" == "true" ]]; then
             matrix=$(jq -c '. + [{"name":"nginx","context":"./nginx","file":"./nginx/Dockerfile","build":true}]' <<< "$matrix")
@@ -237,3 +245,35 @@ jobs:
       - name: Bỏ qua smoke check (chưa đặt vars.SMOKE_URL)
         if: ${{ vars.SMOKE_URL == '' }}
         run: echo "vars.SMOKE_URL chưa đặt — bỏ qua smoke check (không fail pipeline)."
+
+      # Backfill embedding slide còn thiếu sau migrate/deploy, không cần SSH.
+      # Cần:
+      #   vars.CHATBOT_API_URL  = https://api.eyelearning.id.vn (hoặc URL nội bộ backend)
+      #   secrets.CHATBOT_INTERNAL_TOKEN = cùng giá trị với stack
+      # Nếu chưa đặt biến → bỏ qua, KHÔNG fail pipeline (tránh chặn deploy).
+      - name: Backfill embedding (reindex-all)
+        if: ${{ vars.CHATBOT_API_URL != '' && secrets.CHATBOT_INTERNAL_TOKEN != '' }}
+        env:
+          CHATBOT_API_URL: ${{ vars.CHATBOT_API_URL }}
+          CHATBOT_INTERNAL_TOKEN: ${{ secrets.CHATBOT_INTERNAL_TOKEN }}
+        run: |
+          set -e
+          endpoint="${CHATBOT_API_URL%/}/internal/embeddings/reindex-all"
+          echo "Gọi $endpoint"
+          curl -fsS --retry 3 --retry-delay 10 --max-time 3000 \
+            -X POST "$endpoint" \
+            -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN" \
+            -H "Content-Type: application/json"
+      - name: Kiểm tra trạng thái embedding sau backfill
+        if: ${{ vars.CHATBOT_API_URL != '' && secrets.CHATBOT_INTERNAL_TOKEN != '' }}
+        env:
+          CHATBOT_API_URL: ${{ vars.CHATBOT_API_URL }}
+          CHATBOT_INTERNAL_TOKEN: ${{ secrets.CHATBOT_INTERNAL_TOKEN }}
+        run: |
+          set -e
+          endpoint="${CHATBOT_API_URL%/}/internal/embeddings/status"
+          curl -fsS --max-time 30 "$endpoint" \
+            -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN"
+      - name: Bỏ qua backfill embedding (chưa đặt CHATBOT_API_URL / CHATBOT_INTERNAL_TOKEN)
+        if: ${{ vars.CHATBOT_API_URL == '' || secrets.CHATBOT_INTERNAL_TOKEN == '' }}
+        run: echo "CHATBOT_API_URL chưa đặt — bỏ qua backfill embedding (chạy tay sau)."

@@ -9,8 +9,8 @@ import threading
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
 
+from app.schemas import EmbedCourseRequest, EmbedResult, EmbedSlideRequest
 from ingest import Ingestion
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -39,27 +39,12 @@ def close_ingestion() -> None:
         _ingestion = None
 
 
-class EmbedCourseRequest(BaseModel):
-    course_id: int = Field(description="ID khóa học cần embedding các slide còn thiếu.")
-    batch_size: int = Field(
-        default=20, ge=1, le=200, description="Số slide xử lý mỗi batch."
-    )
-
-
-class EmbedSlideRequest(BaseModel):
-    lesson_content_id: int = Field(description="ID slide (lesson_contents) cần embedding.")
-
-
-class EmbedResult(BaseModel):
-    processed: int = Field(description="Số slide đã xử lý.")
-
-
-def _embed_existing(course_id: int, batch_size: int) -> int:
+def _embed_existing(course_id: str, batch_size: int) -> int:
     with _job_lock:
         return get_ingestion().embed_existing(course_id, batch_size)
 
 
-def _embed_new(lesson_content_id: int) -> int:
+def _embed_new(lesson_content_id: str) -> int:
     with _job_lock:
         ingestion = get_ingestion()
         if ingestion._load_slide(lesson_content_id) is None:

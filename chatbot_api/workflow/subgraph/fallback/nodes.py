@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
-from ...shared.models import create_llm
+from ...shared.models import create_llm, message_text
 from ...shared.prompts import FALLBACK_SYSTEM_PROMPT
 from ...state import GraphState
 
@@ -23,4 +23,4 @@ def answer_node(state: GraphState) -> dict:
     """Từ chối nhẹ nhàng và gợi ý phạm vi có thể hỗ trợ."""
     response = _chain.invoke({"question": state["messages"][-1].content})
 
-    return {"draft_response": response.content, "citations": []}
+    return {"draft_response": message_text(response.content), "citations": []}

@@ -79,6 +79,10 @@ services:
       DATABASE_URL: ${DATABASE_URL_DOCKER}
       REDIS_URL: ${REDIS_URL_DOCKER}
       AI_HTTP_URL: http://gaze:8000
+      CHATBOT_URL: http://chatbot:8000
+      CHATBOT_TIMEOUT_SECONDS: ${CHATBOT_TIMEOUT_SECONDS:-60}
+      CHATBOT_INGEST_TIMEOUT_SECONDS: ${CHATBOT_INGEST_TIMEOUT_SECONDS:-600}
+      CHATBOT_INTERNAL_TOKEN: ${CHATBOT_INTERNAL_TOKEN}
       JWT_SECRET: ${JWT_SECRET}
       # Frontend production phục vụ cả apex và www; proxy giữ nguyên Origin.
       CORS_ORIGINS: ${CORS_ORIGINS},https://www.eyelearning.id.vn
@@ -108,6 +112,56 @@ services:
       retries: 5
       start_period: 20s
     # Không publish 8001 ra host — chỉ nginx truy cập nội bộ.
+
+  chatbot:
+    build:
+      context: ./chatbot_api
+      dockerfile: Dockerfile
+    image: ghcr.io/manh1504/eyelearning-chatbot:latest
+    container_name: eyetracking-chatbot
+    pull_policy: always
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${CHATBOT_DATABASE_URL_DOCKER}
+      CHATBOT_INTERNAL_TOKEN: ${CHATBOT_INTERNAL_TOKEN}
+      LLM_NAME: ${LLM_NAME:-local}
+      EMBEDDING_NAME: ${EMBEDDING_NAME:-api}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-4096}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-qwen3-embedding:8b-ctx16k}
+      OLLAMA_API_URL: ${OLLAMA_API_URL}
+      OLLAMA_SECKEY: ${OLLAMA_SECKEY}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_LLM_MODEL: ${OLLAMA_LLM_MODEL:-qwen3.5:9b}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-512}
+      OLLAMA_VLM_MODEL: ${OLLAMA_VLM_MODEL:-qwen3-vl:8b-instruct}
+      VLM_NAME: ${VLM_NAME:-local}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      LOCAL_MEDIA_DIR: /app/media
+      STORAGE_HTTP_ALLOWED_HOSTS: ${STORAGE_HTTP_ALLOWED_HOSTS:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      RAG_SCORE_THRESHOLD: ${RAG_SCORE_THRESHOLD:-0.3}
+    volumes:
+      - backend-media:/app/media:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   gaze:
     image: ghcr.io/manh1504/eyelearning-gaze:latest

@@ -150,6 +150,12 @@ class SlideAdminOut(CamelModel):
     is_key: bool = False
     aoi_count: int = 0
     aoi_source: str = "none"
+    embedding_status: str = "none"
+
+
+class EmbeddingSyncOut(CamelModel):
+    ready: int = 0
+    failed: int = 0
 
 
 class SlideKeyUpdateIn(CamelModel):

@@ -97,3 +97,24 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  chatbot:
+    name: Chatbot tests + image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            chatbot_api/requirements.docker.txt
+            chatbot_api/requirements.test.txt
+      - name: Install dependencies
+        working-directory: chatbot_api
+        run: pip install -r requirements.docker.txt -r requirements.test.txt
+      - name: Unit tests
+        working-directory: chatbot_api
+        run: python -m pytest -q
+      - name: Build image
+        run: docker build -t eyelearning-chatbot:ci ./chatbot_api

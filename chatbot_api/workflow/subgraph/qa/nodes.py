@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
-from ...shared.models import create_llm
+from ...shared.models import create_llm, message_text
 from ...shared.prompts import CITATION_RULE, QA_SYSTEM_PROMPT, STRICT_SUFFIX
 from ...shared.retrieval import format_context
 from ...state import GraphState
@@ -20,6 +20,7 @@ _answer_chain = ChatPromptTemplate.from_messages([
     (
         "human",
         "Câu hỏi của sinh viên: {question}\n\n"
+        "Ngữ cảnh bài tập:\n{assignment_context}\n\n"
         "Tài liệu tham khảo:\n{context}",
     ),
 ]) | _llm
@@ -36,7 +37,8 @@ def answer_node(state: GraphState) -> dict:
     response = _answer_chain.invoke({
         "system": system,
         "question": state["messages"][-1].content,
+        "assignment_context": state.get("assignment_context", ""),
         "context": format_context(state.get("retrieved_docs", [])),
     })
 
-    return {"draft_response": response.content}
+    return {"draft_response": message_text(response.content)}

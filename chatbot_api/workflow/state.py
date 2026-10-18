@@ -33,7 +33,7 @@ class Citation(TypedDict):
 class RetrievedDoc(TypedDict):
     """Một slide được truy hồi từ pgvector, kèm ngữ cảnh môn/chương/bài."""
 
-    id: int
+    id: str
     content: str
     course_title: str
     module_title: str
@@ -44,9 +44,11 @@ class RetrievedDoc(TypedDict):
 
 class GraphState(MessagesState):
     # 1. LMS Context
-    course_id: int
-    lesson_id: int | None
-    resource_id: int | None
+    course_id: str
+    lesson_id: str | None
+    resource_id: str | None
+    assignment_context: str
+    support_mode: str
 
     # 2. Intent
     intent: str

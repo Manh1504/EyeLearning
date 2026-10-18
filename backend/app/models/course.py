@@ -150,6 +150,13 @@ class LessonContent(Base):
     content_json: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     is_key: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     aoi_source: Mapped[str] = mapped_column(String(6), server_default=text("'none'"))
+    embedding_status: Mapped[str] = mapped_column(
+        String(10), server_default=text("'none'")
+    )
+    embedding_error: Mapped[str | None] = mapped_column(Text)
+    embedding_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     lesson: Mapped[Lesson] = relationship(back_populates="contents")
 

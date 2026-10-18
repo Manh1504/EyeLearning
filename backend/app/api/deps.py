@@ -1,15 +1,33 @@
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import decode_access_token
 from app.crud.user import get_user_by_id
 from app.db.session import get_db
 from app.models.auth import User
 
 oauth2_scheme = HTTPBearer(auto_error=False)
+
+
+async def require_internal_token(
+    x_chatbot_token: str = Header(default=""),
+) -> None:
+    """Xác thực caller nội bộ (chatbot/pipeline) bằng token chia sẻ.
+
+    Dùng cho các endpoint vận hành (reindex) không thể có JWT người dùng.
+    Token phải được cấu hình và khác rỗng; rỗng → từ chối hết.
+    """
+    import secrets
+
+    expected = settings.chatbot_internal_token
+    if not expected or not secrets.compare_digest(x_chatbot_token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
+        )
 
 
 async def get_current_user(

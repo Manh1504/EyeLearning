@@ -7,7 +7,7 @@ import {
   getQuizAttempt,
   listQuizAssignments,
   submitQuizAttempt,
-} from "@/lib/quiz-store";
+} from "@/lib/api/quiz";
 import type { QuizAssignment } from "@/lib/types/domain";
 
 export function useQuizAssignments() {
@@ -43,7 +43,12 @@ export function useSubmitQuizAttempt() {
   return useMutation({
     mutationFn: ({ assignment, answers }: { assignment: QuizAssignment; answers: Record<string, string> }) =>
       submitQuizAttempt(assignment, answers),
-    onSuccess: (attempt) =>
-      client.invalidateQueries({ queryKey: ["quiz", "attempt", attempt.assignmentId] }),
+    onSuccess: async (attempt) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["quiz", "attempt", attempt.assignmentId] }),
+        client.invalidateQueries({ queryKey: ["quiz", "assignment", attempt.assignmentId] }),
+        client.invalidateQueries({ queryKey: ["quiz", "assignments"] }),
+      ]);
+    },
   });
 }

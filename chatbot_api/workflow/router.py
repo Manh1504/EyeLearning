@@ -26,6 +26,8 @@ router_prompt = ChatPromptTemplate.from_messages([
 router_chain = router_prompt | llm.with_structured_output(RouterOutput) 
 
 def router_node(state: GraphState):
+    if state.get("support_mode") == "hint" and state.get("assignment_context"):
+        return {"intent": "hints"}
     messages = state["messages"]
     result = router_chain.invoke({"chat_history": messages})
 

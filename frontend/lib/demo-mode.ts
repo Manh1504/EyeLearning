@@ -9,18 +9,5 @@ export function prototypeRouteRedirect(
   if (!isProduction || isDemoMode()) return null;
 
   if (pathname === "/demo" || pathname.startsWith("/demo/")) return "/";
-  if (
-    pathname === "/student/assignments" ||
-    pathname.startsWith("/student/assignments/")
-  ) {
-    return "/student";
-  }
-  if (
-    pathname === "/teacher/assignments" ||
-    pathname.startsWith("/teacher/assignments/")
-  ) {
-    return "/teacher";
-  }
-
   return null;
 }

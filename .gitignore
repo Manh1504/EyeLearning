@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .env
 backend/.venv
+chatbot_api/.venv/
 frontend/.next
 frontend/frontend/
 frontend-redesign/
@@ -15,3 +16,4 @@ backend.zip
 *.md
 !README.md
 !**/README.md
+!docs/local-chatbot-testing.md

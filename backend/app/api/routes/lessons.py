@@ -1,9 +1,10 @@
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 
 import pymupdf
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,7 @@ from app.api.deps import (
     can_access_course,
     can_manage_course,
     get_current_user,
+    require_internal_token,
     require_roles,
 )
 from app.core.ratelimit import rate_limit
@@ -27,6 +29,7 @@ from app.models.course import (
     Module,
 )
 from app.schemas.course import (
+    EmbeddingSyncOut,
     LessonCreateIn,
     SlideAdminOut,
     SlideCreateIn,
@@ -35,9 +38,16 @@ from app.schemas.course import (
     SlideOut,
 )
 from app.schemas.gaze import OkOut, ProgressPatchIn
-from app.services import analytics, aoi, media_storage
+from app.services import analytics, aoi, embedding, media_storage
 
 router = APIRouter(tags=["lessons"])
+logger = logging.getLogger(__name__)
+
+
+async def _embed_slides(slide_ids: list[str]) -> None:
+    """Background task: đồng bộ embedding và cập nhật trạng thái slide."""
+    await embedding.sync_slides(slide_ids)
+
 
 
 def _validate_uuid(value: str) -> None:
@@ -154,6 +164,7 @@ async def delete_lesson(
 async def add_slide(
     lesson_id: str,
     body: SlideCreateIn,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -171,10 +182,12 @@ async def add_slide(
         order_index=next_index,
         image_url=body.image_url,
         content_json={"title": body.title} if body.title else {},
+        embedding_status=embedding.PENDING,
     )
     db.add(slide)
     await db.commit()
     await db.refresh(slide)
+    background_tasks.add_task(_embed_slides, [slide.id])
     return {"id": slide.id, "orderIndex": slide.order_index}
 
 
@@ -280,6 +293,7 @@ async def _read_pdf_limited(pdf: UploadFile) -> bytes:
 )
 async def upload_lesson_pdf(
     lesson_id: str,
+    background_tasks: BackgroundTasks,
     pdf: UploadFile = File(...),
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
@@ -307,6 +321,7 @@ async def upload_lesson_pdf(
     )
 
     version: str | None = None
+    new_slide_ids: list[str] = []
     try:
         count, version, image_urls = await asyncio.to_thread(
             _render_pdf_slides, lesson_id, data
@@ -332,11 +347,13 @@ async def upload_lesson_pdf(
                 image_url=image_urls[page_no],
                 content_json={"title": f"Slide {page_no + 1}"},
                 aoi_source=aoi_source,
+                embedding_status=embedding.PENDING,
             )
             db.add(content)
             contents.append((content, page_aois))
 
         await db.flush()
+        new_slide_ids = [content.id for content, _ in contents]
         for content, page_aois in contents:
             for a in page_aois:
                 db.add(
@@ -391,6 +408,7 @@ async def upload_lesson_pdf(
         except media_storage.StorageError as exc:
             media_storage.log_cleanup_failure("prune replaced version", exc)
     await analytics.invalidate_heatmap_cache(lesson_id)
+    background_tasks.add_task(_embed_slides, new_slide_ids)
     return {"ok": True, "slides": count, "filename": pdf.filename or "lesson.pdf"}
 
 
@@ -440,6 +458,7 @@ async def list_lesson_slides(
             is_key=c.is_key,
             aoi_count=aoi_count,
             aoi_source=c.aoi_source,
+            embedding_status=c.embedding_status,
         )
         for c, aoi_count in rows
     ]
@@ -603,3 +622,64 @@ async def patch_lesson_progress(
         progress.completed_at = progress.completed_at or datetime.now(timezone.utc)
     await db.commit()
     return OkOut()
+
+
+@router.post(
+    "/teacher/lessons/{lesson_id}/reindex",
+    response_model=EmbeddingSyncOut,
+    dependencies=[Depends(rate_limit(10, 60, "reindex"))],
+)
+async def reindex_lesson(
+    lesson_id: str,
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Embedding lại các slide còn thiếu/lỗi của một bài học (đồng bộ)."""
+    lesson = await _get_lesson_or_404(db, lesson_id)
+    await _check_course_access(db, lesson, user)
+    stats = await embedding.reindex_lesson(lesson_id)
+    return EmbeddingSyncOut(**stats)
+
+
+@router.post(
+    "/teacher/courses/{course_id}/reindex",
+    response_model=EmbeddingSyncOut,
+    dependencies=[Depends(rate_limit(5, 60, "reindex"))],
+)
+async def reindex_course(
+    course_id: str,
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Backfill embedding cho toàn bộ slide còn thiếu/lỗi của một khóa học."""
+    course = await db.get(Course, course_id)
+    if course is None or course.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khóa học")
+    if not await can_access_course(db, course, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    stats = await embedding.reindex_course(course_id)
+    return EmbeddingSyncOut(**stats)
+
+
+@router.post(
+    "/internal/embeddings/reindex-all",
+    response_model=EmbeddingSyncOut,
+    dependencies=[Depends(require_internal_token)],
+)
+async def internal_reindex_all():
+    """Backfill embedding toàn bộ slide còn thiếu (pipeline deploy gọi sau migrate).
+
+    Không dùng JWT người dùng; xác thực bằng header `X-Chatbot-Token` chia sẻ.
+    Chạy tuần tự nên có thể mất nhiều phút với dữ liệu lớn.
+    """
+    stats = await embedding.reindex_all()
+    return EmbeddingSyncOut(**stats)
+
+
+@router.get(
+    "/internal/embeddings/status",
+    dependencies=[Depends(require_internal_token)],
+)
+async def internal_embedding_status():
+    """Thống kê trạng thái embedding để pipeline/giám sát kiểm tra."""
+    return await embedding.counts()
