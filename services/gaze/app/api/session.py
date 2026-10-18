@@ -126,6 +126,9 @@ async def import_model(sid: str, model: UploadFile = File(...)):
 async def stream(ws: WebSocket, sid: str):
     session = sessions.get(sid)
     if session is None or session.state != "ready":
+        # Phải accept() trước khi close(): nếu close lúc còn ở trạng thái
+        # handshake, uvicorn trả HTTP 403 và client không nhận được close code.
+        await ws.accept()
         await ws.close(code=1008, reason="not_calibrated")
         return
     await ws.accept()
