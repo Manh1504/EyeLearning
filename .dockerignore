@@ -8,9 +8,9 @@
 .gitignore
 frontend
 backend
-API
+services
 nginx
 node_modules
 .next
-__pycache__
-*.pyc
+**/__pycache__
+**/*.pyc
