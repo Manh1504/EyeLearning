@@ -193,6 +193,10 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
 
   // Calibrations
   await page.route("**/api/calibrations", (r) => json(r, { ok: true }));
+  // Route cụ thể phải đăng ký SAU route tổng để được ưu tiên (Playwright: last match wins)
+  await page.route("**/api/calibrations/active/model**", (r) =>
+    json(r, { modelUbjBase64: "VUJK", maePx: 0.05 }),
+  );
   await page.route("**/api/calibrations/active**", (r) =>
     json(r, { calibrated: true, calibratedAt: new Date().toISOString() }),
   );
@@ -245,8 +249,16 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
     if (url.endsWith("/session") && r.request().method() === "POST") {
       return json(r, { session_id: "gaze-sess-1" });
     }
+    if (url.includes("/model")) {
+      return r.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: "UBJ",
+      });
+    }
+    if (url.includes("/import")) return json(r, { status: "ready" });
     if (url.includes("/train")) return json(r, { status: "ok", mae_px: 0.05 });
-    if (url.includes("/calibrate")) return json(r, { status: "accepted", count: 2 });
+    if (url.includes("/calibrate")) return json(r, { status: "accepted", count: 1 });
     return json(r, { state: "ready", calibrated: true });
   });
 

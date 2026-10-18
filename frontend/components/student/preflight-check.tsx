@@ -14,6 +14,7 @@ import {
   getStoredCalibration,
   getStoredGazeSessionId,
   isCalibrationScreenStale,
+  restoreGazeSessionFromBackend,
 } from "@/lib/api/calibration";
 import { getDeviceFingerprint } from "@/lib/api/student";
 import { useCourseOutline } from "@/hooks/use-student";
@@ -109,18 +110,33 @@ export function PreflightCheck({
         if (!status.ready) {
           const fp = getDeviceFingerprint();
           const active = await fetchActiveCalibration(fp);
-          if (active?.calibrated && active.calibratedAt) {
-            const ageDays = (Date.now() - new Date(active.calibratedAt).getTime()) / 86400000;
-            if (ageDays < 30) {
-              clearStoredGazeSession();
-              setIsCalibrated(false);
+          const ageDays =
+            active?.calibratedAt
+              ? (Date.now() - new Date(active.calibratedAt).getTime()) / 86400000
+              : Number.POSITIVE_INFINITY;
+          // Phiên cũ đã hết hạn trên gaze (TTL 30' hoặc service restart) nhưng
+          // DB còn model .ubj: tạo session mới rồi nạp lại model, không bắt
+          // người học hiệu chỉnh lại. Chỉ khôi phục khi màn hình không đổi.
+          if (active?.calibrated && ageDays < 30 && !isCalibrationScreenStale()) {
+            const restored = await restoreGazeSessionFromBackend(fp);
+            if (cancelled) return;
+            if (restored) {
+              setIsCalibrated(true);
               setCalibratedAt(active.calibratedAt);
               setScreenStale(false);
-              setSessionIssue(
-                "Thiết bị có bản ghi hiệu chỉnh trong 30 ngày, nhưng phiên theo dõi cục bộ không còn hoạt động. Vui lòng hiệu chỉnh lại để tạo phiên mới trước khi học.",
-              );
+              setSessionIssue(null);
               return;
             }
+          }
+          if (active?.calibrated && active.calibratedAt && ageDays < 30) {
+            clearStoredGazeSession();
+            setIsCalibrated(false);
+            setCalibratedAt(active.calibratedAt);
+            setScreenStale(false);
+            setSessionIssue(
+              "Thiết bị có bản ghi hiệu chỉnh trong 30 ngày, nhưng phiên theo dõi cục bộ không còn hoạt động. Vui lòng hiệu chỉnh lại để tạo phiên mới trước khi học.",
+            );
+            return;
           }
           clearStoredGazeSession();
           setIsCalibrated(false);

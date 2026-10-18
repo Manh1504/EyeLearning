@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildCalibrationPoints,
+  bytesToBase64,
   clearStoredGazeSession,
   createGazeSession,
   deleteGazeSession,
+  downloadGazeModel,
   saveCalibrationToBackend,
   storeGazeSession,
   submitCalibrationSample,
@@ -14,7 +16,7 @@ import {
 } from "@/lib/api/calibration";
 import { getDeviceFingerprint } from "@/lib/api/student";
 
-const SAMPLES_PER_POINT = 2;
+const SAMPLES_PER_POINT = 1;
 const MAX_CAPTURES_PER_POINT = 5;
 const CAPTURE_GAP_MS = 100;
 
@@ -82,9 +84,7 @@ export function useCalibration({ onComplete, persistToBackend = true }: UseCalib
 
   useEffect(() => {
     let cancelled = false;
-    const screenWidth = typeof window !== "undefined" ? window.innerWidth || 1280 : 1280;
-    const screenHeight = typeof window !== "undefined" ? window.innerHeight || 720 : 720;
-    createGazeSession(points, screenWidth, screenHeight)
+    createGazeSession(points)
       .then((res) => {
         if (!cancelled && res.ok && res.sessionId) {
           setSessionId(res.sessionId);
@@ -168,15 +168,21 @@ export function useCalibration({ onComplete, persistToBackend = true }: UseCalib
     }
     storeGazeSession(sessionId, window.innerWidth, window.innerHeight);
     if (persistToBackend) {
-      void saveCalibrationToBackend({
-        deviceFingerprint: getDeviceFingerprint(),
-        maePx: trained.maePx ?? null,
-        screenWidth: window.innerWidth,
-        screenHeight: window.innerHeight,
-      });
+      // Lưu model .ubj để lần sau khôi phục không cần hiệu chỉnh lại
+      const model = await downloadGazeModel(sessionId);
+      if (model) {
+        await saveCalibrationToBackend({
+          deviceFingerprint: getDeviceFingerprint(),
+          numPoints: points.length,
+          modelUbjBase64: bytesToBase64(model),
+          maePx: trained.maePx ?? null,
+          screenWidth: window.innerWidth,
+          screenHeight: window.innerHeight,
+        });
+      }
     }
     onCompleteRef.current({ maePx: trained.maePx ?? null });
-  }, [sessionId, reset, persistToBackend]);
+  }, [sessionId, reset, persistToBackend, points]);
 
   const handleDotClick = useCallback(async () => {
     if (phase !== "calibrating") return;

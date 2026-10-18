@@ -41,14 +41,12 @@ export interface SessionCreateResult {
 
 export async function createGazeSession(
   points: CalPoint[],
-  screenWidth: number,
-  screenHeight: number,
 ): Promise<SessionCreateResult> {
   try {
     const res = await fetch("/gaze/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ screen_width: screenWidth, screen_height: screenHeight, points }),
+      body: JSON.stringify({ points }),
     });
     const data = (await res.json()) as { session_id?: string };
     if (data.session_id) return { ok: true, sessionId: data.session_id };
@@ -144,7 +142,7 @@ export function deleteGazeSession(sessionId: string): void {
 }
 
 export async function checkFace(imageBlob: Blob): Promise<{ ok: boolean; error?: string }> {
-  const session = await createGazeSession([{ id: "check", x: 0.5, y: 0.5 }], 1280, 720);
+  const session = await createGazeSession([{ id: "check", x: 0.5, y: 0.5 }]);
   if (!session.ok || !session.sessionId) return { ok: false, error: "network_error" };
   try {
     const r = await submitCalibrationSample(session.sessionId, imageBlob, "check");
@@ -270,8 +268,60 @@ export function clearStoredGazeSession(): void {
   globalThis.localStorage?.removeItem(DPR_KEY);
 }
 
+// --- Lưu / khôi phục model hiệu chỉnh (.ubj) -------------------------------
+
+/** Tải model .ubj của session (binary) từ gaze service. */
+export async function downloadGazeModel(sessionId: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(`/gaze/session/${encodeURIComponent(sessionId)}/model`);
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+export function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** Nạp model .ubj vào session để dùng ngay, bỏ qua bước hiệu chỉnh lại. */
+export async function importGazeModel(
+  sessionId: string,
+  model: Uint8Array,
+): Promise<boolean> {
+  const form = new FormData();
+  // base64ToBytes() cấp phát đúng kích thước nên buffer == toàn bộ dữ liệu
+  form.append(
+    "model",
+    new Blob([model.buffer as ArrayBuffer], { type: "application/octet-stream" }),
+    "calibration.ubj",
+  );
+  try {
+    const res = await fetch(`/gaze/session/${encodeURIComponent(sessionId)}/import`, {
+      method: "POST",
+      body: form,
+    });
+    const data = (await res.json().catch(() => ({}))) as { status?: string };
+    return data.status === "ready";
+  } catch {
+    return false;
+  }
+}
+
 export async function saveCalibrationToBackend(params: {
   deviceFingerprint: string;
+  numPoints: number;
+  modelUbjBase64: string;
   maePx: number | null;
   screenWidth: number;
   screenHeight: number;
@@ -282,8 +332,8 @@ export async function saveCalibrationToBackend(params: {
       method: "POST",
       body: {
         deviceFingerprint: params.deviceFingerprint,
-        numPoints: 16,
-        params: [0, 0, 0, 0, 0, 0],
+        numPoints: params.numPoints,
+        modelUbjBase64: params.modelUbjBase64,
         screenWidthPx: params.screenWidth,
         screenHeightPx: params.screenHeight,
         maePx: params.maePx,
@@ -293,6 +343,42 @@ export async function saveCalibrationToBackend(params: {
   } catch {
     return false;
   }
+}
+
+/** Tải model hiệu chỉnh đang active của thiết bị (nếu có). */
+export async function fetchActiveCalibrationModel(
+  deviceFingerprint: string,
+): Promise<{ modelUbjBase64: string; maePx: number | null } | null> {
+  try {
+    const { apiFetch } = await import("./client");
+    const data = await apiFetch<{ modelUbjBase64: string; maePx?: number }>(
+      "/api/calibrations/active/model",
+      { params: { deviceFingerprint } },
+    );
+    return { modelUbjBase64: data.modelUbjBase64, maePx: data.maePx ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Khôi phục phiên theo dõi từ model đã lưu: tạo session mới trên gaze service
+ * rồi nạp lại .ubj. Trả về false nếu không có model hoặc nạp thất bại.
+ */
+export async function restoreGazeSessionFromBackend(
+  deviceFingerprint: string,
+): Promise<boolean> {
+  const stored = await fetchActiveCalibrationModel(deviceFingerprint);
+  if (!stored) return false;
+  const session = await createGazeSession(buildCalibrationPoints());
+  if (!session.ok || !session.sessionId) return false;
+  const ok = await importGazeModel(session.sessionId, base64ToBytes(stored.modelUbjBase64));
+  if (!ok) {
+    deleteGazeSession(session.sessionId);
+    return false;
+  }
+  storeGazeSession(session.sessionId, globalThis.innerWidth, globalThis.innerHeight);
+  return true;
 }
 
 export async function fetchActiveCalibration(
