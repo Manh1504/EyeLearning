@@ -16,3 +16,6 @@ services/gaze/my_database.db
 
 # Next.js
 frontend/.next
+
+# Sơ đồ graph sinh bởi services/chatbot/scripts/draw_graph.py
+graph.png

@@ -1,6 +1,6 @@
 """Truy hồi ngữ nghĩa trên pgvector và dựng trích dẫn nguồn.
 
-Slide đã được `Ingestion` (ingest.py) nhúng vector và lưu vào bảng
+Slide đã được `Ingestion` (app/services/ingest.py) nhúng vector và lưu vào bảng
 `lesson_content_embedding`. Module này:
 
 1. Nhúng câu hỏi của sinh viên thành vector.

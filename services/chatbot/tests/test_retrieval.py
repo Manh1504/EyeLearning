@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from workflow.shared.retrieval import Retriever, build_citations
+from app.workflow.shared.retrieval import Retriever, build_citations
 
 
 def test_search_empty_embedding_table_returns_empty():

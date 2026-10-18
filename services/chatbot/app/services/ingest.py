@@ -13,9 +13,9 @@ from psycopg.rows import dict_row
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage
 
-from workflow.shared import create_embedding, create_vlm, SLIDE_VLM_PROMPT
-from workflow.state import VLMOutput
-from storage import FileStorage
+from app.workflow.shared import create_embedding, create_vlm, SLIDE_VLM_PROMPT
+from app.workflow.state import VLMOutput
+from app.services.storage import FileStorage
 from app.settings import database_url
 
 

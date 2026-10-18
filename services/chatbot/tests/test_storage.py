@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from storage import FileStorage
+from app.services.storage import FileStorage
 
 
 def test_r2_object_key_uses_normalized_bucket_env(monkeypatch):

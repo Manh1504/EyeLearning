@@ -1,6 +1,6 @@
 """API nạp (ingest) slide vào pgvector.
 
-`Ingestion` (ingest.py) là tiến trình nặng: gọi VLM mô tả ảnh rồi embedding.
+`Ingestion` (app/services/ingest.py) là tiến trình nặng: gọi VLM mô tả ảnh rồi embedding.
 Vì vậy ở đây dùng lazy singleton (chỉ khởi tạo khi có request đầu tiên) và một
 khóa để các job ingest không chạy chồng nhau, tránh quá tải VLM/DB.
 """
@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 from app.schemas import EmbedResult, EmbedSlideRequest
-from ingest import Ingestion
+from app.services.ingest import Ingestion
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 

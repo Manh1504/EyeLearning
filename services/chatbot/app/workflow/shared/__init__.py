@@ -1,7 +1,7 @@
 """Tiện ích dùng chung cho toàn bộ workflow.
 
 Gom lại các factory model, prompt và công cụ truy hồi để các module khác
-import ngắn gọn: `from workflow.shared import create_llm, ...`.
+import ngắn gọn: `from app.workflow.shared import create_llm, ...`.
 """
 
 from .models import (

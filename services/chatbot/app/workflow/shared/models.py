@@ -12,7 +12,7 @@ from langchain_core.embeddings import Embeddings
 # Model embedding mặc định cho API kiểu Ollama (override qua EMBEDDING_MODEL)
 DEFAULT_API_EMBED_MODEL = "qwen3-embedding:8b-ctx16k"
 
-# Model embedding local mặc định: workflow/weights/Qwen3-Embedding-0.6B.
+# Model embedding local mặc định: app/workflow/weights/Qwen3-Embedding-0.6B.
 # Override bằng EMBEDDING_MODEL_PATH khi chạy ở môi trường khác (vd Docker).
 DEFAULT_LOCAL_EMBED_PATH = str(
     Path(__file__).resolve().parents[1] / "weights" / "Qwen3-Embedding-0.6B"

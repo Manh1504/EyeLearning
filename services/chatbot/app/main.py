@@ -25,11 +25,11 @@ from fastapi.concurrency import run_in_threadpool
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.postgres import PostgresSaver
 
-from workflow.graph import build_graph
-from workflow.shared.retrieval import close_retriever
+from app.workflow.graph import build_graph
+from app.workflow.shared.retrieval import close_retriever
 from app.settings import database_url
 from app.schemas import ChatRequest, ChatResponse
-from app.ingest_api import close_ingestion, router as ingest_router
+from app.api.ingest import close_ingestion, router as ingest_router
 
 
 def require_internal_token(x_chatbot_token: str = Header(default="")) -> None:

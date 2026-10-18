@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from ingest import Ingestion
+from app.services.ingest import Ingestion
 
 
 def test_load_slides_first_page_has_no_numeric_cursor():

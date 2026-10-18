@@ -2,7 +2,7 @@
 # Khác với requirements.txt ở chỗ LƯỢC BỎ các gói nặng chỉ dùng cho embedding
 # local (sentence-transformers, langchain-huggingface, torch...) vì trong
 # container ta dùng EMBEDDING_NAME=api hoặc gemini.
-# Xem workflow/shared/models.py: import HuggingFaceEmbeddings đã được chuyển
+# Xem app/workflow/shared/models.py: import HuggingFaceEmbeddings đã được chuyển
 # thành lazy nên không cần cài các gói này.
 
 # Web service
@@ -27,4 +27,4 @@ langsmith
 # Tiện ích
 httpx
 pymupdf      # render slide PDF -> PNG (ingest)
-boto3        # đọc file từ S3/R2 (storage.py)
+boto3        # đọc file từ S3/R2 (app/services/storage.py)
