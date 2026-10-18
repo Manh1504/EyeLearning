@@ -442,3 +442,25 @@ print(resp)  # {"status": "ok", "n_samples": 16, "mae_px": ...}
 - [ ] Lưu file `.ubj` từ `/model` vào DB để tái sử dụng qua `/import` (tránh calibration lại mỗi phiên).
 - [ ] Chỉ `/import` khi màn hình không đổi so với lúc train.
 - [ ] Tự bảo vệ API này (không có auth), không để lộ `session_id` ra ngoài phạm vi kiểm soát.
+
+## 7. Cấu trúc mã nguồn
+
+```
+app/
+├── main.py             FastAPI app, lifespan (load pipeline), /health
+├── settings.py         biến môi trường: WEIGHTS_DIR, MIN_SAMPLES, TTL, MAX_SESSIONS
+├── schemas.py          pydantic body của POST /session
+├── api/session.py      toàn bộ endpoint /session* + WebSocket stream
+└── services/
+    ├── inference.py    vòng đời suy luận: singleton Pipeline + lock (drop-frame)
+    ├── pipeline.py     mediapipe face detect -> UniGaze -> (pitch, yaw)
+    ├── preprocessing.py chuẩn hoá khuôn mặt + One-Euro filter làm mượt
+    ├── calibration.py  LinearRegression (pitch, yaw) -> (x, y) + serialize .ubj
+    └── sessions.py     Session / SessionManager (RAM, TTL 30 phút)
+scripts/download_weights.py   tải weights lúc khởi động (entrypoint.sh)
+requirements.txt              torch (cu126) + mediapipe + opencv + fastapi...
+Dockerfile                    base python:3.12-slim — CUDA/cuDNN lấy từ wheel pip
+```
+
+Bố cục giống `services/chatbot` và `backend/` (gói `app/`). Service không ghi gì
+xuống đĩa: session nằm trong RAM, weights nằm trong volume `gaze-weights`.

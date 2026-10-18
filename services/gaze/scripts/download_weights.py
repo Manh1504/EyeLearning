@@ -1,9 +1,21 @@
+"""Tải weights (mediapipe + unigaze) vào WEIGHTS_DIR lúc khởi động container.
+
+Chạy: entrypoint.sh gọi `python -m scripts.download_weights`; khi dev có thể
+chạy trực tiếp `python scripts/download_weights.py`.
+"""
+
 import os
 import re
 import sys
 import urllib.request
+from pathlib import Path
 
-WEIGHTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weights")
+# Cho phép chạy trực tiếp file script (khi đó sys.path[0] là scripts/).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.settings import WEIGHTS_DIR as _WEIGHTS_DIR  # noqa: E402
+
+WEIGHTS_DIR = str(_WEIGHTS_DIR)
 
 FILES = [
     {

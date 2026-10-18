@@ -38,8 +38,10 @@ docker compose up -d              # postgres (:5435) + backend (:8001)
 - Backend: `server.nmhieu.online` — Swagger tại `server.nmhieu.online/docs`
 - Postgres: `localhost:5435` (user/pass/db: `postgres/postgres/eyetracking`)
 
-Service ML (`services/gaze/`, cần GPU) chạy image `eyelearning-gaze` và cần NVIDIA
-runtime; image được CI build từ `services/gaze/Dockerfile`. Frontend kết nối trực tiếp
+Service ML (`services/gaze/`, cần GPU) chạy image `eyelearning-gaze`; image được
+CI build từ `services/gaze/Dockerfile`. Base image là `python:3.12-slim` —
+CUDA/cuDNN lấy từ wheel pip của torch (`requirements.txt`), không cần base image
+NVIDIA; host chỉ cần driver + nvidia-container-toolkit. Frontend kết nối trực tiếp
 WS `/session/{sid}/stream` của service này — khi nó tắt, frontend tự fallback mock
 (backend chỉ dùng `AI_HTTP_URL` để probe `/ai/health`).
 

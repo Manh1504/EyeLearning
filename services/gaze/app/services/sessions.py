@@ -1,8 +1,8 @@
 import time
 import uuid
 
-from calibration import Calibration
-from preprocessing import OneEuroFilter2D
+from app.services.calibration import Calibration
+from app.services.preprocessing import OneEuroFilter2D
 
 
 class Session:

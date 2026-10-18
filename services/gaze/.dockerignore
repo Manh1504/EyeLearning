@@ -2,7 +2,7 @@
 # .dockerignore — loại file không cần thiết khỏi build context
 # ============================================================
 
-# --- Weights: tải lúc runtime (entrypoint.sh chạy download_weights.py) ---
+# --- Weights: tải lúc runtime (entrypoint.sh chạy scripts/download_weights.py) ---
 weights/
 *.safetensors
 *.tflite

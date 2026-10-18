@@ -184,7 +184,8 @@ services:
       retries: 5
       start_period: 180s
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
-    # Build từ ./services/gaze/Dockerfile, weights tải runtime vào volume (xem services/gaze/download_weights.py)
+    # Build từ ./services/gaze/Dockerfile, weights tải runtime vào volume
+    # (xem services/gaze/scripts/download_weights.py).
 
   frontend:
     image: ghcr.io/manh1504/eyelearning-frontend:latest

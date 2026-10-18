@@ -1,21 +1,19 @@
 import os
-from pathlib import Path
 
 import torch
 import numpy as np
 import unigaze.loader as loader
 import mediapipe as mp
 
-from download_weights import WEIGHTS_DIR as _WEIGHTS_DIR
-from preprocessing import Preprocessor
+from app.services.preprocessing import Preprocessor
+from app.settings import WEIGHTS_DIR
 
-# Cùng thư mục với download_weights.py (cạnh module, không phụ thuộc CWD).
-WEIGHTS_DIR = Path(_WEIGHTS_DIR)
 UNIGAZE_WEIGHTS = WEIGHTS_DIR / "unigaze_b16_joint.safetensors"
 MEDIAPIPE_WEIGHTS = WEIGHTS_DIR / "mediapipe.tflite"
 
 
-def get_device():
+def get_device() -> str:
+    """cuda/cpu: đọc DEVICE nếu hợp lệ, ngược lại tự dò GPU."""
     dev = os.environ.get("DEVICE", "").strip().lower()
     if dev in ("cpu", "cuda"):
         return dev

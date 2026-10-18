@@ -90,12 +90,7 @@ jobs:
               - 'services/chatbot/**'
               - '.github/workflows/build.yml'
             gaze:
-              - 'services/gaze/Dockerfile'
-              - 'services/gaze/.dockerignore'
-              - 'services/gaze/requirements-gpu.txt'
-              - 'services/gaze/requirements-torch.txt'
-              - 'services/gaze/entrypoint.sh'
-              - 'services/gaze/*.py'
+              - 'services/gaze/**'
               - '.github/workflows/build.yml'
             nginx:
               - 'nginx/Dockerfile'
