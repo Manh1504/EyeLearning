@@ -95,12 +95,13 @@ tới `ROOT_ENV_FILE`). Không còn giá trị mẫu nhúng trong code.
 - `POST /api/lessons/{id}/gaze-samples` — batch `{lessonContentId, x, y, ts}`; clamp [0,1], downsample, cập nhật `gaze_slide_stats`
 
 ### Calibration
-- `POST /api/calibrations` — JSON `{deviceFingerprint, numPoints, params: [a1,a2,b1,a3,a4,b2], maePx?, mappingModelVersion?, screenWidthPx?, screenHeightPx?}` — 6 tham số trả về từ `POST /calibrate/fit` của AI service; bất kỳ bản cũ nào của (user, device) tự deactivate
-- `GET /api/calibrations/active?deviceFingerprint=` — metadata bản active (`calibrated`, `maePx`, `mappingModelVersion`, `calibratedAt`)
-- `GET /api/calibrations/active/params?deviceFingerprint=` — JSON `{params: [a1,a2,b1,a3,a4,b2]}` active để client gửi vào message cấu hình của WS `/infer` (không cần calibrate lại)
+- `POST /api/calibrations` — JSON `{deviceFingerprint, numPoints, modelUbjBase64, maePx?, screenWidthPx?, screenHeightPx?}` — `modelUbjBase64` là file `.ubj` tải từ `GET /session/{sid}/model` của gaze service (base64, ~1-3KB); bất kỳ bản cũ nào của (user, device) tự deactivate. Ghi vào `calibration_params.model_ubj`.
+- `GET /api/calibrations/active?deviceFingerprint=` — metadata bản active (`calibrated`, `maePx`, `calibratedAt`)
+- `GET /api/calibrations/active/model?deviceFingerprint=` — `{modelUbjBase64, maePx}` của bản active để client nạp lại qua `POST /session/{sid}/import` (không cần hiệu chỉnh lại). `409` nếu bản ghi cũ chỉ có 6 tham số kappa.
+- `GET /api/calibrations/config` — ngưỡng `maePx` pass/fail do admin đặt.
 
 ### AI service — kết nối trực tiếp
-- WebSocket `/infer` và `POST /calibrate/point`, `POST /calibrate/fit` **không còn proxy qua backend** — frontend/AI service gọi trực tiếp (`AI_HTTP_URL` của ML service).
+- WebSocket `/session/{sid}/stream` và toàn bộ `POST /session...` của gaze service **gọi trực tiếp** (frontend → nginx `/gaze/*` → gaze; backend không proxy). Backend chỉ lưu model `.ubj` và kiểm soát quyền.
 - `GET /ai/health` — backend probe ML service còn sống không.
 
 ## Tests

@@ -165,14 +165,14 @@ DROP TABLE tmp;
 ## Hệ tọa độ (quan trọng)
 
 - `gaze_events.gaze_x/gaze_y` và `aoi_regions.x_min..y_max` đều **chuẩn hóa [0,1]** —
-  khớp với output endpoint `/infer` của `services/gaze/server.py` (đã trả về [0,1]).
+  khớp với output `WS /session/{sid}/stream` của `services/gaze/server.py` (đã trả về [0,1]).
 - Muốn tọa độ pixel: nhân với `devices.screen_width_px / screen_height_px`.
 - Không CHECK biên [0,1] trên gaze: filter OneEuro có thể overshoot nhẹ;
   clamp ở tầng application trước khi ghi DB.
 
 ## Vận hành
 
-- **Insert gaze**: WebSocket `/infer` chạy ~20 fps → chỉ ghi DB sau khi
+- **Insert gaze**: WebSocket `/session/{sid}/stream` chạy ~20 fps → chỉ ghi DB sau khi
   downsample còn ~2–4 Hz (khối lượng: 1 lớp 30 học viên × 20 buổi ≈ vài triệu dòng).
 - **Aggregate** (`heatmap_aggregates`, `aoi_dwell_stats`, `engagement_scores`):
   tính bằng batch job ngoài giờ học, không tính realtime trên `gaze_events`.
@@ -184,7 +184,7 @@ DROP TABLE tmp;
 
 | Thay đổi | Lý do |
 |---|---|
-| `gaze_x_px/gaze_y_px` → `gaze_x/gaze_y` chuẩn hóa [0,1] | Khớp output `/infer`; heatmap/AOI không phụ thuộc độ phân giải màn hình |
+| `gaze_x_px/gaze_y_px` → `gaze_x/gaze_y` chuẩn hóa [0,1] | Khớp output `WS /session/{sid}/stream`; heatmap/AOI không phụ thuộc độ phân giải màn hình |
 | AOI thêm `CHECK` biên + `x_min < x_max` | Tọa độ giáo viên vẽ phải hợp lệ, cùng hệ [0,1] với gaze |
 | Thêm UNIQUE: `modules(course_id, order_index)`, `lessons(module_id, order_index)`, `aoi_dwell_stats(session_id, aoi_region_id)` | Chống trùng thứ tự / trùng thống kê |
 | `heatmap_aggregates`: 2 partial unique index + CHECK scope↔student_id | UNIQUE thường không hoạt động với `student_id NULL` (scope='class') |

@@ -95,6 +95,20 @@ Kết quả bắt buộc là 2 vector và mỗi vector có 4096 phần tử.
 
 Upload một PDF từ màn giáo viên. Backend tự gọi `/ingest/slide` (kèm header `X-Chatbot-Token`) trong background và cập nhật `lesson_contents.embedding_status` (`pending` → `ready`/`failed`).
 
+**Ảnh slide lấy từ đâu:** backend render PDF thành JPEG rồi lưu vào
+`lesson_contents.image_url` qua `media_storage`:
+
+- `R2_*` đầy đủ (`r2_enabled`) → **object storage Cloudflare R2**, URL dạng
+  `https://<R2_PUBLIC_URL>/lessons/{lesson_id}/{version}/slide_00N.jpg`.
+- Ngược lại → **volume local** (`backend-media:/app/media`), URL dạng
+  `/media/lessons/{lesson_id}/{version}/slide_00N.jpg`.
+
+Chatbot đọc lại bằng `FileStorage`: `/media/...` + `STORAGE_PROVIDER=local` → strip
+`/media/` rồi join `LOCAL_MEDIA_DIR` (compose mount `backend-media:/app/media:ro`);
+URL `https://` phải thuộc `STORAGE_HTTP_ALLOWED_HOSTS` (host của `R2_PUBLIC_URL` được
+thêm tự động). **Không có ảnh nào lưu base64** — base64 chỉ là dạng tạm trong RAM khi
+gửi ảnh cho VLM (ảnh PNG render ở native pixel; PDF nguồn render ở 150 dpi).
+
 Backfill / reindex slide cũ (bắt buộc sau khi bật tính năng hoặc đổi model embedding).
 
 Cách 1 — pipeline tự động (không cần SSH): sau deploy backend gọi endpoint nội bộ xác thực bằng `CHATBOT_INTERNAL_TOKEN`. Cần đặt trong GitHub repo:
@@ -136,6 +150,48 @@ SELECT id, image_url, embedding_error FROM lesson_contents WHERE embedding_statu
 ```
 
 Slide `failed` thường do ảnh không đọc được (URL sai, file thiếu, host bị chặn). Sửa nguyên nhân rồi gọi lại `reindex`.
+
+### 3.1 Nguồn sự thật & đối chiếu lệch
+
+`lesson_contents.embedding_status` **do backend ghi** và là nguồn sự thật duy nhất
+(chatbot chỉ đọc bảng nghiệp vụ, chỉ ghi `lesson_content_embedding`). Hai chỗ có thể
+lệch nếu vector bị ghi/xoá trực tiếp hoặc DB khôi phục không đồng bộ:
+
+- Slide `ready` nhưng **không có** dòng vector → chatbot không truy hồi được.
+- Có dòng vector nhưng slide **không** `ready` → backend sẽ ingest lại (tạo lại vector).
+
+`GET /internal/embeddings/status` trả thêm `drift` để phát hiện; cả hai phải bằng 0:
+
+```json
+{"counts": {"ready": 120, "failed": 1, "none": 3},
+ "drift": {"ready_without_vector": 0, "vector_not_marked_ready": 0},
+ "job": {"running": false, "processed": 121, "ready": 120, "failed": 1}}
+```
+
+Truy vấn tương đương bằng SQL:
+
+```sql
+-- Slide 'ready' nhưng thiếu vector
+SELECT lc.id, lc.image_url
+FROM lesson_contents lc
+WHERE lc.embedding_status = 'ready'
+  AND NOT EXISTS (SELECT 1 FROM lesson_content_embedding e WHERE e.lesson_content_id = lc.id);
+
+-- Có vector nhưng chưa đánh dấu 'ready'
+SELECT lc.id, lc.embedding_status
+FROM lesson_content_embedding e
+JOIN lesson_contents lc ON lc.id = e.lesson_content_id
+WHERE lc.embedding_status <> 'ready';
+```
+
+Gặp lệch: gọi `POST /teacher/courses/{id}/reindex` (hoặc `/internal/embeddings/reindex-all`)
+để đưa về trạng thái nhất quán.
+
+### 3.2 Số chiều vector
+
+`EMBEDDING_DIM` phải khớp `VECTOR(n)` của `lesson_content_embedding.embedding` (4096).
+Chatbot kiểm tra lúc khởi động và **fail-fast** kèm hướng dẫn nếu lệch — không đợi
+tới lần ingest đầu tiên mới báo lỗi.
 
 ## 4. Test chức năng
 
