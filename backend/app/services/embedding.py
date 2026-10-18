@@ -13,7 +13,9 @@ Vì ingest gọi VLM + embedding (nặng, chạy nền), các hàm gọi endpoin
 session riêng vì background task chạy sau khi response đã trả về.
 """
 
+import asyncio
 import logging
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import select
@@ -30,6 +32,23 @@ FAILED = "failed"
 NONE = "none"
 
 PENDING_STATUSES = (NONE, PENDING, FAILED)
+
+# Trạng thái job backfill toàn cục (in-process). Đủ cho 1 replica backend;
+# dùng để theo dõi tiến độ vì HTTP request không giữ mở tới khi xong.
+_JOB: dict = {
+    "running": False,
+    "queued": 0,
+    "processed": 0,
+    "ready": 0,
+    "failed": 0,
+    "started_at": None,
+    "finished_at": None,
+}
+_JOB_LOCK = asyncio.Lock()
+
+
+def job_status() -> dict:
+    return dict(_JOB)
 
 
 async def _mark(session, slide_id: str, status: str, error: str | None = None) -> None:
@@ -82,6 +101,8 @@ async def sync_slides(slide_ids: list[str]) -> dict[str, int]:
                 ok, error = await _ingest_one(client, slide_id)
                 await _mark(session, slide_id, READY if ok else FAILED, error)
                 stats["ready" if ok else "failed"] += 1
+                _JOB["processed"] += 1
+                _JOB["ready" if ok else "failed"] += 1
                 if not ok:
                     logger.warning("Embedding slide %s thất bại: %s", slide_id, error)
     return stats
@@ -111,11 +132,15 @@ async def reindex_course(course_id: str) -> dict[str, int]:
 
 
 async def reindex_all() -> dict[str, int]:
-    """Backfill toàn bộ slide còn thiếu/lỗi trên mọi khóa học.
+    """Backfill toàn bộ slide còn thiếu/lỗi trên mọi khóa học (đồng bộ).
 
-    Dùng cho pipeline deploy (không cần JWT user): chạy tuần tự theo từng slide
+    Dùng cho pipeline deploy (không cần JWT user). Chạy tuần tự theo từng slide
     để tránh làm quá tải VLM. Trả về thống kê ready/failed.
     """
+    return await sync_slides(await all_pending_slide_ids())
+
+
+async def all_pending_slide_ids() -> list[str]:
     from app.models.course import Course
 
     async with SessionLocal() as session:
@@ -129,8 +154,41 @@ async def reindex_all() -> dict[str, int]:
                 Course.deleted_at.is_(None),
             )
         )
-        slide_ids = [str(row[0]) for row in result.all()]
-    return await sync_slides(slide_ids)
+        return [str(row[0]) for row in result.all()]
+
+
+async def start_reindex_all_job() -> dict:
+    """Chạy backfill toàn bộ trong background, trả về ngay.
+
+    Tránh gateway 504 vì request không phải chờ toàn bộ slide. Theo dõi tiến
+    độ qua `job_status()`/endpoint status.
+    """
+    async with _JOB_LOCK:
+        if _JOB["running"]:
+            return {**job_status(), "already_running": True}
+        _JOB.update(
+            running=True,
+            queued=0,
+            processed=0,
+            ready=0,
+            failed=0,
+            started_at=datetime.now(timezone.utc).isoformat(),
+            finished_at=None,
+        )
+        asyncio.create_task(_run_job())
+        return job_status()
+
+
+async def _run_job() -> None:
+    try:
+        slide_ids = await all_pending_slide_ids()
+        _JOB["queued"] = len(slide_ids)
+        await sync_slides(slide_ids)
+    except Exception:  # noqa: BLE001
+        logger.exception("Backfill embedding job thất bại")
+    finally:
+        _JOB["running"] = False
+        _JOB["finished_at"] = datetime.now(timezone.utc).isoformat()
 
 
 async def counts() -> dict[str, int]:

@@ -266,12 +266,13 @@ jobs:
           fi
           set -e
           endpoint="${CHATBOT_API_URL%/}/internal/embeddings/reindex-all"
-          echo "Gọi $endpoint"
-          curl -fsS --retry 3 --retry-delay 10 --max-time 3000 \
+          echo "Kích hoạt backfill (chạy nền) tại $endpoint"
+          curl -fsS --retry 3 --retry-delay 10 --max-time 60 \
             -X POST "$endpoint" \
             -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN" \
             -H "Content-Type: application/json"
-      - name: Kiểm tra trạng thái embedding sau backfill
+          echo "Đã kích hoạt. Theo dõi tiến độ qua /internal/embeddings/status."
+      - name: Kiểm tra trạng thái embedding sau khi kích hoạt
         if: ${{ vars.CHATBOT_API_URL != '' }}
         continue-on-error: true
         env:
@@ -282,10 +283,14 @@ jobs:
             echo "secrets.CHATBOT_INTERNAL_TOKEN chưa đặt — bỏ qua."
             exit 0
           fi
-          set -e
           endpoint="${CHATBOT_API_URL%/}/internal/embeddings/status"
-          curl -fsS --max-time 30 "$endpoint" \
-            -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN"
+          for i in 1 2 3 4 5; do
+            echo "--- lần $i ---"
+            curl -fsS --max-time 30 "$endpoint" \
+              -H "X-Chatbot-Token: $CHATBOT_INTERNAL_TOKEN" || true
+            echo
+            sleep 30
+          done
       - name: Bỏ qua backfill embedding (chưa đặt CHATBOT_API_URL)
         if: ${{ vars.CHATBOT_API_URL == '' }}
         run: echo "vars.CHATBOT_API_URL chưa đặt — bỏ qua backfill embedding (chạy tay sau)."

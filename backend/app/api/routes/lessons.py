@@ -663,17 +663,17 @@ async def reindex_course(
 
 @router.post(
     "/internal/embeddings/reindex-all",
-    response_model=EmbeddingSyncOut,
     dependencies=[Depends(require_internal_token)],
+    status_code=202,
 )
 async def internal_reindex_all():
-    """Backfill embedding toàn bộ slide còn thiếu (pipeline deploy gọi sau migrate).
+    """Kích hoạt backfill embedding toàn bộ slide còn thiếu (chạy nền).
 
-    Không dùng JWT người dùng; xác thực bằng header `X-Chatbot-Token` chia sẻ.
-    Chạy tuần tự nên có thể mất nhiều phút với dữ liệu lớn.
+    Trả về ngay (202) để tránh gateway timeout (Cloudflare 504). Theo dõi tiến
+    độ bằng `GET /internal/embeddings/status`. Không dùng JWT người dùng; xác
+    thực bằng header `X-Chatbot-Token` chia sẻ.
     """
-    stats = await embedding.reindex_all()
-    return EmbeddingSyncOut(**stats)
+    return await embedding.start_reindex_all_job()
 
 
 @router.get(
@@ -681,5 +681,5 @@ async def internal_reindex_all():
     dependencies=[Depends(require_internal_token)],
 )
 async def internal_embedding_status():
-    """Thống kê trạng thái embedding để pipeline/giám sát kiểm tra."""
-    return await embedding.counts()
+    """Thống kê trạng thái embedding + tiến độ job backfill."""
+    return {"counts": await embedding.counts(), "job": embedding.job_status()}
