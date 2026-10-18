@@ -41,11 +41,8 @@ def close_ingestion() -> None:
 
 def _embed_new(lesson_content_id: str) -> int:
     with _job_lock:
-        ingestion = get_ingestion()
-        if ingestion._load_slide(lesson_content_id) is None:
-            raise LookupError(lesson_content_id)
-        ingestion.embed_new(lesson_content_id)
-        return 1
+        # embed_new tự raise LookupError nếu slide không tồn tại (route -> 404)
+        return get_ingestion().embed_new(lesson_content_id)
 
 
 @router.post("/slide", response_model=EmbedResult)

@@ -32,6 +32,9 @@ class Ingestion:
     # Số ảnh tải trước, song song với lúc VLM đang xử lý slide hiện tại
     PREFETCH = 4
 
+    # DPI render trang PDF nguồn (ảnh raster đã render sẵn thì giữ nguyên pixel)
+    PDF_RENDER_DPI = 150
+
     # SQL lấy thông tin slide kèm ngữ cảnh môn/chương/bài
     SLIDE_QUERY = """
         SELECT
@@ -63,37 +66,37 @@ class Ingestion:
         # Kết nối DB
         self.conn = psycopg.connect(database_url(), autocommit=True)
         register_vector(self.conn)
+        self._verify_vector_dim()
 
-    # Lấy các slide chưa embedding theo từng batch (keyset pagination)
-    def _load_slides(
-        self,
-        course_id: str,
-        last_id: str | None,
-        batch_size: int,
-    ):
-        cursor_filter = "" if last_id is None else "AND lc.id > %s"
-        query = self.SLIDE_QUERY + f"""
-            WHERE c.id = %s
-            {cursor_filter}
+    # Fail-fast nếu EMBEDDING_DIM lệch số chiều của cột vector trong DB, thay vì
+    # để lỗi khó hiểu của pgvector nổ ra ở lần ingest đầu tiên.
+    def _verify_vector_dim(self) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT a.atttypmod
+                FROM pg_attribute a
+                WHERE a.attrelid = to_regclass('lesson_content_embedding')
+                  AND a.attname = 'embedding'
+                """
+            )
+            row = cur.fetchone()
 
-            AND NOT EXISTS (
-                SELECT 1
-                FROM lesson_content_embedding e
-                WHERE e.lesson_content_id = lc.id
+        if row is None:
+            raise RuntimeError(
+                "Không tìm thấy cột lesson_content_embedding.embedding — "
+                "hãy chạy migration 011_quiz_and_embeddings.sql trước."
             )
 
-            ORDER BY lc.id
-            LIMIT %s
-        """
-
-        params = (course_id, batch_size) if last_id is None else (
-            course_id,
-            last_id,
-            batch_size,
-        )
-        with self.conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(query, params)
-            return cur.fetchall()
+        column_dim = int(row[0])
+        if column_dim != self.VECTOR_DIM:
+            raise RuntimeError(
+                f"EMBEDDING_DIM={self.VECTOR_DIM} không khớp VECTOR({column_dim}) của "
+                "lesson_content_embedding.embedding. Sửa EMBEDDING_DIM (và "
+                "EMBEDDING_NAME/MODEL) cho khớp, hoặc tạo migration đổi số chiều "
+                "rồi re-ingest toàn bộ slide."
+            )
+        logger.info("Embedding dimension khớp DB: vector(%s)", column_dim)
 
     # Lấy một slide cụ thể
     def _load_slide(self, lesson_content_id: str):
@@ -117,11 +120,18 @@ class Ingestion:
         ])
 
     # Tải ảnh từ storage và render thành PNG base64 (phần I/O)
-    def _load_image(self, source: str, dpi: int = 150) -> str:
+    def _load_image(self, source: str) -> str:
         file_bytes = self.storage.load(source)
 
         with pymupdf.open(stream=file_bytes) as doc:
-            pix = doc[0].get_pixmap(dpi=dpi, alpha=False)
+            if doc.is_pdf:
+                # PDF nguồn: render trang đầu ở DPI đủ nét cho VLM
+                pix = doc[0].get_pixmap(dpi=self.PDF_RENDER_DPI, alpha=False)
+            else:
+                # Ảnh slide đã được backend render sẵn (144dpi): giữ nguyên
+                # pixel. Render lại ở dpi=150 sẽ upscale ~2x vô ích vì PyMuPDF
+                # coi 1px = 1pt cho ảnh raster.
+                pix = doc[0].get_pixmap(alpha=False)
             return base64.b64encode(pix.tobytes("png")).decode("ascii")
 
     # VLM mô tả ảnh thành text (chạy tuần tự vì dùng GPU local)
@@ -199,28 +209,12 @@ class Ingestion:
 
         return len(data)
 
-    # Embedding các slide cũ chưa có trong DB
-    def embed_existing(self, course_id: str, batch_size: int = 20) -> int:
-        last_id: str | None = None
-        total = 0
-
-        while True:
-            slides = self._load_slides(course_id, last_id, batch_size)
-            if not slides:
-                break
-
-            # Cập nhật cursor trước khi xử lý batch
-            last_id = slides[-1]["id"]
-
-            total += self._embed_batch(slides)
-            logger.info("Processed %s slides, last_id=%s", total, last_id)
-
-        return total
-
     # Embedding một slide mới hoặc cập nhật lại
-    def embed_new(self, lesson_content_id: str) -> None:
+    def embed_new(self, lesson_content_id: str) -> int:
         slide = self._load_slide(lesson_content_id)
-        self._embed_batch([slide])
+        if slide is None:
+            raise LookupError(lesson_content_id)
+        return self._embed_batch([slide])
 
     def close(self):
         self.conn.close()
