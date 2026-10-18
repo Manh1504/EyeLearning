@@ -16,6 +16,7 @@ from langchain_core.messages import SystemMessage
 from workflow.shared import create_embedding, create_vlm, SLIDE_VLM_PROMPT
 from workflow.state import VLMOutput
 from storage import FileStorage
+from app.settings import database_url
 
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ class Ingestion:
         self.storage = FileStorage()
 
         # Kết nối DB
-        self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
+        self.conn = psycopg.connect(database_url(), autocommit=True)
         register_vector(self.conn)
 
     # Lấy các slide chưa embedding theo từng batch (keyset pagination)

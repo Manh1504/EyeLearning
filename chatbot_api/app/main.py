@@ -27,6 +27,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 
 from workflow.graph import build_graph
 from workflow.shared.retrieval import close_retriever
+from app.settings import database_url
 from app.schemas import ChatRequest, ChatResponse
 from app.ingest_api import close_ingestion, router as ingest_router
 
@@ -64,7 +65,7 @@ async def lifespan(app: FastAPI):
         # PostgresSaver.from_conn_string trả về context manager; giữ nó mở
         # trong suốt vòng đời ứng dụng để không mở lại kết nối mỗi request.
         checkpointer = stack.enter_context(
-            PostgresSaver.from_conn_string(os.environ["DATABASE_URL"])
+            PostgresSaver.from_conn_string(database_url())
         )
         # LangGraph owns this schema and keeps setup idempotent across versions.
         checkpointer.setup()

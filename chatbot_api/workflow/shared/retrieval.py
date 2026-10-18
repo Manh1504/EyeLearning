@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 
 from ..state import Citation, RetrievedDoc
 from .models import create_embedding
+from app.settings import database_url
 
 # Lấy slide kèm ngữ cảnh môn/chương/bài và điểm tương đồng cosine.
 # pgvector dùng toán tử `<=>` (cosine distance); với vector đã chuẩn hóa thì
@@ -62,7 +63,7 @@ class Retriever:
         self.threshold = float(os.getenv("RAG_SCORE_THRESHOLD", "0.3"))
 
         self.conn = psycopg.connect(
-            os.environ["DATABASE_URL"],
+            database_url(),
             autocommit=True,
         )
         register_vector(self.conn)
