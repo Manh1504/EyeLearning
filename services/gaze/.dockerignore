@@ -24,16 +24,11 @@ weights/
 .gitignore
 .env
 .env.*
-my_database.db
 
 # --- Tài liệu & compose (không cần trong image) ---
 README.md
-DOCKER.md
-PLAN.md
 *.md
 docker-compose*.yml
-Dockerfile.cpu
-requirements-cpu.txt
 
 # --- IDE / OS ---
 .idea/
