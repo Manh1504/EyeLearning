@@ -1,19 +1,18 @@
 .vscode/
-API/weights/
-API/my_database.db
-__pycache__/
-*.pyc
-.env
-backend/.venv
-chatbot_api/.venv/
-frontend/.next
-frontend/frontend/
-frontend-redesign/
-backend.zip
 .idea/
 
-# Ignore Markdown documentation except README files.
-*.md
-!README.md
-!**/README.md
-!docs/local-chatbot-testing.md
+# Python
+__pycache__/
+*.pyc
+backend/.venv
+chatbot_api/.venv/
+
+# Env (giữ .env.example)
+.env
+
+# Gaze: weights tải runtime + DB dev cục bộ
+API/weights/
+API/my_database.db
+
+# Next.js
+frontend/.next
