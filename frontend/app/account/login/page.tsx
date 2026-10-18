@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AuthLayout } from "@/components/account/auth-layout";
 import { LoginForm } from "@/components/account/login-form";
 import { DemoLoginLinks } from "@/components/account/demo-login-links";
@@ -20,6 +21,12 @@ export default function LoginPage() {
       <LoginForm />
       {demo && <DemoLoginLinks />}
       <p className="mt-6 text-center text-xs text-muted-foreground">
+        Chưa có tài khoản?{" "}
+        <Link href="/account/register" className="font-semibold text-foreground underline underline-offset-2">
+          Đăng ký ngay
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-xs text-muted-foreground">
         Gặp sự cố đăng nhập? Liên hệ quản trị viên trường của bạn.
       </p>
     </AuthLayout>

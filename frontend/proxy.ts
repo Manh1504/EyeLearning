@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isDemoMode, prototypeRouteRedirect } from "@/lib/demo-mode";
 
 const PROTECTED_PREFIXES = ["/teacher", "/student", "/admin"];
-const PUBLIC_ONLY = ["/account/login"];
+const PUBLIC_ONLY = ["/account/login", "/account/register"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -45,5 +45,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/demo/:path*", "/teacher/:path*", "/student/:path*", "/admin/:path*", "/account/login"],
+  matcher: ["/demo/:path*", "/teacher/:path*", "/student/:path*", "/admin/:path*", "/account/login", "/account/register"],
 };

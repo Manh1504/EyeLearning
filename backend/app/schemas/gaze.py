@@ -21,6 +21,10 @@ class LearningSessionOut(CamelModel):
     calibrated: bool = False
     status: str
     tracking_consent: bool
+    # first: lần đầu mở bài → tracking gaze.
+    # continue: vào lại khi bài chưa xong → ghi gaze vào phiên cũ.
+    # review: vào lại khi bài đã xong → không tracking, chỉ xem lại.
+    mode: str = "first"
 
 
 class LearningSessionEndIn(CamelModel):

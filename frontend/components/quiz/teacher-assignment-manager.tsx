@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCreateQuizAssignment, useQuizAssignments } from "@/hooks/use-quiz";
+import { useCreateQuizAssignment, useQuizAssignments, useUpdateQuizAssignment } from "@/hooks/use-quiz";
 import { useCourseTree, useTeacherCourses } from "@/hooks/use-teacher";
 import type {
   QuizAssignment,
@@ -76,7 +76,15 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function AssignmentRow({ assignment }: { assignment: QuizAssignment }) {
+function AssignmentRow({
+  assignment,
+  onPublish,
+  publishing,
+}: {
+  assignment: QuizAssignment;
+  onPublish: (id: string) => void;
+  publishing: boolean;
+}) {
   const totalPoints = assignment.questions.reduce((sum, question) => sum + question.points, 0);
   const statusVariant = assignment.status === "published" ? "success" : assignment.status === "closed" ? "secondary" : "warning";
 
@@ -103,6 +111,16 @@ function AssignmentRow({ assignment }: { assignment: QuizAssignment }) {
           {assignment.questions.length} câu · {totalPoints} điểm
         </span>
       </div>
+      {assignment.status === "draft" && (
+        <Button
+          size="sm"
+          className="mt-3 w-full"
+          disabled={publishing}
+          onClick={() => onPublish(assignment.id)}
+        >
+          {publishing ? "Đang giao..." : "Giao bài cho học viên"}
+        </Button>
+      )}
     </article>
   );
 }
@@ -111,6 +129,7 @@ export function TeacherAssignmentManager() {
   const assignmentsQuery = useQuizAssignments();
   const coursesQuery = useTeacherCourses();
   const createAssignment = useCreateQuizAssignment();
+  const updateAssignment = useUpdateQuizAssignment();
   const [title, setTitle] = useState("");
   const [courseId, setCourseId] = useState("");
   const [lessonId, setLessonId] = useState("");
@@ -162,7 +181,6 @@ export function TeacherAssignmentManager() {
     if (!title.trim()) nextErrors.title = "Nhập tiêu đề bài kiểm tra.";
     if (!courseId) nextErrors.courseId = "Chọn khóa học nhận bài.";
     if (!lessonId) nextErrors.lessonId = "Chọn bài học hiển thị bài tập.";
-    if (!instructions.trim()) nextErrors.instructions = "Thêm hướng dẫn làm bài.";
     if (!dueAt || Number.isNaN(new Date(dueAt).getTime())) nextErrors.dueAt = "Chọn hạn nộp hợp lệ.";
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) nextErrors.durationMinutes = "Thời lượng phải từ 1 phút.";
     if (!questions.length) nextErrors.questions = "Thêm ít nhất một câu hỏi.";
@@ -172,7 +190,6 @@ export function TeacherAssignmentManager() {
       if (question.options.length < 2) nextErrors[`options-${questionIndex}`] = "Mỗi câu cần ít nhất 2 lựa chọn.";
       if (question.options.some((option) => !option.text.trim())) nextErrors[`options-${questionIndex}`] = "Điền đầy đủ các lựa chọn.";
       if (!question.options.some((option) => option.id === question.correctOptionId)) nextErrors[`correct-${questionIndex}`] = "Chọn một đáp án đúng.";
-      if (!question.explanation.trim()) nextErrors[`explanation-${questionIndex}`] = "Thêm giải thích cho đáp án.";
       if (!Number.isFinite(question.points) || question.points < 1) nextErrors[`points-${questionIndex}`] = "Điểm phải từ 1.";
     });
 
@@ -273,7 +290,7 @@ export function TeacherAssignmentManager() {
             <ErrorState title="Không tải được bài đã giao" description="Vui lòng thử tải lại danh sách." onRetry={() => assignmentsQuery.refetch()} />
           ) : assignmentsQuery.data?.length ? (
             <div className="max-h-[680px] overflow-y-auto pr-1">
-              {assignmentsQuery.data.map((assignment) => <AssignmentRow key={assignment.id} assignment={assignment} />)}
+              {assignmentsQuery.data.map((assignment) => <AssignmentRow key={assignment.id} assignment={assignment} onPublish={(id) => updateAssignment.mutate({ id, status: "published" })} publishing={updateAssignment.isPending && updateAssignment.variables?.id === assignment.id} />)}
             </div>
           ) : (
             <EmptyState className="border-0 bg-muted/45 px-4 py-10 shadow-none" icon="ri-file-text-line" title="Chưa có bài kiểm tra" description="Bài bạn tạo sẽ xuất hiện tại đây." />
@@ -307,27 +324,27 @@ export function TeacherAssignmentManager() {
               {Object.keys(errors).length > 0 && <Alert variant="warning" title="Cần bổ sung thông tin">Kiểm tra các trường được đánh dấu bên dưới trước khi lưu.</Alert>}
 
               <div className="grid gap-5 md:grid-cols-2">
-                <Field label="Tiêu đề" htmlFor="assignment-title" error={errors.title} className="md:col-span-2">
+                <Field label="Tiêu đề" htmlFor="assignment-title" error={errors.title} className="md:col-span-2" required>
                   <Input id="assignment-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ví dụ: Kiểm tra cuối chương 2" aria-invalid={Boolean(errors.title)} />
                 </Field>
-                <Field label="Khóa học" error={errors.courseId}>
+                <Field label="Khóa học" error={errors.courseId} required>
                   <Select value={courseId} onValueChange={(value) => { setCourseId(value); setLessonId(""); }} disabled={coursesQuery.isLoading || coursesQuery.isError}>
                     <SelectTrigger aria-invalid={Boolean(errors.courseId)}><SelectValue placeholder={coursesQuery.isLoading ? "Đang tải khóa học..." : "Chọn khóa học"} /></SelectTrigger>
                     <SelectContent>{coursesQuery.data?.map((course) => <SelectItem key={course.id} value={course.id}>{course.title}</SelectItem>)}</SelectContent>
                   </Select>
                   {coursesQuery.isError && <button type="button" onClick={() => coursesQuery.refetch()} className="text-left text-xs font-medium text-destructive underline underline-offset-2">Không tải được khóa học. Thử lại</button>}
                 </Field>
-                <Field label="Bài học" error={errors.lessonId}>
+                <Field label="Bài học" error={errors.lessonId} required>
                   <Select value={lessonId} onValueChange={setLessonId} disabled={!courseId || courseTreeQuery.isLoading || courseTreeQuery.isError}>
                     <SelectTrigger aria-invalid={Boolean(errors.lessonId)}><SelectValue placeholder={!courseId ? "Chọn khóa học trước" : courseTreeQuery.isLoading ? "Đang tải bài học..." : "Chọn bài học"} /></SelectTrigger>
                     <SelectContent>{lessons.map((lesson) => <SelectItem key={lesson.id} value={lesson.id}>{lesson.moduleTitle} · {lesson.title}</SelectItem>)}</SelectContent>
                   </Select>
                   {courseTreeQuery.isError && <button type="button" onClick={() => courseTreeQuery.refetch()} className="text-left text-xs font-medium text-destructive underline underline-offset-2">Không tải được bài học. Thử lại</button>}
                 </Field>
-                <Field label="Hạn nộp" htmlFor="assignment-due" error={errors.dueAt}>
+                <Field label="Hạn nộp" htmlFor="assignment-due" error={errors.dueAt} required>
                   <Input id="assignment-due" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} aria-invalid={Boolean(errors.dueAt)} />
                 </Field>
-                <Field label="Thời lượng (phút)" htmlFor="assignment-duration" error={errors.durationMinutes}>
+                <Field label="Thời lượng (phút)" htmlFor="assignment-duration" error={errors.durationMinutes} required>
                   <Input id="assignment-duration" type="number" min={1} step={1} value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.valueAsNumber)} aria-invalid={Boolean(errors.durationMinutes)} />
                 </Field>
                 <Field label="Hướng dẫn làm bài" htmlFor="assignment-instructions" error={errors.instructions} className="md:col-span-2">
@@ -350,7 +367,7 @@ export function TeacherAssignmentManager() {
                 <Button type="button" variant="ghost" size="icon-xs" disabled={questions.length === 1} onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))} aria-label={`Xóa câu hỏi ${questionIndex + 1}`}><Icon name="ri-delete-bin-line" /></Button>
               </div>
               <div className="space-y-6 p-5 sm:p-7">
-                <Field label="Nội dung câu hỏi" htmlFor={`question-${question.id}`} error={errors[`question-${questionIndex}`]}>
+                <Field label="Nội dung câu hỏi" htmlFor={`question-${question.id}`} error={errors[`question-${questionIndex}`]} required>
                   <Textarea id={`question-${question.id}`} value={question.prompt} onChange={(event) => updateQuestion(questionIndex, { prompt: event.target.value })} placeholder="Nhập câu hỏi rõ ràng, chỉ có một đáp án đúng..." aria-invalid={Boolean(errors[`question-${questionIndex}`])} />
                 </Field>
 
@@ -374,7 +391,7 @@ export function TeacherAssignmentManager() {
                   <Field label="Giải thích đáp án" htmlFor={`explanation-${question.id}`} error={errors[`explanation-${questionIndex}`]}>
                     <Textarea id={`explanation-${question.id}`} value={question.explanation} onChange={(event) => updateQuestion(questionIndex, { explanation: event.target.value })} placeholder="Giải thích ngắn gọn vì sao đáp án này đúng..." aria-invalid={Boolean(errors[`explanation-${questionIndex}`])} />
                   </Field>
-                  <Field label="Điểm" htmlFor={`points-${question.id}`} error={errors[`points-${questionIndex}`]}>
+                  <Field label="Điểm" htmlFor={`points-${question.id}`} error={errors[`points-${questionIndex}`]} required>
                     <Input id={`points-${question.id}`} type="number" min={1} step={1} value={question.points} onChange={(event) => updateQuestion(questionIndex, { points: event.target.valueAsNumber })} aria-invalid={Boolean(errors[`points-${questionIndex}`])} />
                   </Field>
                 </div>
@@ -394,10 +411,13 @@ export function TeacherAssignmentManager() {
   );
 }
 
-function Field({ label, htmlFor, error, className, children }: { label: string; htmlFor?: string; error?: string; className?: string; children: React.ReactNode }) {
+function Field({ label, htmlFor, error, className, required, children }: { label: string; htmlFor?: string; error?: string; className?: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className={cn("space-y-2", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <Label htmlFor={htmlFor}>
+        {label}
+        {required && <span className="text-destructive"> *</span>}
+      </Label>
       {children}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>

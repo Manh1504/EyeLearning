@@ -71,3 +71,18 @@ export function sendQuizChat(
     body: { message, threadId },
   });
 }
+
+export async function updateQuizAssignment(
+  id: string,
+  input: { status?: "draft" | "published" | "closed" },
+): Promise<QuizAssignment> {
+  if (isDemoMode()) {
+    const existing = await (await demoStore()).getQuizAssignment(id);
+    if (!existing) throw new Error("Không tìm thấy bài tập");
+    return { ...existing, status: input.status ?? existing.status };
+  }
+  return apiFetch<QuizAssignment>(`/api/assignments/${id}`, {
+    method: "PATCH",
+    body: input,
+  });
+}

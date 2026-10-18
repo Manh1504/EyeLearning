@@ -73,6 +73,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
   const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false);
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
   const [learningSessionIds, setLearningSessionIds] = useState<Record<string, string>>({});
+  const [trackingLessons, setTrackingLessons] = useState<Record<string, boolean>>({});
   const [gazeCalibrated, setGazeCalibrated] = useState(false);
   const [showResume, setShowResume] = useState(false);
   const [resumeHandled, setResumeHandled] = useState<string | null>(null);
@@ -198,6 +199,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
         }
         sessionsRef.current[lessonId] = session.id;
         setLearningSessionIds((prev) => ({ ...prev, [lessonId]: session.id }));
+        setTrackingLessons((prev) => ({ ...prev, [lessonId]: session.trackingConsent }));
         setGazeCalibrated(Boolean(getStoredGazeSessionId()));
       })
       .catch(() => {});
@@ -209,6 +211,9 @@ export function LearningReader({ courseId }: { courseId: string }) {
   }, [activeLessonId, enrollmentId, closeLearningSession]);
 
   const learningSessionId = learningSessionIds[activeLessonId];
+  // Chỉ thu gaze khi backend cho phép (lần đầu/học tiếp). Học lại bài đã xong
+  // (review) → trackingConsent=false, không gửi gaze.
+  const trackingAllowed = Boolean(activeLessonId) && trackingLessons[activeLessonId] !== false;
 
   const saveProgress = useCallback(
     async (lessonId: string, lastSlide: number, completed?: boolean) => {
@@ -250,7 +255,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
   }, [learningSessionId, flushGaze]);
 
   const { source: gazeSource } = useGazeTracker({
-    enabled: Boolean(activeLessonId && total > 0),
+    enabled: Boolean(activeLessonId && total > 0 && trackingAllowed),
     calibrated: gazeCalibrated,
     allowSimulation: false,
     onPoint: useCallback(
@@ -275,7 +280,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
           if (paintedRect) mapped = screenGazeToSlide(x, y, paintedRect);
         }
 
-        if (!slide || !learningSessionId) return;
+        if (!slide || !learningSessionId || !trackingAllowed) return;
         enqueueGaze({
           lessonContentId: slide.id,
           x: mapped ? mapped.x : -1,
@@ -283,7 +288,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
           ts: Date.now(),
         });
       },
-      [currentSlide, slides, learningSessionId, enqueueGaze],
+      [currentSlide, slides, learningSessionId, enqueueGaze, trackingAllowed],
     ),
   });
 

@@ -2,8 +2,10 @@ import ipaddress
 import asyncio
 import logging
 import time
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import security
@@ -13,7 +15,13 @@ from app.core.ratelimit import rate_limit
 from app.crud import user as user_crud
 from app.db.session import get_db
 from app.models.auth import User
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenPair, UserSummary
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenPair,
+    UserSummary,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger("app.performance")
@@ -102,6 +110,47 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(key="refresh_token", path="/api/auth", domain=settings.cookie_domain)
     response.delete_cookie(key="refresh_token", path="/", domain=settings.cookie_domain)
     response.delete_cookie(key="csrf_token", path="/", domain=settings.cookie_domain)
+
+
+@router.post(
+    "/register",
+    response_model=TokenPair,
+    status_code=201,
+    dependencies=[Depends(rate_limit(5, 60, "register"))],
+)
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Đăng ký tài khoản học viên (email + tên + năm sinh)."""
+    existing = await user_crud.get_user_by_email(db, body.email)
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email đã được sử dụng",
+        )
+    password_hash = await asyncio.to_thread(security.hash_password, body.password)
+    try:
+        user = await user_crud.create_student(
+            db,
+            email=body.email,
+            password_hash=password_hash,
+            full_name=body.full_name.strip(),
+        )
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email đã được sử dụng",
+        )
+    if user.profile is not None:
+        user.profile.date_of_birth = date(body.birth_year, 1, 1)
+    pair = await _issue_tokens(db, user, request)
+    await db.commit()
+    _set_auth_cookies(response, pair.access_token, pair.refresh_token)
+    return pair
 
 
 @router.post(

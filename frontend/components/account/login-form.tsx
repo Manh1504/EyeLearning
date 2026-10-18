@@ -70,7 +70,7 @@ export function LoginForm({ className }: { className?: string }) {
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div className="space-y-2">
           <Label htmlFor="login-email" className="text-[13px] font-semibold text-[#2a2a2a]">
-            Email
+            Email <span className="text-destructive">*</span>
           </Label>
           <Input
             id="login-email"
@@ -86,7 +86,7 @@ export function LoginForm({ className }: { className?: string }) {
 
         <div className="space-y-2">
           <Label htmlFor="login-password" className="text-[13px] font-semibold text-[#2a2a2a]">
-            Mật khẩu
+            Mật khẩu <span className="text-destructive">*</span>
           </Label>
           <div className="relative">
             <Input

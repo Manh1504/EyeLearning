@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
-from app.models.auth import AuthSession, User
+from app.models.auth import AuthSession, Role, User, UserRole, UserStatus
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -68,3 +68,41 @@ async def get_valid_session(db: AsyncSession, refresh_token_hash: str) -> AuthSe
 
 async def revoke_session(db: AsyncSession, session: AuthSession) -> None:
     session.revoked_at = datetime.now(timezone.utc)
+
+
+async def create_student(
+    db: AsyncSession,
+    *,
+    email: str,
+    password_hash: str,
+    full_name: str,
+) -> User:
+    """Tạo user mới với role `student` và status `active`.
+
+    Không tạo student_profile/student_code (do admin cấp sau) — hồ sơ cơ bản
+    nằm ở user_profiles.
+    """
+    status_id = (
+        await db.execute(select(UserStatus.id).where(UserStatus.code == "active"))
+    ).scalar_one()
+    role_id = (
+        await db.execute(select(Role.id).where(Role.code == "student"))
+    ).scalar_one()
+
+    user = User(
+        email=email.lower(),
+        password_hash=password_hash,
+        status_id=status_id,
+    )
+    db.add(user)
+    await db.flush()
+
+    db.add(UserRole(user_id=user.id, role_id=role_id))
+
+    from app.models.profile import UserProfile
+
+    db.add(UserProfile(user_id=user.id, full_name=full_name, email=email.lower()))
+
+    await db.flush()
+    await db.refresh(user)
+    return user

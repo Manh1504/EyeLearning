@@ -697,36 +697,17 @@ export function ContentEditor({
             <h3 className="mt-3 text-sm font-semibold text-black">Thông tin khóa học</h3>
           </div>
           <div className="space-y-4 rounded-[20px] border border-[#eeeee9] bg-white p-5 shadow-xs sm:p-7">
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
-            <div className="space-y-1.5">
-              <label htmlFor="new-title" className="block text-sm font-medium text-black">
-                Tên khóa học <span className="text-destructive">*</span>
-              </label>
-              <input
-                id="new-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ví dụ: Lập trình Python cơ bản"
-                className={INPUT_CLS}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="new-level" className="block text-sm font-medium text-black">
-                Trình độ
-              </label>
-              <select
-                id="new-level"
-                value={level}
-                onChange={(e) => setLevel(e.target.value as Level)}
-                className={INPUT_CLS}
-              >
-                {Object.keys(LEVEL_LABEL).map((lv) => (
-                  <option key={lv} value={lv}>
-                    {LEVEL_LABEL[lv]}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="space-y-1.5">
+            <label htmlFor="new-title" className="block text-sm font-medium text-black">
+              Tên khóa học <span className="text-destructive">*</span>
+            </label>
+            <input
+              id="new-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ví dụ: Lập trình Python cơ bản"
+              className={INPUT_CLS}
+            />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="new-desc" className="block text-sm font-medium text-black">

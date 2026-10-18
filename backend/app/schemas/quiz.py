@@ -16,7 +16,7 @@ class QuizQuestion(CamelModel):
     prompt: str = Field(min_length=1, max_length=4000)
     options: list[QuizOption] = Field(min_length=2, max_length=12)
     correct_option_id: str = Field(min_length=1, max_length=100)
-    explanation: str = Field(min_length=1, max_length=8000)
+    explanation: str = Field(default="", max_length=8000)
     points: int = Field(ge=1, le=1000)
 
     @model_validator(mode="after")
@@ -61,6 +61,24 @@ class QuizAssignmentOut(CamelModel):
     created_at: datetime
     expires_at: datetime | None = None
     questions: list[dict]
+
+
+class QuizAssignmentUpdate(CamelModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    instructions: str | None = Field(default=None, max_length=8000)
+    due_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    status: str | None = Field(default=None, pattern="^(draft|published|closed)$")
+    questions: list[QuizQuestion] | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_question_ids(self):
+        if self.questions is None:
+            return self
+        ids = [question.id for question in self.questions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("ID câu hỏi phải duy nhất")
+        return self
 
 
 class QuizAttemptCreate(CamelModel):

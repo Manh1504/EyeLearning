@@ -18,6 +18,7 @@ from app.models.quiz import QuizAssignment, QuizAttempt, QuizAttemptSession
 from app.schemas.quiz import (
     QuizAssignmentCreate,
     QuizAssignmentOut,
+    QuizAssignmentUpdate,
     QuizAttemptCreate,
     QuizAttemptOut,
     QuizChatIn,
@@ -176,6 +177,37 @@ async def create_assignment(
         questions=[question.model_dump(by_alias=True) for question in body.questions],
     )
     db.add(assignment)
+    await db.commit()
+    await db.refresh(assignment)
+    return await _assignment_out(db, assignment, True)
+
+
+@router.patch("/{assignment_id}", response_model=QuizAssignmentOut)
+async def update_assignment(
+    assignment_id: UUID,
+    body: QuizAssignmentUpdate,
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sửa hoặc publish/close bài tập (dùng để giao bài nháp đã tạo)."""
+    assignment = await _assignment_or_404(db, str(assignment_id))
+    course = await _course_or_404(db, assignment.course_id)
+    if not await can_access_course(db, course, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    if body.title is not None:
+        assignment.title = body.title.strip()
+    if body.instructions is not None:
+        assignment.instructions = body.instructions.strip()
+    if body.due_at is not None:
+        assignment.due_at = body.due_at
+    if body.duration_minutes is not None:
+        assignment.duration_minutes = body.duration_minutes
+    if body.status is not None:
+        assignment.status = body.status
+    if body.questions is not None:
+        assignment.questions = [
+            question.model_dump(by_alias=True) for question in body.questions
+        ]
     await db.commit()
     await db.refresh(assignment)
     return await _assignment_out(db, assignment, True)

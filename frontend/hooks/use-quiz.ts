@@ -7,6 +7,7 @@ import {
   getQuizAttempt,
   listQuizAssignments,
   submitQuizAttempt,
+  updateQuizAssignment,
 } from "@/lib/api/quiz";
 import type { QuizAssignment } from "@/lib/types/domain";
 
@@ -50,5 +51,19 @@ export function useSubmitQuizAttempt() {
         client.invalidateQueries({ queryKey: ["quiz", "assignments"] }),
       ]);
     },
+  });
+}
+
+export function useUpdateQuizAssignment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      status,
+    }: {
+      id: string;
+      status: "draft" | "published" | "closed";
+    }) => updateQuizAssignment(id, { status }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["quiz", "assignments"] }),
   });
 }

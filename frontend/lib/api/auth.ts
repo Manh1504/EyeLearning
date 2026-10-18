@@ -96,6 +96,22 @@ export async function login(email: string, password: string): Promise<LoginResul
   return data;
 }
 
+export async function register(
+  fullName: string,
+  email: string,
+  password: string,
+  birthYear: number,
+): Promise<LoginResult> {
+  const data = await apiFetch<LoginResult>("/api/auth/register", {
+    method: "POST",
+    body: { fullName, email, password, birthYear },
+    skipAuthRefresh: true,
+  });
+  if (data?.accessToken) setMemoryAccessToken(data.accessToken);
+  notifyAuthChange("login");
+  return data;
+}
+
 export async function logout(): Promise<void> {
   try {
     await apiFetch<{ ok: boolean }>("/api/auth/logout", {

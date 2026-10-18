@@ -14,6 +14,9 @@ export interface LearningSession {
   calibrated: boolean;
   status: string;
   trackingConsent: boolean;
+  // first: lần đầu (tracking), continue: học tiếp phiên cũ (tracking),
+  // review: học lại bài đã xong (không tracking).
+  mode: "first" | "continue" | "review";
 }
 
 export interface CreateLearningSessionInput {

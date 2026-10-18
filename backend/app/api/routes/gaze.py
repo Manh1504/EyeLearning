@@ -12,7 +12,7 @@ from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.calibration import CalibrationParam, Device
-from app.models.course import Enrollment, Lesson, LessonContent, Module
+from app.models.course import Enrollment, Lesson, LessonContent, LessonProgress, Module
 from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
 from app.schemas.gaze import (
     GazeBatchIn,
@@ -91,12 +91,59 @@ async def create_learning_session(
         screen_height_px=body.screen_height_px,
     )
     params = await _active_param(db, user.id, device.id)
+
+    # Xác định chế độ học dựa trên các phiên trước + tiến độ bài học.
+    # - Chưa từng học bài này → "first" (tracking gaze).
+    # - Đã học nhưng bài chưa hoàn thành → "continue": dùng lại phiên cũ đang mở
+    #   để ghi tiếp gaze, tránh tạo phiên trùng.
+    # - Bài đã hoàn thành (học lại) → "review": không tracking gaze.
+    progress = (
+        await db.execute(
+            select(LessonProgress).where(
+                LessonProgress.enrollment_id == enrollment.id,
+                LessonProgress.lesson_id == lesson.id,
+            )
+        )
+    ).scalar_one_or_none()
+    completed = progress is not None and progress.status == "completed"
+
+    existing = (
+        await db.execute(
+            select(LearningSession)
+            .where(
+                LearningSession.enrollment_id == enrollment.id,
+                LearningSession.lesson_id == lesson.id,
+            )
+            .order_by(LearningSession.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if existing is not None and not completed:
+        # Học tiếp: tái sử dụng phiên cũ nếu nó vẫn mở; nếu đã đóng thì mở lại.
+        if existing.status != "in_progress":
+            existing.status = "in_progress"
+            existing.ended_at = None
+            await db.commit()
+            await db.refresh(existing)
+        return LearningSessionOut(
+            id=existing.id,
+            enrollment_id=existing.enrollment_id,
+            lesson_id=existing.lesson_id,
+            device_id=existing.device_id,
+            calibrated=existing.calibration_param_id is not None,
+            status=existing.status,
+            tracking_consent=existing.tracking_consent,
+            mode="continue",
+        )
+
+    mode = "review" if completed else "first"
     session = LearningSession(
         enrollment_id=enrollment.id,
         lesson_id=lesson.id,
         device_id=device.id,
         calibration_param_id=params.id if params else None,
-        tracking_consent=body.tracking_consent,
+        tracking_consent=body.tracking_consent and mode != "review",
     )
     db.add(session)
     await db.commit()
@@ -109,6 +156,7 @@ async def create_learning_session(
         calibrated=bool(params and params.has_params),
         status=session.status,
         tracking_consent=session.tracking_consent,
+        mode=mode,
     )
 
 
