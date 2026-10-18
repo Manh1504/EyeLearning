@@ -5,14 +5,14 @@
 __pycache__/
 *.pyc
 backend/.venv
-chatbot_api/.venv/
+services/chatbot/.venv/
 
 # Env (giữ .env.example)
 .env
 
 # Gaze: weights tải runtime + DB dev cục bộ
-API/weights/
-API/my_database.db
+services/gaze/weights/
+services/gaze/my_database.db
 
 # Next.js
 frontend/.next

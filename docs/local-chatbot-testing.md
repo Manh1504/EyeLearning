@@ -46,7 +46,7 @@ Migration `011_quiz_and_embeddings.sql` cố định vector ở 4096 chiều (`q
 Chạy chatbot local:
 
 ```powershell
-Set-Location chatbot_api
+Set-Location services\chatbot
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.docker.txt
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8002
@@ -152,7 +152,7 @@ Các lệnh kiểm tra code:
 Set-Location backend
 python -m pytest tests/test_assignments.py -vv
 
-Set-Location ..\chatbot_api
+Set-Location ..\services\chatbot
 python -m pytest -q
 
 Set-Location ..\frontend

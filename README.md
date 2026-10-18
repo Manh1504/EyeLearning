@@ -25,8 +25,9 @@ trung) cho giáo viên.
 |---|---|
 | `frontend/` | Next.js (App Router, TypeScript, Tailwind) — khu vực học viên + giáo viên |
 | `backend/` | FastAPI — auth/JWT, khóa học, gaze ingestion, analytics (chi tiết: `backend/README.md`) |
-| `API/` | ML service — ước lượng gaze từ webcam, calibration, WebSocket `/infer` (cần GPU) |
-| `db/` | Migrations PostgreSQL (001 schema, 002 seed, 003 partition gaze, 004 analytics) |
+| `services/gaze/` | ML service — ước lượng gaze từ webcam, calibration, WebSocket `/infer` (cần GPU) |
+| `services/chatbot/` | RAG service (LangGraph + pgvector) — chat hỗ trợ học tập, ingest slide, chữa bài |
+| `db/` | Migrations PostgreSQL (001 schema, 002 seed, 003 partition gaze, 004 analytics, ... 011 quiz & embeddings) |
 
 ## Chạy nhanh (Docker)
 
@@ -37,9 +38,21 @@ docker compose up -d              # postgres (:5435) + backend (:8001)
 - Backend: `server.nmhieu.online` — Swagger tại `server.nmhieu.online/docs`
 - Postgres: `localhost:5435` (user/pass/db: `postgres/postgres/eyetracking`)
 
-Service ML (`API/`, cần GPU) đang được comment trong `docker-compose.yml`; bật lên
-khi có NVIDIA runtime. Frontend kết nối trực tiếp WS `/infer` của service này —
-khi nó tắt, frontend tự fallback mock (backend chỉ dùng `AI_HTTP_URL` để probe `/ai/health`).
+Service ML (`services/gaze/`, cần GPU) chạy image `eyelearning-gaze` và cần NVIDIA
+runtime; image được CI build từ `services/gaze/Dockerfile`. Frontend kết nối trực tiếp
+WS `/infer` của service này — khi nó tắt, frontend tự fallback mock (backend chỉ dùng
+`AI_HTTP_URL` để probe `/ai/health`).
+
+## Ranh giới giữa các service
+
+| Service | Sở hữu | Không được làm |
+|---|---|---|
+| `backend/` | PostgreSQL (schema, migration), auth/JWT, dữ liệu slide, analytics | Không suy luận gaze (gọi `services/gaze`), không tự tạo vector |
+| `services/gaze/` | Suy luận hướng nhìn (mediapipe + UniGaze), calibration; stateless, không DB, không auth | Không đọc/ghi DB, không biết user là ai |
+| `services/chatbot/` | Vector slide (`lesson_content_embedding`), checkpoint hội thoại, RAG graph | Chỉ đọc dữ liệu; không ghi vào bảng nghiệp vụ của backend |
+
+Backend và chatbot xác thực nội bộ bằng header `X-Chatbot-Token` (`CHATBOT_INTERNAL_TOKEN`);
+chatbot không bao giờ nhận request trực tiếp từ trình duyệt.
 
 ### Frontend
 

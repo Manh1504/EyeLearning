@@ -165,7 +165,7 @@ DROP TABLE tmp;
 ## Hệ tọa độ (quan trọng)
 
 - `gaze_events.gaze_x/gaze_y` và `aoi_regions.x_min..y_max` đều **chuẩn hóa [0,1]** —
-  khớp với output endpoint `/infer` của `API/server.py` (đã trả về [0,1]).
+  khớp với output endpoint `/infer` của `services/gaze/server.py` (đã trả về [0,1]).
 - Muốn tọa độ pixel: nhân với `devices.screen_width_px / screen_height_px`.
 - Không CHECK biên [0,1] trên gaze: filter OneEuro có thể overshoot nhẹ;
   clamp ở tầng application trước khi ghi DB.

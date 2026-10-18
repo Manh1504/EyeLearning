@@ -108,13 +108,13 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            chatbot_api/requirements.docker.txt
-            chatbot_api/requirements.test.txt
+            services/chatbot/requirements.docker.txt
+            services/chatbot/requirements.test.txt
       - name: Install dependencies
-        working-directory: chatbot_api
+        working-directory: services/chatbot
         run: pip install -r requirements.docker.txt -r requirements.test.txt
       - name: Unit tests
-        working-directory: chatbot_api
+        working-directory: services/chatbot
         run: python -m pytest -q
       - name: Build image
-        run: docker build -t eyelearning-chatbot:ci ./chatbot_api
+        run: docker build -t eyelearning-chatbot:ci ./services/chatbot

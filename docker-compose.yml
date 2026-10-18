@@ -115,7 +115,7 @@ services:
 
   chatbot:
     build:
-      context: ./chatbot_api
+      context: ./services/chatbot
       dockerfile: Dockerfile
     image: ghcr.io/manh1504/eyelearning-chatbot:latest
     container_name: eyetracking-chatbot
@@ -174,7 +174,7 @@ services:
     volumes:
       - gaze-weights:/app/weights
     gpus: all
-    # Healthcheck gọi /health của API/server.py (python có sẵn trong image,
+    # Healthcheck gọi /health của services/gaze/server.py (python có sẵn trong image,
     # không dùng curl). start_period dài vì entrypoint tải weights + load
     # mediapipe/unigaze lúc khởi động (có thể > 3 phút).
     healthcheck:
@@ -184,7 +184,7 @@ services:
       retries: 5
       start_period: 180s
     # Không publish 8000 ra host — chỉ nginx (và backend nội bộ) truy cập.
-    # Build từ ./API/Dockerfile, weights tải runtime vào volume (xem API/download_weights.py)
+    # Build từ ./services/gaze/Dockerfile, weights tải runtime vào volume (xem services/gaze/download_weights.py)
 
   frontend:
     image: ghcr.io/manh1504/eyelearning-frontend:latest

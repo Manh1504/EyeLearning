@@ -87,15 +87,15 @@ jobs:
               - 'backend/app/**'
               - '.github/workflows/build.yml'
             chatbot:
-              - 'chatbot_api/**'
+              - 'services/chatbot/**'
               - '.github/workflows/build.yml'
             gaze:
-              - 'API/Dockerfile'
-              - 'API/.dockerignore'
-              - 'API/requirements-gpu.txt'
-              - 'API/requirements-torch.txt'
-              - 'API/entrypoint.sh'
-              - 'API/*.py'
+              - 'services/gaze/Dockerfile'
+              - 'services/gaze/.dockerignore'
+              - 'services/gaze/requirements-gpu.txt'
+              - 'services/gaze/requirements-torch.txt'
+              - 'services/gaze/entrypoint.sh'
+              - 'services/gaze/*.py'
               - '.github/workflows/build.yml'
             nginx:
               - 'nginx/Dockerfile'
@@ -146,7 +146,7 @@ jobs:
             matrix=$(jq -c '. + [{"name":"backend","context":"./backend","file":"./backend/Dockerfile","build":true}]' <<< "$matrix")
           fi
           if [[ "$CHATBOT" == "true" ]]; then
-            matrix=$(jq -c '. + [{"name":"chatbot","context":"./chatbot_api","file":"./chatbot_api/Dockerfile","build":true}]' <<< "$matrix")
+            matrix=$(jq -c '. + [{"name":"chatbot","context":"./services/chatbot","file":"./services/chatbot/Dockerfile","build":true}]' <<< "$matrix")
           fi
           if [[ "$NGINX" == "true" ]]; then
             matrix=$(jq -c '. + [{"name":"nginx","context":"./nginx","file":"./nginx/Dockerfile","build":true}]' <<< "$matrix")
@@ -158,7 +158,7 @@ jobs:
             matrix=$(jq -c '. + [{"name":"migrations","context":".","file":"./Dockerfile.migrations","build":true}]' <<< "$matrix")
           fi
           if [[ "$GAZE" == "true" ]]; then
-            matrix=$(jq -c '. + [{"name":"gaze","context":"./API","file":"./API/Dockerfile","build":true}]' <<< "$matrix")
+            matrix=$(jq -c '. + [{"name":"gaze","context":"./services/gaze","file":"./services/gaze/Dockerfile","build":true}]' <<< "$matrix")
           fi
 
           has_images=$(jq -r 'length > 0' <<< "$matrix")

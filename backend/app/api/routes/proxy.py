@@ -9,7 +9,7 @@ router = APIRouter(tags=["ai-proxy"])
 
 @router.get("/ai/health")
 async def ai_health():
-    """Kiểm tra AI service (API/server.py) đã load xong pipeline chưa."""
+    """Kiểm tra AI service (services/gaze/server.py) đã load xong pipeline chưa."""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"{settings.ai_http_url}/health")
