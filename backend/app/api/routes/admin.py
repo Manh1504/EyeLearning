@@ -183,9 +183,7 @@ async def unassign_teacher(
     return {"ok": True}
 
 
-# ------------------------------------------------------------------
 # Calibration settings — admin điều chỉnh ngưỡng MAE & bật/tắt tính điểm
-# ------------------------------------------------------------------
 async def _get_or_init_settings(db: AsyncSession) -> CalibrationSettings:
     row = await db.get(CalibrationSettings, 1)
     if row is None:

@@ -83,7 +83,7 @@ export interface SlideStat {
   aois: HeatmapAoi[];         // vùng nội dung chuẩn hóa [0,1], độc lập với scope heatmap
 }
 
-// ---- Dashboard mở rộng (teacher) ----
+// Dashboard mở rộng (teacher)
 
 export interface WeekDelta { value: number; delta: number | null; note: string }
 
@@ -135,7 +135,7 @@ export interface RecentSession {
   when: string;
 }
 
-// ---- Student (my-courses) ----
+// Student (my-courses)
 
 export interface EnrolledCourse {
   enrollmentId: string;
@@ -152,7 +152,7 @@ export interface EnrolledCourse {
   };
 }
 
-// ---- Student (course-learning) ----
+// Student (course-learning)
 
 export interface Slide {
   id: string;
@@ -160,7 +160,7 @@ export interface Slide {
   imageUrl: string | null;
 }
 
-// ---- Slide trọng tâm + điểm hoàn thành theo độ bao phủ nội dung (teacher) ----
+// Slide trọng tâm + điểm hoàn thành theo độ bao phủ nội dung (teacher)
 
 export interface SlideAdmin {
   id: string;
@@ -241,7 +241,7 @@ export interface CourseOutline {
   modules: ModuleItem[];
 }
 
-// ---- Profile (users / user_profiles / student_profiles / teacher_profiles) ----
+// Profile (users / user_profiles / student_profiles / teacher_profiles)
 
 export type GenderCode = 'male' | 'female' | 'other';
 
@@ -279,8 +279,6 @@ export interface ProfileUpdate {
   program?: string | null;     // chỉ student
   department?: string | null;  // chỉ teacher
 }
-
-// ---- Quiz assignment prototype (replace local adapter with backend API later) ----
 
 export type QuizAssignmentStatus = 'draft' | 'published' | 'closed';
 

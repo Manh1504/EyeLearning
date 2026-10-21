@@ -38,7 +38,7 @@ INFER_WORKERS = int(os.getenv("INFER_WORKERS", "1"))
 # Thiết bị suy luận: "cpu", "cuda", hoặc rỗng để tự dò GPU.
 DEVICE = os.getenv("DEVICE", "").strip().lower()
 
-# --- One-Euro smoothing (làm mượt POG, xem app/services/smoothing.py) ---
+# One-Euro smoothing (làm mượt POG, xem app/services/smoothing.py)
 # Tọa độ là [0, 1] theo viewport nên các ngưỡng tính theo "bề rộng viewport/giây".
 # `beta` là nút chính để BỚT TRỄ: cao hơn -> bám nhanh khi lia mắt.
 ONEEURO_BETA = float(os.getenv("ONEEURO_BETA", "0.5"))

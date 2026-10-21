@@ -141,7 +141,6 @@ export function TryFlow() {
     setStep("intro");
   };
 
-  // ---- Calibration step uses shared engine ----
   if (step === "calibrate") {
     return <GuestCalibration onDone={() => setStep("view")} />;
   }

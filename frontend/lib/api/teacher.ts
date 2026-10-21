@@ -81,8 +81,6 @@ export function fetchHeatmap(
   });
 }
 
-// ---- Mutations ----
-
 export interface CourseWriteInput {
   title: string;
   description?: string;

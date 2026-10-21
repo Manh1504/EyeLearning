@@ -30,7 +30,7 @@ class Calibration:
     def ready(self) -> bool:
         return self._coef is not None
 
-    # --- Fit / predict -----------------------------------------------------
+    # Fit / predict
     def fit(self, X, y) -> None:
         """Fit bình phương nhỏ nhất từ mẫu (X: Nx2, y: Nx2)."""
         X = np.asarray(X, dtype=float).reshape(-1, 2)
@@ -74,7 +74,7 @@ class Calibration:
         self.fit(X, y)  # fit cuối trên toàn bộ mẫu
         return float(np.mean(errs))
 
-    # --- Serialize (ubjson v2, không pickle) -------------------------------
+    # Serialize (ubjson v2, không pickle)
     def serialize(self) -> bytes:
         if self._coef is None:
             raise RuntimeError("model chưa được train")

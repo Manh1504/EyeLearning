@@ -117,7 +117,7 @@ class Retriever:
         return
 
 
-# --- Singleton: dùng chung 1 retriever trong toàn bộ tiến trình -------------
+# Singleton: dùng chung 1 retriever trong toàn bộ tiến trình
 _retriever: Retriever | None = None
 _retriever_lock = threading.Lock()
 
@@ -140,7 +140,7 @@ def close_retriever() -> None:
         _retriever = None
 
 
-# --- Dựng trích dẫn & ngữ cảnh --------------------------------------------
+# Dựng trích dẫn & ngữ cảnh
 def build_citations(docs: list[RetrievedDoc]) -> list[Citation]:
     """Dựng trích dẫn trong code (không tin LLM tự bịa nguồn).
 

@@ -385,7 +385,6 @@ export function ContentEditor({
     }
   };
 
-  // ---- Create-new flow (single page) ----
   const patchNewChapter = (key: number, patch: Partial<NewChapterDraft>) =>
     setNewChapters((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
 

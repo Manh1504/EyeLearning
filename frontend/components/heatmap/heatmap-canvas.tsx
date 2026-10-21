@@ -1,8 +1,6 @@
 'use client';
 
 // components/heatmap/heatmap-canvas.tsx — Bản vẽ heatmap KDE dùng chung.
-// Nguồn gốc: luồng dùng thử (/try) — density SCALE=6 + colorize gain 255/maxAlpha.
-// Mặc định đã hạ: độ đậm 0.6, point nhỏ (factor 0.07), alpha nền thấp.
 
 import { useEffect, useRef, useState } from 'react';
 

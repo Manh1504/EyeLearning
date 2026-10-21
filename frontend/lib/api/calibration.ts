@@ -204,7 +204,7 @@ export function clearStoredGazeSession(): void {
   globalThis.localStorage?.removeItem(DPR_KEY);
 }
 
-// --- Lưu / khôi phục model hiệu chỉnh (.ubj) -------------------------------
+// Lưu / khôi phục model hiệu chỉnh (.ubj)
 
 /** Tải model .ubj của session (binary) từ gaze service. */
 export async function downloadGazeModel(sessionId: string): Promise<Uint8Array | null> {
