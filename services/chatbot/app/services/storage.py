@@ -1,8 +1,8 @@
-import os
 import ipaddress
+import os
 import socket
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
 import boto3
 import httpx

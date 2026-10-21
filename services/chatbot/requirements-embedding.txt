@@ -1,0 +1,9 @@
+# Embedding local (EMBEDDING_NAME=local): Qwen3-Embedding-0.6B chạy trên GPU.
+# Tách riêng để Docker image cài (cùng requirements.txt), còn CI/unit test bỏ qua
+# nên không phải kéo torch (~vài GB).
+#
+# torch/torchvision (CUDA 12.4) KHÔNG khai báo ở đây nữa — đã có sẵn trong image
+# nền dùng chung docker/ai-base (xem docker/ai-base/requirements-torch.txt).
+# Host cần NVIDIA driver + nvidia-container-toolkit (docker-compose đặt `gpus: all`).
+sentence-transformers==6.1.0
+langchain-huggingface==1.2.3

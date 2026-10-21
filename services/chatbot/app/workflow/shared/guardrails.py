@@ -3,21 +3,22 @@
 Sau khi sinh bản nháp, một LLM call riêng chấm xem bản nháp có lộ đáp án cuối
 hay lời giải hoàn chỉnh hay không. Node này chỉ *đánh giá*, việc quyết định
 sinh lại nằm ở `after_validation` trong `subgraph/common.py`.
+
+Lưu ý: nếu bước chấm lỗi (provider timeout / parse fail) ta coi như **không đạt**
+để không bao giờ trả bản nháp chưa được kiểm duyệt (fail-closed).
 """
 
-import os
-
-from dotenv import load_dotenv
-from pydantic import BaseModel, Field
-
-load_dotenv()
+import logging
 
 from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
 
 from ..state import GraphState
-from .providers import create_llm
 from .prompts import VALIDATE_SYSTEM_PROMPT
+from .providers import get_llm
 from .retrieval import format_context
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationOutput(BaseModel):
@@ -30,9 +31,7 @@ class ValidationOutput(BaseModel):
     reason: str = Field(description="Giải thích ngắn gọn cho phán quyết.")
 
 
-_llm = create_llm(os.getenv("LLM_NAME"))
-
-_validate_chain = ChatPromptTemplate.from_messages([
+_validate_prompt = ChatPromptTemplate.from_messages([
     ("system", VALIDATE_SYSTEM_PROMPT),
     (
         "human",
@@ -40,19 +39,28 @@ _validate_chain = ChatPromptTemplate.from_messages([
         "Tài liệu tham khảo:\n{context}\n\n"
         "Bản nháp cần kiểm duyệt:\n{draft}",
     ),
-]) | _llm.with_structured_output(ValidationOutput)
+])
+
+
+def _validation_chain():
+    return _validate_prompt | get_llm().with_structured_output(ValidationOutput)
 
 
 def validation_node(state: GraphState) -> dict:
     """Chấm bản nháp và tăng số lần thử để giới hạn vòng lặp sinh lại."""
-    result: ValidationOutput = _validate_chain.invoke({
-        "question": state["messages"][-1].content,
-        "context": format_context(state.get("retrieved_docs", [])),
-        "draft": state.get("draft_response") or "",
-    })
+    try:
+        result: ValidationOutput = _validation_chain().invoke({
+            "question": state["messages"][-1].content,
+            "context": format_context(state.get("retrieved_docs", [])),
+            "draft": state.get("draft_response") or "",
+        })
+        ok = bool(result.ok and not result.violates_no_solution)
+    except Exception:
+        # Không kiểm duyệt được -> coi như không đạt để node sau xử lý an toàn.
+        logger.warning("Bước kiểm duyệt lỗi — coi như không đạt", exc_info=True)
+        ok = False
 
     return {
-        # Coi là đạt chỉ khi không vi phạm quy tắc "không giải hộ"
-        "validation_ok": result.ok and not result.violates_no_solution,
+        "validation_ok": ok,
         "attempts": state.get("attempts", 0) + 1,
     }

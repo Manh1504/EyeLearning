@@ -1,34 +1,40 @@
 // lib/types/domain.ts — Nguồn duy nhất cho các type domain của GazeEdu.
 // Khớp với schema DB (db/migrations/*.sql): courses / modules / lessons /
-// lesson_contents / enrollments / lesson_progress / learning_sessions / gaze_events.
+// lesson_contents / enrollments / learning_sessions / gaze_events.
 // Khi nối backend, các type này được dùng làm contract — không sửa tên để UI ổn định.
 
 export type CourseStatus = 'draft' | 'published' | 'archived';
-export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type EnrollStatus = 'active' | 'completed' | 'dropped';
+export type LessonKind = 'lesson' | 'quiz';
 
 export interface TeacherCourse {
   id: string;
   title: string;
   description: string;
-  level: Level;
   gradient: string;          // thumbnail giả (prod: courses.thumbnail_url)
   status: CourseStatus;      // courses.status_id -> course_statuses.code
   students: number;          // count(enrollments)
-  completion: number;        // % hoàn thành TB
   attention: number | null;  // điểm tập trung TB; null = chưa đủ dữ liệu gaze
   sessions: number;          // count(learning_sessions)
   updatedAt: string;
   isOwner?: boolean;          // admin hoặc chủ khóa học (quyền quản lý); false = GV được phân công
+  lessonCount?: number;       // số bài giảng (item) trong khóa
+  showGazeDot?: boolean;      // true khi MỌI bài giảng của khóa đều bật hiển thị điểm nhìn
 }
 
 export interface LessonNode {
   id: string;
   title: string;
+  kind: LessonKind;          // 'lesson' (slide) hoặc 'quiz' (trắc nghiệm)
   slides: number;            // count(lesson_contents)
-  completion: number;        // % học viên completed bài này
   attention: number | null;
   mastery?: number | null;   // điểm hoàn thành TB (độ bao phủ nội dung)
+  quizId?: string | null;
+  quizStatus?: QuizAssignmentStatus | null;
+  questionCount?: number;
+  durationMinutes?: number | null;
+  dueAt?: string | null;
+  showGazeDot?: boolean;     // cho SV thấy chấm điểm nhìn của mình (để test)
 }
 
 export interface ModuleNode {
@@ -39,8 +45,6 @@ export interface ModuleNode {
 
 export interface StudentLesson {
   lessonId: string;
-  viewed: number;            // cardinality(lesson_progress.viewed_slides)
-  total: number;
   attention: number | null;
   mastery?: number | null;   // điểm hoàn thành (độ bao phủ nội dung)
   keyDone?: number;          // số trang trọng tâm đã hoàn thành
@@ -53,7 +57,6 @@ export interface StudentRow {
   code: string;              // student_profiles.student_code
   color: string;             // avatar giả
   avatarUrl?: string | null;  // user_profiles.avatar_url
-  progress: number;
   attention: number | null;  // null ⇔ learning_sessions.tracking_consent = false
   lastActive: string;
   status: EnrollStatus;
@@ -91,7 +94,6 @@ export interface CourseHealthRow {
   title: string;
   gradient: string;
   students: number;
-  completion: number;
   attention: number | null;
   active7d: number;         // học viên hoạt động 7 ngày qua
   bottleneck: string | null; // bài có attention thấp nhất
@@ -139,11 +141,9 @@ export interface EnrolledCourse {
   enrollmentId: string;
   enrolledAt: string;
   status: EnrollStatus;
-  progress: number; // 0–100
   course: {
     id: string;
     title: string;
-    level: Level;
     thumbnailUrl: string | null;
     teacherName: string;
     moduleCount: number;
@@ -213,8 +213,14 @@ export interface LessonMastery {
 export interface LessonItem {
   id: string;
   title: string;
+  kind: LessonKind;
   slideCount: number;
-  completed: boolean;
+  quizId?: string | null;
+  quizStatus?: QuizAssignmentStatus | null;
+  questionCount?: number;
+  durationMinutes?: number | null;
+  dueAt?: string | null;
+  showGazeDot?: boolean;     // cho SV thấy chấm điểm nhìn của mình (để test)
 }
 
 export interface ModuleItem {
@@ -222,6 +228,11 @@ export interface ModuleItem {
   orderIndex: number;
   title: string;
   lessons: LessonItem[];
+}
+
+export interface ModuleItemRef {
+  kind: LessonKind;
+  id: string;
 }
 
 export interface CourseOutline {
@@ -282,7 +293,8 @@ export interface QuizQuestion {
   id: string;
   prompt: string;
   options: QuizOption[];
-  correctOptionId: string;
+  correctOptionIds: string[];   // một hoặc nhiều đáp án đúng (chấm tất cả-hoặc-không)
+  allowMultiple: boolean;       // cho phép chọn nhiều đáp án
   explanation: string;
   points: number;
 }
@@ -295,32 +307,20 @@ export interface QuizAssignment {
   lessonTitle?: string;
   title: string;
   instructions: string;
-  dueAt: string;
+  dueAt: string | null;
   durationMinutes: number;
   status: QuizAssignmentStatus;
   createdAt: string;
   expiresAt?: string;
+  allowRetry?: boolean;   // giáo viên cho phép học viên làm lại
   questions: QuizQuestion[];
 }
 
 export interface QuizAttempt {
   id: string;
   assignmentId: string;
-  answers: Record<string, string>;
+  answers: Record<string, string[]>;
   submittedAt: string;
   score: number;
   maxScore: number;
-}
-
-export interface QuizAssignmentInput {
-  courseId: string;
-  courseTitle: string;
-  lessonId: string;
-  lessonTitle: string;
-  title: string;
-  instructions: string;
-  dueAt: string;
-  durationMinutes: number;
-  status: Exclude<QuizAssignmentStatus, 'closed'>;
-  questions: QuizQuestion[];
 }

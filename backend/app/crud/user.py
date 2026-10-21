@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import noload, selectinload
+from sqlalchemy.orm import selectinload
 
 from app.models.auth import AuthSession, Role, User, UserRole, UserStatus
 
@@ -10,11 +10,7 @@ from app.models.auth import AuthSession, Role, User, UserRole, UserStatus
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     stmt = (
         select(User)
-        .options(
-            selectinload(User.roles),
-            noload(User.student_profile),
-            noload(User.teacher_profile),
-        )
+        .options(selectinload(User.roles))
         .where(User.email == email.lower())
     )
     return (await db.execute(stmt)).scalar_one_or_none()
@@ -23,11 +19,7 @@ async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     stmt = (
         select(User)
-        .options(
-            selectinload(User.roles),
-            noload(User.student_profile),
-            noload(User.teacher_profile),
-        )
+        .options(selectinload(User.roles))
         .where(User.id == user_id)
     )
     return (await db.execute(stmt)).scalar_one_or_none()
@@ -68,6 +60,27 @@ async def get_valid_session(db: AsyncSession, refresh_token_hash: str) -> AuthSe
 
 async def revoke_session(db: AsyncSession, session: AuthSession) -> None:
     session.revoked_at = datetime.now(timezone.utc)
+
+
+async def revoke_all_sessions(
+    db: AsyncSession, user_id: str, except_token_hash: str | None = None
+) -> None:
+    """Thu hồi toàn bộ refresh session còn hiệu lực của user.
+
+    Dùng khi đổi mật khẩu để các phiên đăng nhập khác (thiết bị khác) phải
+    đăng nhập lại bằng mật khẩu mới. `except_token_hash` giữ lại phiên hiện tại
+    (tránh đăng xuất chính người vừa đổi mật khẩu).
+    """
+    now = datetime.now(timezone.utc)
+    stmt = select(AuthSession).where(
+        AuthSession.user_id == user_id,
+        AuthSession.revoked_at.is_(None),
+        AuthSession.expires_at > now,
+    )
+    for session in (await db.execute(stmt)).scalars():
+        if except_token_hash is not None and session.refresh_token_hash == except_token_hash:
+            continue
+        session.revoked_at = now
 
 
 async def create_student(

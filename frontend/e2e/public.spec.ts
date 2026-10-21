@@ -4,7 +4,7 @@ import { mockApi } from "./fixtures";
 test.describe("Public", () => {
   test("trang gốc hiển thị landing page", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /Biết học viên đang nhìn đâu/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Hiểu cả quá trình học/ })).toBeVisible();
     await expect(page.getByRole("link", { name: "Đăng nhập" }).first()).toHaveAttribute("href", "/account/login");
   });
 

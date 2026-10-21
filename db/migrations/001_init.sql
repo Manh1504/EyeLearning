@@ -127,7 +127,6 @@ CREATE TABLE IF NOT EXISTS courses (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title         VARCHAR(255) NOT NULL,
     description   TEXT,
-    level         VARCHAR(30),           -- beginner/intermediate/advanced
     thumbnail_url TEXT,
     status_id     SMALLINT NOT NULL REFERENCES course_statuses(id),
     teacher_id    UUID NOT NULL REFERENCES teacher_profiles(user_id), -- giảng viên phụ trách
@@ -146,13 +145,17 @@ CREATE TABLE IF NOT EXISTS modules (           -- chương/section trong khóa h
     UNIQUE (course_id, order_index)
 );
 
--- Toàn bộ bài học đều dạng SLIDE (một bài = một deck ảnh slide).
+-- Một item trong chương: bài học slide (kind='lesson') hoặc bài tập trắc nghiệm
+-- (kind='quiz'). Item quiz có đúng một dòng quiz_assignments trỏ tới.
 CREATE TABLE IF NOT EXISTS lessons (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     module_id     UUID NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
     title         VARCHAR(255) NOT NULL,
     order_index   INT NOT NULL,
+    kind          VARCHAR(10) NOT NULL DEFAULT 'lesson'
+                  CHECK (kind IN ('lesson', 'quiz')),
     content_url   TEXT,                 -- file nguồn slide đã upload: pdf/pptx
+    show_gaze_dot BOOLEAN NOT NULL DEFAULT false,  -- cho SV thấy chấm điểm nhìn (để test)
     metadata      JSONB NOT NULL DEFAULT '{}',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -178,19 +181,6 @@ CREATE TABLE IF NOT EXISTS enrollments (
     status           VARCHAR(30) NOT NULL DEFAULT 'active'
                      CHECK (status IN ('active', 'completed', 'dropped')),
     UNIQUE (course_id, student_id)
-);
-
-CREATE TABLE IF NOT EXISTS lesson_progress (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    enrollment_id UUID NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
-    lesson_id     UUID NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
-    status        VARCHAR(20) NOT NULL DEFAULT 'in_progress'
-                  CHECK (status IN ('in_progress', 'completed')),
-    viewed_slides INT[] NOT NULL DEFAULT '{}',    -- các slide đã xem (học viên hay nhảy cóc)
-    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at  TIMESTAMPTZ,
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (enrollment_id, lesson_id)             -- 1 lượt đăng ký chỉ có 1 tiến độ / bài
 );
 
 -- =====================================================================
@@ -302,5 +292,4 @@ CREATE INDEX IF NOT EXISTS idx_learning_sessions_lesson     ON learning_sessions
 CREATE INDEX IF NOT EXISTS idx_learning_sessions_device     ON learning_sessions (device_id);
 CREATE INDEX IF NOT EXISTS idx_gaze_events_session          ON gaze_events (learning_session_id, event_time);
 CREATE INDEX IF NOT EXISTS idx_gaze_events_content          ON gaze_events (lesson_content_id, event_time);
-CREATE INDEX IF NOT EXISTS idx_lesson_progress_enrollment   ON lesson_progress(enrollment_id);
 COMMIT;

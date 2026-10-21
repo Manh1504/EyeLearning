@@ -9,7 +9,7 @@ from app.core.helpers import gradient_for
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
-from app.models.course import Course, Enrollment, Lesson, LessonProgress, Module
+from app.models.course import Course, Enrollment, Lesson, Module
 from app.models.gaze import LearningSession
 from app.models.profile import UserProfile
 from app.schemas.course import (
@@ -60,37 +60,17 @@ async def my_enrollments(
         ).all()
     )
 
-    enrollment_ids = [e.id for e, _, _ in rows]
-    completed_counts = dict(
-        (
-            await db.execute(
-                select(LessonProgress.enrollment_id, func.count(LessonProgress.id))
-                .where(
-                    LessonProgress.enrollment_id.in_(enrollment_ids),
-                    LessonProgress.status == "completed",
-                )
-                .group_by(LessonProgress.enrollment_id)
-            )
-        ).all()
-    )
-
     out = []
     for enrollment, course, teacher_profile in rows:
         total_lessons = lesson_counts.get(course.id, 0)
-        completed = completed_counts.get(enrollment.id, 0)
-        progress = (
-            round(completed / total_lessons * 100, 1) if total_lessons else 0.0
-        )
         out.append(
             EnrolledCourseOut(
                 enrollment_id=enrollment.id,
                 enrolled_at=enrollment.enrolled_at,
                 status=enrollment.status,
-                progress=progress,
                 course=CourseSummaryOut(
                     id=course.id,
                     title=course.title,
-                    level=course.level,
                     thumbnail_url=course.thumbnail_url,
                     teacher_name=(
                         teacher_profile.full_name if teacher_profile else "—"

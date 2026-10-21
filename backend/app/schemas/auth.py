@@ -33,6 +33,19 @@ class UserSummary(CamelModel):
     email: str
     roles: list[str]
     full_name: str | None = None
+    # true khi user phải đổi mật khẩu trước khi dùng các API khác (lần đăng nhập đầu).
+    must_change_password: bool = False
+
+
+class ChangePasswordRequest(CamelModel):
+    current_password: str = Field(min_length=8, max_length=72)
+    new_password: str = Field(min_length=8, max_length=72)
+
+    @model_validator(mode="after")
+    def validate_new_password(self):
+        if self.current_password == self.new_password:
+            raise ValueError("Mật khẩu mới phải khác mật khẩu hiện tại")
+        return self
 
 
 class TokenPair(CamelModel):

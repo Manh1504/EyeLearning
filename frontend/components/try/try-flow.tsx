@@ -98,10 +98,11 @@ export function TryFlow() {
 
   const handlePoint = useCallback((x: number, y: number) => {
     gazeRef.current.push({ slide: slideRef.current, x, y });
-    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
-      setGazeDot({ x, y });
-      setValidCount((c) => c + 1);
-    }
+    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) setValidCount((c) => c + 1);
+    // Chấm bám gaze thật kể cả khi nhìn ra ngoài viewport (x/y có thể < 0 hoặc > 1).
+    // (-1, -1) là sentinel "mất khuôn mặt" (no_face) → ẩn chấm.
+    if (x === -1 && y === -1) setGazeDot(null);
+    else setGazeDot({ x, y });
   }, []);
 
   const { source: gazeSource } = useGazeTracker({
@@ -373,7 +374,7 @@ function GuestCalibration({ onDone }: { onDone: () => void }) {
       <CalibrationStage engine={engine} />
       <nav
         aria-label="Điều hướng"
-        className="pointer-events-none fixed inset-x-3 top-3 z-50 flex justify-between sm:inset-x-5 sm:top-5"
+        className="pointer-events-none fixed inset-x-3 top-1/2 z-50 flex -translate-y-1/2 items-center justify-between sm:inset-x-5"
       >
         <Link
           href="/"

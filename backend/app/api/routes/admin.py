@@ -6,9 +6,9 @@ from app.api.deps import require_roles
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
+from app.models.calibration import CalibrationSettings
 from app.models.course import Course, CourseTeacher
 from app.models.profile import TeacherProfile, UserProfile
-from app.models.calibration import CalibrationSettings
 from app.schemas.calibration import CalibrationSettingsIn, CalibrationSettingsOut
 from app.schemas.course import CourseTeacherOut, TeacherAssignIn, TeacherDirectoryOut
 

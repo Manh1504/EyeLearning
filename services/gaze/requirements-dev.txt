@@ -1,0 +1,5 @@
+# Dependencies CHỈ dùng khi phát triển/test service gaze (không cài trong image
+# production). Cài: pip install -r requirements-dev.txt
+pytest==8.3.4
+httpx==0.28.1
+ruff==0.17.1

@@ -8,7 +8,6 @@ from app.schemas.common import CamelModel
 class CourseCreateIn(CamelModel):
     title: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    level: str | None = Field(default="beginner", pattern="^(beginner|intermediate|advanced)$")
     thumbnail_url: str | None = None
     status: str = Field(default="draft", pattern="^(draft|published|archived)$")
 
@@ -16,7 +15,6 @@ class CourseCreateIn(CamelModel):
 class CourseUpdateIn(CamelModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
-    level: str | None = Field(default=None, pattern="^(beginner|intermediate|advanced)$")
     thumbnail_url: str | None = None
     status: str | None = Field(default=None, pattern="^(draft|published|archived)$")
 
@@ -25,9 +23,29 @@ class ModuleCreateIn(CamelModel):
     title: str = Field(min_length=1, max_length=255)
 
 
+class ModuleItemRef(CamelModel):
+    kind: str = Field(pattern="^(lesson|quiz)$")
+    id: str
+
+
+class ModuleItemsReorderIn(CamelModel):
+    items: list[ModuleItemRef] = Field(min_length=1)
+
+
 class LessonCreateIn(CamelModel):
     title: str = Field(min_length=1, max_length=255)
     content_url: str | None = None
+    show_gaze_dot: bool = False
+
+
+class LessonUpdateIn(CamelModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content_url: str | None = None
+    show_gaze_dot: bool | None = None
+
+
+class CourseGazeDotIn(CamelModel):
+    show_gaze_dot: bool
 
 
 class SlideCreateIn(CamelModel):
@@ -70,10 +88,16 @@ class StudentDirectoryOut(CamelModel):
 class LessonNodeOut(CamelModel):
     id: str
     title: str
+    kind: str = "lesson"  # 'lesson' | 'quiz'
     slides: int
-    completion: float
     attention: float | None = None
     mastery: float | None = None
+    quiz_id: str | None = None
+    quiz_status: str | None = None
+    question_count: int = 0
+    duration_minutes: int | None = None
+    due_at: datetime | None = None
+    show_gaze_dot: bool = False
 
 
 class ModuleNodeOut(CamelModel):
@@ -86,22 +110,28 @@ class TeacherCourseOut(CamelModel):
     id: str
     title: str
     description: str
-    level: str
     gradient: str
     status: str
     students: int
-    completion: float
     attention: float | None = None
     sessions: int
     updated_at: datetime
     is_owner: bool = True
+    lesson_count: int = 0
+    show_gaze_dot: bool = False  # true khi MỌI bài giảng của khóa đều bật
 
 
 class LessonItemOut(CamelModel):
     id: str
     title: str
+    kind: str = "lesson"  # 'lesson' | 'quiz'
     slide_count: int
-    completed: bool
+    quiz_id: str | None = None
+    quiz_status: str | None = None
+    question_count: int = 0
+    duration_minutes: int | None = None
+    due_at: datetime | None = None
+    show_gaze_dot: bool = False
 
 
 class ModuleItemOut(CamelModel):
@@ -120,7 +150,6 @@ class CourseOutlineOut(CamelModel):
 class CourseSummaryOut(CamelModel):
     id: str
     title: str
-    level: str | None
     thumbnail_url: str | None
     teacher_name: str
     module_count: int
@@ -132,7 +161,6 @@ class EnrolledCourseOut(CamelModel):
     enrollment_id: str
     enrolled_at: datetime
     status: str
-    progress: float
     course: CourseSummaryOut
 
 
@@ -168,8 +196,6 @@ class SlideKeySetIn(CamelModel):
 
 class StudentLessonOut(CamelModel):
     lesson_id: str
-    viewed: int
-    total: int
     attention: float | None = None
     mastery: float | None = None
     key_done: int = 0
@@ -182,7 +208,6 @@ class StudentRowOut(CamelModel):
     code: str
     color: str
     avatar_url: str | None = None
-    progress: float
     attention: float | None = None
     last_active: str | None = None
     status: str

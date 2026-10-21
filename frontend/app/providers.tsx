@@ -2,16 +2,28 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { subscribeAuthChange } from "@/lib/api/auth";
 
+const PASSWORD_CHANGE_PATH = "/account/change-password";
+
 function AuthCacheSync({ client }: { client: QueryClient }) {
+  const router = useRouter();
   useEffect(
     () =>
-      subscribeAuthChange(() => {
+      subscribeAuthChange((reason) => {
+        // Buộc đổi mật khẩu: điều hướng bằng router (không xoá cache để giữ
+        // thông tin user cho trang đổi mật khẩu nếu cần).
+        if (reason === "password-change-required") {
+          if (window.location.pathname !== PASSWORD_CHANGE_PATH) {
+            router.replace(PASSWORD_CHANGE_PATH);
+          }
+          return;
+        }
         client.clear();
       }),
-    [client],
+    [client, router],
   );
 
   return null;

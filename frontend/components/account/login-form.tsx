@@ -49,12 +49,17 @@ export function LoginForm({ className }: { className?: string }) {
     setError(null);
     try {
       const result = await login(email, password);
+      queryClient.setQueryData(AUTH_USER_QUERY_KEY, result.user);
+      // Tài khoản mới/dev phải đổi mật khẩu trước khi dùng app.
+      if (result.user.mustChangePassword) {
+        router.replace("/account/change-password");
+        return;
+      }
       const next =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("next")
           : null;
       const destination = resolveRedirect(result.user, next);
-      queryClient.setQueryData(AUTH_USER_QUERY_KEY, result.user);
       router.prefetch(destination);
       router.replace(destination);
     } catch (caught) {

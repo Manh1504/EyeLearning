@@ -1,0 +1,4 @@
+# Dependencies CHỈ dùng khi phát triển/test service chatbot (không cài trong
+# image production). Cài: pip install -r requirements-dev.txt
+pytest==9.1.1
+ruff==0.17.1

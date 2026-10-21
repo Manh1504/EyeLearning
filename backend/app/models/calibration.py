@@ -2,13 +2,13 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    REAL,
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
     LargeBinary,
     Numeric,
-    REAL,
     SmallInteger,
     String,
     UniqueConstraint,

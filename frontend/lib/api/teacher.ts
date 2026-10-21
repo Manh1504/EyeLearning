@@ -2,7 +2,8 @@ import { apiFetch, apiFetchMultipart } from "./client";
 import type {
   TeacherCourse,
   CourseStatus,
-  Level,
+  LessonNode,
+  ModuleItemRef,
   ModuleNode,
   StudentRow,
   SlideStat,
@@ -85,7 +86,6 @@ export function fetchHeatmap(
 export interface CourseWriteInput {
   title: string;
   description?: string;
-  level?: Level;
   status?: CourseStatus;
 }
 
@@ -107,6 +107,16 @@ export function deleteCourse(courseId: string): Promise<{ ok: boolean }> {
   return apiFetch(`/api/teacher/courses/${courseId}`, { method: "DELETE" });
 }
 
+export function setCourseGazeDot(
+  courseId: string,
+  showGazeDot: boolean,
+): Promise<{ ok: boolean; updated: number }> {
+  return apiFetch(`/api/teacher/courses/${courseId}/gaze-dot`, {
+    method: "PATCH",
+    body: { showGazeDot },
+  });
+}
+
 export function createModule(courseId: string, title: string): Promise<{ id: string }> {
   return apiFetch(`/api/teacher/courses/${courseId}/modules`, {
     method: "POST",
@@ -125,17 +135,48 @@ export function deleteModule(moduleId: string): Promise<{ ok: boolean }> {
   return apiFetch(`/api/teacher/modules/${moduleId}`, { method: "DELETE" });
 }
 
-export function createLesson(moduleId: string, title: string): Promise<{ id: string }> {
+export function createLesson(
+  moduleId: string,
+  title: string,
+  showGazeDot = false,
+): Promise<{ id: string }> {
   return apiFetch(`/api/teacher/modules/${moduleId}/lessons`, {
     method: "POST",
-    body: { title },
+    body: { title, showGazeDot },
   });
 }
 
-export function updateLesson(lessonId: string, title: string): Promise<{ ok: boolean }> {
+export function createModuleQuizItem(
+  moduleId: string,
+  input: { title?: string; durationMinutes?: number; afterId?: string } = {},
+): Promise<LessonNode> {
+  return apiFetch<LessonNode>(`/api/teacher/modules/${moduleId}/quizzes`, {
+    method: "POST",
+    body: {
+      title: input.title,
+      durationMinutes: input.durationMinutes,
+      afterId: input.afterId,
+    },
+  });
+}
+
+export function reorderModuleItems(
+  moduleId: string,
+  items: ModuleItemRef[],
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/teacher/modules/${moduleId}/items/reorder`, {
+    method: "POST",
+    body: { items },
+  });
+}
+
+export function updateLesson(
+  lessonId: string,
+  patch: { title?: string; showGazeDot?: boolean },
+): Promise<{ ok: boolean }> {
   return apiFetch(`/api/teacher/lessons/${lessonId}`, {
     method: "PATCH",
-    body: { title },
+    body: patch,
   });
 }
 

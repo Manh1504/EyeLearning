@@ -26,8 +26,8 @@ describe("demo mode", () => {
     process.env.NEXT_PUBLIC_DEMO = "0";
 
     expect(prototypeRouteRedirect("/demo", true)).toBe("/");
-    expect(prototypeRouteRedirect("/student/assignments/quiz-1", true)).toBeNull();
-    expect(prototypeRouteRedirect("/teacher/assignments/new", true)).toBeNull();
+    expect(prototypeRouteRedirect("/student/courses/course-1", true)).toBeNull();
+    expect(prototypeRouteRedirect("/teacher/courses/course-1", true)).toBeNull();
     expect(prototypeRouteRedirect("/student/profile", true)).toBeNull();
   });
 
@@ -35,7 +35,7 @@ describe("demo mode", () => {
     process.env.NEXT_PUBLIC_DEMO = "1";
 
     expect(prototypeRouteRedirect("/demo", true)).toBeNull();
-    expect(prototypeRouteRedirect("/student/assignments", true)).toBeNull();
-    expect(prototypeRouteRedirect("/teacher/assignments", true)).toBeNull();
+    expect(prototypeRouteRedirect("/student/courses/course-1", true)).toBeNull();
+    expect(prototypeRouteRedirect("/teacher/courses/course-1", true)).toBeNull();
   });
 });

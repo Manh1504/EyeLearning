@@ -1,33 +1,46 @@
-import os
+"""Ingest slide: render ảnh -> VLM mô tả -> embedding -> lưu pgvector.
+
+Kết nối DB mượn từ ConnectionPool dùng chung (app/db.py). Mỗi slide được xử lý
+độc lập: một slide lỗi (ảnh thiếu, PDF hỏng) chỉ bị bỏ qua chứ không làm hỏng cả
+batch; riêng lỗi VLM (River AI không gọi được) vẫn được ném ra để API trả 503.
+"""
+
 import base64
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 
-import psycopg
+import openai
 import pymupdf
-
+from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
 from pgvector import Vector
-from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import SystemMessage
-
-from app.workflow.shared import create_embedding, create_vlm, SLIDE_VLM_PROMPT
-from app.workflow.state import VLMOutput
+from app.db import get_pool
 from app.services.storage import FileStorage
-from app.settings import database_url
-
+from app.settings import embedding_dim, embedding_name, vlm_name
+from app.workflow.shared import SLIDE_VLM_PROMPT, get_embedding, get_vlm
+from app.workflow.state import VLMOutput
 
 logger = logging.getLogger(__name__)
 
 
+class VLMUnavailableError(RuntimeError):
+    """Không gọi được VLM (River AI): mất mạng, timeout hoặc lỗi tạm thời 5xx/429.
+
+    Được API layer ánh xạ thành HTTP 503 (tạm thời) thay vì 500 để backend có
+    thể retry và để thông báo lỗi rõ ràng hơn.
+    """
+
+
 class Ingestion:
     # Số chiều vector embedding, đọc từ env cho linh hoạt khi đổi EMBEDDING_NAME:
-    #   api   (qwen3-embedding:8b-ctx16k) -> 4096 (production)
-    #   local (Qwen3-Embedding-0.6B)      -> 1024
-    # Phải khớp VECTOR(<dim>) của bảng lesson_content_embedding (migration 011).
-    VECTOR_DIM = int(os.getenv("EMBEDDING_DIM", "4096"))
+    #   local (Qwen3-Embedding-0.6B)      -> 1024 (mặc định)
+    #   api   (qwen3-embedding:8b-ctx16k) -> 4096
+    # Phải khớp VECTOR(<dim>) của bảng lesson_content_embedding (migration 012
+    # đặt cột về 1024 + tạo index HNSW).
+    VECTOR_DIM = embedding_dim()
 
     # Số ảnh tải trước, song song với lúc VLM đang xử lý slide hiện tại
     PREFETCH = 4
@@ -52,35 +65,41 @@ class Ingestion:
     """
 
     def __init__(self):
-        # Khởi tạo VLM và embedding model
-        vlm = create_vlm(os.getenv("VLM_NAME"))
+        # Khởi tạo VLM và embedding model (dùng chung theo registry)
+        vlm = get_vlm(vlm_name())
         self.slide_to_text_chain = (
             self._create_chat_messages()
-            | vlm.with_structured_output(VLMOutput)
+            # `function_calling` cho Markdown/bảng sạch hơn `json_schema` với
+            # DeepSeek-V4.1-Flash qua River AI (đã kiểm thử cả hai).
+            | vlm.with_structured_output(VLMOutput, method="function_calling")
         )
-        self.embedding = create_embedding(os.getenv("EMBEDDING_NAME"))
+        self.embedding = get_embedding(embedding_name())
 
         # Khởi tạo storage (local / S3 / R2 / URL)
         self.storage = FileStorage()
 
-        # Kết nối DB
-        self.conn = psycopg.connect(database_url(), autocommit=True)
-        register_vector(self.conn)
+        # Pool mặc định lấy từ singleton; test có thể gán pool giả.
+        self._pool = None
         self._verify_vector_dim()
+
+    # Trả về context manager cấp 1 connection.
+    def _connection(self):
+        return (self._pool or get_pool()).connection()
 
     # Fail-fast nếu EMBEDDING_DIM lệch số chiều của cột vector trong DB, thay vì
     # để lỗi khó hiểu của pgvector nổ ra ở lần ingest đầu tiên.
     def _verify_vector_dim(self) -> None:
-        with self.conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT a.atttypmod
-                FROM pg_attribute a
-                WHERE a.attrelid = to_regclass('lesson_content_embedding')
-                  AND a.attname = 'embedding'
-                """
-            )
-            row = cur.fetchone()
+        with self._connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT a.atttypmod
+                    FROM pg_attribute a
+                    WHERE a.attrelid = to_regclass('lesson_content_embedding')
+                      AND a.attname = 'embedding'
+                    """
+                )
+                row = cur.fetchone()
 
         if row is None:
             raise RuntimeError(
@@ -88,7 +107,7 @@ class Ingestion:
                 "hãy chạy migration 011_quiz_and_embeddings.sql trước."
             )
 
-        column_dim = int(row[0])
+        column_dim = int(row[0]) if not isinstance(row, dict) else int(row["atttypmod"])
         if column_dim != self.VECTOR_DIM:
             raise RuntimeError(
                 f"EMBEDDING_DIM={self.VECTOR_DIM} không khớp VECTOR({column_dim}) của "
@@ -102,9 +121,10 @@ class Ingestion:
     def _load_slide(self, lesson_content_id: str):
         query = self.SLIDE_QUERY + " WHERE lc.id = %s"
 
-        with self.conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(query, (lesson_content_id,))
-            return cur.fetchone()
+        with self._connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, (lesson_content_id,))
+                return cur.fetchone()
 
     # Template đưa ảnh slide cho VLM
     def _create_chat_messages(self):
@@ -128,15 +148,32 @@ class Ingestion:
                 # PDF nguồn: render trang đầu ở DPI đủ nét cho VLM
                 pix = doc[0].get_pixmap(dpi=self.PDF_RENDER_DPI, alpha=False)
             else:
-                # Ảnh slide đã được backend render sẵn (144dpi): giữ nguyên
-                # pixel. Render lại ở dpi=150 sẽ upscale ~2x vô ích vì PyMuPDF
-                # coi 1px = 1pt cho ảnh raster.
+                # Ảnh slide đã được backend render sẵn: giữ nguyên pixel.
                 pix = doc[0].get_pixmap(alpha=False)
             return base64.b64encode(pix.tobytes("png")).decode("ascii")
 
-    # VLM mô tả ảnh thành text (chạy tuần tự vì dùng GPU local)
+    # VLM mô tả ảnh thành text qua River AI (API, không tốn VRAM local)
     def _describe_image(self, b64: str) -> str:
-        return self.slide_to_text_chain.invoke({"b64": b64}).transcript
+        try:
+            return self.slide_to_text_chain.invoke({"b64": b64}).transcript
+        except openai.APITimeoutError as exc:
+            raise VLMUnavailableError(
+                "VLM (River AI) không phản hồi kịp thời gian."
+            ) from exc
+        except openai.APIConnectionError as exc:
+            base = os.getenv("RIVER_BASE_URL", "https://api.river.ai/v1")
+            raise VLMUnavailableError(
+                f"Không kết nối được VLM (River AI) tại {base}. "
+                "Kiểm tra mạng và RIVER_BASE_URL."
+            ) from exc
+        except openai.APIStatusError as exc:
+            # 429/5xx là tạm thời -> 503 để backend retry. 4xx khác (401/400) là
+            # lỗi cấu hình/dữ liệu -> để slide bị đánh dấu failed, không retry mù.
+            if exc.status_code == 429 or exc.status_code >= 500:
+                raise VLMUnavailableError(
+                    f"VLM (River AI) tạm thời không khả dụng (HTTP {exc.status_code})."
+                ) from exc
+            raise
 
     # Bổ sung ngữ cảnh môn/chương/bài vào nội dung
     def _add_context(
@@ -158,28 +195,37 @@ class Ingestion:
         )
 
     # Pipeline 1 batch: Slide -> VLM -> Embedding -> DB
-    def _embed_batch(self, slides: list[dict]) -> int:
-        # 1. Gửi tải ảnh chạy trước; VLM xử lý slide nào thì ảnh đã sẵn
+    def _embed_batch(self, slides: list[dict]) -> tuple[int, int]:
+        """Trả về (processed, failed). Mỗi slide lỗi bị bỏ qua (trừ lỗi VLM)."""
+        content_by_id: list[tuple[str, str]] = []
+        failed = 0
+
+        # 1. Tải ảnh chạy trước; VLM xử lý slide nào thì ảnh đã sẵn.
         with ThreadPoolExecutor(max_workers=self.PREFETCH) as pool:
             futures = [
-                pool.submit(self._load_image, slide["image_url"])
-                for slide in slides
+                pool.submit(self._load_image, slide["image_url"]) for slide in slides
             ]
 
-            content_by_id = []
             for slide, future in zip(slides, futures):
-                markdown = self._describe_image(future.result())
+                try:
+                    markdown = self._describe_image(future.result())
+                except VLMUnavailableError:
+                    raise  # VLM API hỏng -> để API trả 503
+                except Exception:
+                    logger.exception("Bỏ qua slide %s do lỗi xử lý", slide.get("id"))
+                    failed += 1
+                    continue
 
                 context = self._add_context(
                     slide["course_title"],
                     slide["module_title"],
                     slide["lesson_title"],
                 )
-
-                content = (
-                    f"{context}\n\n{markdown}" if context else markdown
-                )
+                content = f"{context}\n\n{markdown}" if context else markdown
                 content_by_id.append((slide["id"], content))
+
+        if not content_by_id:
+            return 0, failed
 
         # 2. Embedding cả batch một lần
         contents = [content for _, content in content_by_id]
@@ -191,31 +237,36 @@ class Ingestion:
             for (slide_id, content), vector in zip(content_by_id, vectors)
         ]
 
-        with self.conn.transaction():
-            with self.conn.cursor() as cur:
-                cur.executemany("""
-                    INSERT INTO lesson_content_embedding (
-                        lesson_content_id,
-                        embedding_content,
-                        embedding
+        with self._connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        """
+                        INSERT INTO lesson_content_embedding (
+                            lesson_content_id,
+                            embedding_content,
+                            embedding
+                        )
+                        VALUES (%s, %s, %s)
+
+                        ON CONFLICT (lesson_content_id)
+                        DO UPDATE SET
+                            embedding_content = EXCLUDED.embedding_content,
+                            embedding = EXCLUDED.embedding
+                        """,
+                        data,
                     )
-                    VALUES (%s, %s, %s)
 
-                    ON CONFLICT (lesson_content_id)
-                    DO UPDATE SET
-                        embedding_content = EXCLUDED.embedding_content,
-                        embedding = EXCLUDED.embedding
-                """, data)
-
-        return len(data)
+        return len(data), failed
 
     # Embedding một slide mới hoặc cập nhật lại
-    def embed_new(self, lesson_content_id: str) -> int:
+    def embed_new(self, lesson_content_id: str) -> tuple[int, int]:
         slide = self._load_slide(lesson_content_id)
         if slide is None:
             raise LookupError(lesson_content_id)
         return self._embed_batch([slide])
 
     def close(self):
-        self.conn.close()
+        # storage.http do Ingestion sở hữu. `self.embedding` là client dùng chung
+        # (registry) nên không đóng ở đây.
         self.storage.http.close()

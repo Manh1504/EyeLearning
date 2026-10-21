@@ -54,7 +54,7 @@ export function HeatmapViewer({ courseId, lessonId }: { courseId: string; lesson
   const lessons = useMemo(() => modules.flatMap((m) => m.lessons), [modules]);
   const lesson =
     lessons.find((l) => l.id === lessonId) ??
-    lessons[0] ?? { id: "", title: "", slides: 1, completion: 0, attention: null };
+    lessons[0] ?? { id: "", title: "", slides: 1, attention: null };
   const moduleTitle = modules.find((m) => m.lessons.some((l) => l.id === lesson.id))?.title ?? "";
 
   const student = scope === "class" ? null : students.find((s) => s.id === scope) ?? null;
@@ -97,13 +97,13 @@ export function HeatmapViewer({ courseId, lessonId }: { courseId: string; lesson
 
   const requestedReturnTab = searchParams.get("from");
   const returnTab =
-    requestedReturnTab === "students" || requestedReturnTab === "overview" || requestedReturnTab === "content"
+    requestedReturnTab === "students" || requestedReturnTab === "content"
       ? requestedReturnTab
       : searchParams.has("student")
         ? "students"
         : "content";
   const backHref = `/teacher/courses/${courseId}?tab=${returnTab}`;
-  const studentProgressHref = `/teacher/courses/${courseId}?tab=students`;
+  const studentsHref = `/teacher/courses/${courseId}?tab=students`;
 
   const heatmapHref = useCallback(
     (nextLessonId: string, nextScope: Scope) => {
@@ -246,11 +246,7 @@ export function HeatmapViewer({ courseId, lessonId }: { courseId: string; lesson
                 {ENROLL_LABEL[student.status]}
               </span>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white p-2.5">
-                <p className="text-[9px] text-muted-foreground">Tổng tiến độ</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums">{student.progress}%</p>
-              </div>
+            <div className="mt-4">
               <div className="rounded-xl bg-white p-2.5">
                 <p className="text-[9px] text-muted-foreground">Mức quan sát</p>
                 <p className="mt-1 text-lg font-semibold tabular-nums">
@@ -261,13 +257,12 @@ export function HeatmapViewer({ courseId, lessonId }: { courseId: string; lesson
 
             <div className="mt-4 border-t border-foreground/10 pt-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-semibold">Tiến độ từng bài</p>
+                <p className="text-[10px] font-semibold">Bài học</p>
                 <span className="text-[9px] text-muted-foreground">Chọn để đổi heatmap</span>
               </div>
               {student.lessons.length > 0 ? (
                 <div className="mt-2 space-y-1.5">
                   {student.lessons.map((item) => {
-                    const percent = item.total > 0 ? Math.round((item.viewed / item.total) * 100) : 0;
                     const itemTitle = lessons.find((entry) => entry.id === item.lessonId)?.title ?? item.lessonId;
                     const active = item.lessonId === lesson.id;
                     return (
@@ -282,21 +277,16 @@ export function HeatmapViewer({ courseId, lessonId }: { courseId: string; lesson
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-[10px] font-semibold">{itemTitle}</span>
-                          <span className="text-[9px] text-muted-foreground tabular-nums">{percent}%</span>
-                        </div>
-                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-                          <span className="block h-full rounded-full bg-foreground" style={{ width: `${percent}%` }} />
-                        </div>
-                        <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground">
-                          <span>{item.viewed}/{item.total} trang</span>
-                          <span>Quan sát {item.attention === null ? "—" : `${item.attention}%`}</span>
+                          <span className="text-[9px] text-muted-foreground">
+                            Quan sát {item.attention === null ? "—" : `${item.attention}%`}
+                          </span>
                         </div>
                       </button>
                     );
                   })}
                 </div>
               ) : (
-                <p className="mt-2 text-[10px] text-muted-foreground">Học viên chưa bắt đầu bài nào.</p>
+                <p className="mt-2 text-[10px] text-muted-foreground">Học viên chưa có dữ liệu bài học.</p>
               )}
             </div>
           </section>
@@ -499,11 +489,10 @@ export function HeatmapViewer({ courseId, lessonId }: { courseId: string; lesson
                 </div>
                 <h2 className="mt-4 text-sm font-semibold text-foreground">Không có dữ liệu điểm nhìn</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {student?.name} không bật ghi nhận điểm nhìn trong các phiên học tương ứng. Bạn vẫn có thể xem
-                  tiến độ học tập.
+                  {student?.name} không bật ghi nhận điểm nhìn trong các phiên học tương ứng.
                 </p>
                 <Button asChild className="mt-5">
-                  <Link href={studentProgressHref}>Xem tiến độ học viên</Link>
+                  <Link href={studentsHref}>Xem danh sách học viên</Link>
                 </Button>
               </div>
             ) : (

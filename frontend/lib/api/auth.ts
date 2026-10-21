@@ -10,6 +10,8 @@ export interface AuthUser {
   roles: Role[];
   fullName: string | null;
   avatarUrl?: string | null;
+  /** true khi phải đổi mật khẩu trước khi dùng các API khác (lần đăng nhập đầu). */
+  mustChangePassword?: boolean;
 }
 
 export interface LoginResult {
@@ -30,7 +32,12 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: "Quản trị viên",
 };
 
-export type AuthChangeReason = "login" | "logout" | "session-expired" | "unknown";
+export type AuthChangeReason =
+  | "login"
+  | "logout"
+  | "session-expired"
+  | "password-change-required"
+  | "unknown";
 const AUTH_SYNC_KEY = "gaze_auth_sync";
 
 export function primaryRole(roles: Role[] | undefined | null): Role {
@@ -110,6 +117,20 @@ export async function register(
   if (data?.accessToken) setMemoryAccessToken(data.accessToken);
   notifyAuthChange("login");
   return data;
+}
+
+/**
+ * Đổi mật khẩu. Dùng cho lần đăng nhập đầu (mustChangePassword) hoặc tự đổi.
+ * Backend sẽ thu hồi các phiên đăng nhập khác (giữ phiên hiện tại).
+ */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await apiFetch<{ ok: boolean }>("/api/auth/change-password", {
+    method: "POST",
+    body: { currentPassword, newPassword },
+  });
 }
 
 export async function logout(): Promise<void> {

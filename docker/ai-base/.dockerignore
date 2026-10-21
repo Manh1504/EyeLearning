@@ -1,0 +1,4 @@
+# Chỉ cần Dockerfile + requirements-torch.txt trong build context.
+**
+!Dockerfile
+!requirements-torch.txt

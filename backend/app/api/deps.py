@@ -30,10 +30,10 @@ async def require_internal_token(
         )
 
 
-async def get_current_user(
+async def _authenticate(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials | None,
+    db: AsyncSession,
 ) -> User:
     # 2a: ưu tiên Authorization header (memory token), fallback httpOnly cookie access_token
     # Nếu auth qua cookie cho state-changing thì verify CSRF
@@ -68,6 +68,35 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Tài khoản không hợp lệ"
         )
     return user
+
+
+async def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    user = await _authenticate(request, credentials, db)
+    # Tài khoản seed dev phải đổi mật khẩu trước khi dùng các API khác.
+    # Frontend nhận 403 với detail này và chuyển tới trang đổi mật khẩu.
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PASSWORD_CHANGE_REQUIRED",
+        )
+    return user
+
+
+async def get_current_user_allow_password_change(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Như `get_current_user` nhưng KHÔNG chặn khi `must_change_password`.
+
+    Chỉ dùng cho chính endpoint đổi mật khẩu (`POST /api/auth/change-password`)
+    để tránh khoá cứng tài khoản chưa đổi mật khẩu.
+    """
+    return await _authenticate(request, credentials, db)
 
 
 def require_roles(*roles: str):

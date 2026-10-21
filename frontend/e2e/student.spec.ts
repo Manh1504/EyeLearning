@@ -13,14 +13,41 @@ test.describe("Student", () => {
     await mockApi(page, { user: STUDENT });
   });
 
-  test("home hiển thị stats và khóa học", async ({ page }) => {
+  test("home hiển thị danh sách khóa học và tìm kiếm theo tên", async ({ page }) => {
     await page.goto("/student");
     await expect(page.getByRole("heading", { name: /Chào mừng trở lại/ })).toBeVisible();
     await expect(page.getByText("Lập trình Python cơ bản").first()).toBeVisible();
-    await expect(page.getByText("ngày liên tiếp")).toBeVisible();
-    const courseLinks = page.locator('a[href="/student/courses/course-1/prepare"]');
-    await expect(courseLinks.first()).toBeVisible();
-    expect(await courseLinks.count()).toBeGreaterThan(1);
+
+    const search = page.getByRole("textbox", { name: "Tìm khóa học theo tên" });
+    await search.fill("python");
+    await expect(page.getByText("Lập trình Python cơ bản").first()).toBeVisible();
+    await search.fill("khong-ton-tai");
+    await expect(page.getByText("Không tìm thấy khóa học")).toBeVisible();
+  });
+
+  test("topbar bỏ pill Khóa học, logo dẫn về trang chính", async ({ page }) => {
+    await page.goto("/student/profile");
+
+    const topbar = page.getByRole("banner");
+    await expect(topbar.getByRole("link", { name: "Khóa học" })).toHaveCount(0);
+
+    await topbar.getByRole("link", { name: "GazeEdu" }).click();
+    await expect(page).toHaveURL(/\/student$/);
+  });
+
+  test("danh sách khóa học sắp xếp theo cột", async ({ page }) => {
+    await page.goto("/student");
+
+    const byTitle = page.getByRole("button", { name: /Sắp xếp theo Khóa học/ });
+    await byTitle.click();
+    await expect(
+      page.getByRole("button", { name: /Đang sắp xếp theo Khóa học tăng dần/ }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /Đang sắp xếp theo Khóa học tăng dần/ }).click();
+    await expect(
+      page.getByRole("button", { name: /Đang sắp xếp theo Khóa học giảm dần/ }),
+    ).toBeVisible();
   });
 
   test("mở hồ sơ học viên và validate", async ({ page }) => {
@@ -49,44 +76,50 @@ test.describe("Student", () => {
 
   test("reader hiển thị slide và điều hướng trang", async ({ page }) => {
     await page.goto("/student/courses/course-1");
-
-    // Dialog "học tiếp" hiện khi có tiến độ cũ → chọn học tiếp để vào reader.
-    const resume = page.getByRole("button", { name: "Học tiếp" });
-    await resume.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-    if (await resume.isVisible().catch(() => false)) {
-      await resume.click();
-    }
-
     await expect(page.getByRole("heading", { name: "Bài 1: Giới thiệu" })).toBeVisible();
+    await page.getByRole("button", { name: "Sau" }).click();
     await page.getByRole("button", { name: "Sau" }).click();
     await expect(page.getByText(/3\s*\/\s*3/)).toBeVisible();
   });
 
-  test("resume không ghi slide 0 vì tiến độ backend là cộng dồn", async ({ page }) => {
-    const progressPatches: Array<{ lastSlide?: number }> = [];
-    await page.route("**/api/lessons/**/progress", async (route) => {
-      if (route.request().method() === "PATCH") {
-        progressPatches.push(route.request().postDataJSON() as { lastSlide?: number });
-        return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
-      }
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ lastSlide: 1, viewed: [0, 1], completed: false, updatedAt: null }),
-      });
-    });
+  test("reader mở bài tập trắc nghiệm và nộp bài", async ({ page }) => {
+    await page.goto("/student/courses/course-1?lesson=lesson-quiz-1");
+    await expect(page.getByText("Bài tập: Kiểm tra nhập môn").first()).toBeVisible();
+    // Chưa nộp bài thì chưa có trợ lý học tập.
+    await expect(page.getByRole("button", { name: "Mở trợ lý học tập" })).toHaveCount(0);
 
-    await page.goto("/student/courses/course-1");
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await page.getByRole("button", { name: "Đóng" }).click();
-    await page.waitForTimeout(1400);
-    expect(progressPatches.some((patch) => patch.lastSlide === 0)).toBe(false);
+    await page.getByText("def", { exact: true }).click();
+    await page.getByRole("button", { name: "Tiếp" }).click();
+    await page.getByText("list", { exact: true }).click();
+    await page.getByRole("button", { name: "Tiếp" }).click();
+    await page.getByText("9", { exact: true }).click();
+    await page.getByRole("button", { name: "Nộp bài" }).click();
 
-    await page.reload();
-    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
-    await expect(page.getByText(/1\s*\/\s*3/)).toBeVisible();
-    await page.waitForTimeout(1400);
-    expect(progressPatches.some((patch) => patch.lastSlide === 0)).toBe(false);
+    await expect(page.getByText(/3\/3 điểm/)).toBeVisible();
+    await expect(page.getByText("Đáp án đúng").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Bài tiếp theo" })).toBeVisible();
+    // Nộp xong mới hiện trợ lý học tập.
+    await expect(page.getByRole("button", { name: "Mở trợ lý học tập" })).toBeVisible();
+  });
+
+  test("học viên làm lại bài tập khi giáo viên cho phép", async ({ page }) => {
+    await page.goto("/student/courses/course-1?lesson=lesson-quiz-1");
+    await page.getByText("def", { exact: true }).click();
+    await page.getByRole("button", { name: "Tiếp" }).click();
+    await page.getByText("list", { exact: true }).click();
+    await page.getByRole("button", { name: "Tiếp" }).click();
+    await page.getByText("9", { exact: true }).click();
+    await page.getByRole("button", { name: "Nộp bài" }).click();
+    await expect(page.getByText(/3\/3 điểm/)).toBeVisible();
+
+    // Giáo viên đã bật "cho phép làm lại" -> có nút Làm lại + hộp xác nhận.
+    await page.getByRole("button", { name: "Làm lại" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Làm lại" }).click();
+
+    // Quay lại câu 1 với bài làm trắng và trợ lý học tập ẩn lại.
+    await expect(page.getByText("Câu 1 / 3")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nộp bài" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mở trợ lý học tập" })).toHaveCount(0);
   });
 
   test("đổi bài đóng phiên cũ và quay lại tạo phiên mới", async ({ page }) => {
@@ -108,14 +141,11 @@ test.describe("Student", () => {
     });
 
     await page.goto("/student/courses/course-1");
-    await page.getByRole("button", { name: "Đóng" }).click();
     await expect.poll(() => created.length).toBe(1);
 
     await page.getByRole("button", { name: "Bài 2: Biến" }).click();
     await expect.poll(() => created.length).toBe(2);
     await expect.poll(() => closed).toContain("session-1");
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await page.getByRole("button", { name: "Đóng" }).click();
 
     await page.getByRole("button", { name: "Bài 1: Giới thiệu" }).click();
     await expect.poll(() => created.length).toBe(3);

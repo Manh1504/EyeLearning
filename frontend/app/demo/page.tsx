@@ -18,14 +18,16 @@ const GROUPS: Array<{ role: Role; title: string; icon: string; items: LinkItem[]
     title: "Học viên",
     icon: "ri-book-open-line",
     items: [
-      { label: "Trang chủ khóa học", url: "/student", note: "tiếp tục học + stats + danh sách" },
-      { label: "Danh sách bài trắc nghiệm", url: "/student/assignments" },
-      { label: "Làm bài trắc nghiệm", url: "/student/assignments/quiz-python-1" },
-      { label: "Kết quả + chữa bài + chatbot", url: "/student/assignments/quiz-python-1/result" },
+      { label: "Trang chủ khóa học", url: "/student", note: "danh sách khóa học + tìm kiếm" },
+      { label: "Học bài (reader)", url: "/student/courses/course-1", note: "slide + bài giảng" },
+      {
+        label: "Bài tập trắc nghiệm (trong reader)",
+        url: "/student/courses/course-1?lesson=lesson-quiz-1",
+        note: "làm bài + chữa bài + chatbot",
+      },
       { label: "Hồ sơ học viên", url: "/student/profile" },
       { label: "Kiểm tra camera (preflight)", url: "/student/courses/course-1/prepare" },
       { label: "Calibration 16 điểm", url: "/student/courses/course-1/calibrate" },
-      { label: "Học bài (reader)", url: "/student/courses/course-1", note: "slide + tiến độ + resume" },
     ],
   },
   {
@@ -34,10 +36,12 @@ const GROUPS: Array<{ role: Role; title: string; icon: string; items: LinkItem[]
     icon: "ri-dashboard-line",
     items: [
       { label: "Danh sách khóa học", url: "/teacher" },
-      { label: "Tạo và giao bài trắc nghiệm", url: "/teacher/assignments" },
-      { label: "Workspace · Nội dung", url: "/teacher/courses/course-1?tab=content" },
+      {
+        label: "Workspace · Nội dung",
+        url: "/teacher/courses/course-1?tab=content",
+        note: "chương · bài học · bài tập trắc nghiệm",
+      },
       { label: "Workspace · Học viên", url: "/teacher/courses/course-1?tab=students" },
-      { label: "Workspace · Tổng quan", url: "/teacher/courses/course-1?tab=overview" },
       { label: "Tạo khóa học mới", url: "/teacher/courses/c-new?new=1" },
       {
         label: "Heatmap phân tích",

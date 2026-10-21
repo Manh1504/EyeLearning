@@ -12,7 +12,7 @@ from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.calibration import CalibrationParam, Device
-from app.models.course import Enrollment, Lesson, LessonContent, LessonProgress, Module
+from app.models.course import Enrollment, Lesson, LessonContent, Module
 from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
 from app.schemas.gaze import (
     GazeBatchIn,
@@ -82,6 +82,11 @@ async def create_learning_session(
     lesson = await db.get(Lesson, body.lesson_id)
     if lesson is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+    if lesson.kind != "lesson":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Bài tập trắc nghiệm không có phiên theo dõi điểm nhìn",
+        )
 
     device = await _upsert_device(
         db,
@@ -92,21 +97,10 @@ async def create_learning_session(
     )
     params = await _active_param(db, user.id, device.id)
 
-    # Xác định chế độ học dựa trên các phiên trước + tiến độ bài học.
+    # Xác định chế độ học dựa trên các phiên trước.
     # - Chưa từng học bài này → "first" (tracking gaze).
-    # - Đã học nhưng bài chưa hoàn thành → "continue": dùng lại phiên cũ đang mở
-    #   để ghi tiếp gaze, tránh tạo phiên trùng.
-    # - Bài đã hoàn thành (học lại) → "review": không tracking gaze.
-    progress = (
-        await db.execute(
-            select(LessonProgress).where(
-                LessonProgress.enrollment_id == enrollment.id,
-                LessonProgress.lesson_id == lesson.id,
-            )
-        )
-    ).scalar_one_or_none()
-    completed = progress is not None and progress.status == "completed"
-
+    # - Đã có phiên trước → "continue": dùng lại phiên cũ đang mở để ghi tiếp gaze,
+    #   tránh tạo phiên trùng.
     existing = (
         await db.execute(
             select(LearningSession)
@@ -119,7 +113,7 @@ async def create_learning_session(
         )
     ).scalar_one_or_none()
 
-    if existing is not None and not completed:
+    if existing is not None:
         # Học tiếp: tái sử dụng phiên cũ nếu nó vẫn mở; nếu đã đóng thì mở lại.
         if existing.status != "in_progress":
             existing.status = "in_progress"
@@ -137,13 +131,12 @@ async def create_learning_session(
             mode="continue",
         )
 
-    mode = "review" if completed else "first"
     session = LearningSession(
         enrollment_id=enrollment.id,
         lesson_id=lesson.id,
         device_id=device.id,
         calibration_param_id=params.id if params else None,
-        tracking_consent=body.tracking_consent and mode != "review",
+        tracking_consent=body.tracking_consent,
     )
     db.add(session)
     await db.commit()
@@ -156,7 +149,7 @@ async def create_learning_session(
         calibrated=bool(params and params.has_model),
         status=session.status,
         tracking_consent=session.tracking_consent,
-        mode=mode,
+        mode="first",
     )
 
 
@@ -218,7 +211,7 @@ async def post_gaze_samples(
         return GazeBatchOut(ok=True, inserted=0)
 
     if len(body.samples) > settings.gaze_batch_max:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Batch quá lớn")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Batch quá lớn")
 
     session: LearningSession | None = None
     if body.learning_session_id:

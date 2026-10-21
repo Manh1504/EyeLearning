@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +9,6 @@ from app.models.auth import User
 from app.models.course import Course, Module
 from app.schemas.common import CamelModel
 from app.schemas.course import ModuleCreateIn
-from pydantic import Field
 
 router = APIRouter(tags=["modules"])
 

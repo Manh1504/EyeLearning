@@ -24,50 +24,87 @@ test.describe("Demo mode (không backend)", () => {
 
   test("vào thẳng URL học viên không cần đăng nhập", async ({ page }) => {
     await page.goto("/student");
-    await expect(page.getByText("Lộ trình học")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Tìm khóa học theo tên" })).toBeVisible();
   });
 
-  test("bài trắc nghiệm hiển thị bên dưới bài học", async ({ page }) => {
-    await page.goto("/student/courses/course-1?lesson=lesson-1");
-    await page.getByRole("button", { name: "Bắt đầu lại" }).click();
-    await expect(page.getByRole("heading", { name: "Bài trắc nghiệm" })).toBeVisible();
-    await expect(page.getByText("Kiểm tra kiến thức Python nhập môn")).toBeVisible();
+  test("bài tập trắc nghiệm là một mục trong chương", async ({ page }) => {
+    await page.goto("/student/courses/course-1?lesson=lesson-quiz-1");
+    await expect(page.getByText("Bài tập: Kiểm tra nhập môn").first()).toBeVisible();
+    await expect(
+      page.getByText("Từ khóa nào dùng để khai báo một hàm trong Python?"),
+    ).toBeVisible();
   });
 
   test("vào thẳng heatmap giảng viên", async ({ page }) => {
     await page.goto("/teacher/courses/course-1/lessons/lesson-1/heatmap");
-    await expect(page.getByText("Phân tích điểm nhìn")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Phân tích điểm nhìn" })).toBeVisible();
   });
 
-  test("mở tiến độ học viên rồi chọn bài để xem heatmap", async ({ page }) => {
+  test("mở danh sách học viên rồi chọn bài để xem heatmap", async ({ page }) => {
     await page.goto("/teacher/courses/course-1?tab=students");
-    await page.getByRole("button", { name: "Xem tiến độ & heatmap" }).first().click();
-    const progress = page.getByRole("dialog");
-    await expect(progress.getByText("Tiến độ từng bài")).toBeVisible();
-    await progress.getByRole("link", { name: /Bài 1: Giới thiệu/ }).click();
+    await page.getByRole("button", { name: "Xem heatmap" }).first().click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByText("Bài học")).toBeVisible();
+    await sheet.getByRole("link", { name: /Bài 1: Giới thiệu/ }).click();
     await expect(page).toHaveURL(/\/heatmap\?student=/);
-    await expect(page.getByText("Phân tích điểm nhìn")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Phân tích điểm nhìn" })).toBeVisible();
   });
 
-  test("giảng viên mở trình tạo bài trắc nghiệm", async ({ page }) => {
-    await page.goto("/teacher/assignments");
-    await expect(page.getByRole("heading", { name: "Bài kiểm tra" })).toBeVisible();
-    await expect(page.getByText("Thiết lập bài giao mới")).toBeVisible();
+  test("giảng viên soạn bài tập trắc nghiệm trong chương", async ({ page }) => {
+    await page.goto("/teacher/courses/course-1?tab=content");
+    await expect(
+      page.getByRole("button", { name: "Kéo để sắp xếp Bài 1: Giới thiệu" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Mở Bài tập: Kiểm tra nhập môn" }).click();
+    await expect(page.getByRole("heading", { name: "Câu hỏi", exact: true })).toBeVisible();
+    // Công tắc "cho phép làm lại" nằm ngay đầu phần soạn bài tập, không bị gập.
+    await expect(
+      page.getByRole("switch", { name: /Cho phép học viên làm lại/ }),
+    ).toBeVisible();
   });
 
-  test("học viên làm bài, xem kết quả và chatbot chữa bài", async ({ page }) => {
-    await page.goto("/student/assignments/quiz-python-1");
-    await expect(page.getByText("Trợ lý học tập", { exact: true })).toBeVisible();
+  test("giảng viên kéo thả sắp xếp lại bài học trong chương", async ({ page }) => {
+    await page.goto("/teacher/courses/course-1?tab=content");
+    const first = page.getByRole("button", { name: "Kéo để sắp xếp Bài 1: Giới thiệu" });
+    const second = page.getByRole("button", {
+      name: "Kéo để sắp xếp Bài 2: Biến và kiểu dữ liệu",
+    });
+    await expect(first).toBeVisible();
+
+    await first.focus();
+    await page.keyboard.press("Space");
+    await expect(page.getByText("Đang ở vị trí 1/3.")).toBeAttached();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByText("Đang ở vị trí 2/3.")).toBeAttached();
+    await page.keyboard.press("Space");
+
+    // Demo lưu thứ tự trong bộ nhớ nên danh sách đổi ngay sau khi thả.
+    await expect(async () => {
+      const [secondBox, firstBox] = [await second.boundingBox(), await first.boundingBox()];
+      expect(secondBox!.y).toBeLessThan(firstBox!.y);
+    }).toPass();
+  });
+
+  test("học viên làm bài trắc nghiệm trong reader và xem kết quả", async ({ page }) => {
+    await page.goto("/student/courses/course-1?lesson=lesson-quiz-1");
+    // Trợ lý học tập chỉ hiện sau khi nộp bài.
+    await expect(page.getByRole("button", { name: "Mở trợ lý học tập" })).toHaveCount(0);
     await page.getByText("def", { exact: true }).click();
-    await page.getByRole("button", { name: /Tiếp theo/ }).click();
+    await page.getByRole("button", { name: "Tiếp" }).click();
     await page.getByText("list", { exact: true }).click();
-    await page.getByRole("button", { name: /Tiếp theo/ }).click();
+    await page.getByText("dict", { exact: true }).click();
+    await page.getByRole("button", { name: "Tiếp" }).click();
     await page.getByText("9", { exact: true }).click();
-    await page.getByRole("button", { name: "Nộp bài" }).last().click();
-    await expect(page).toHaveURL(/\/result$/);
-    await expect(page.getByText("Đáp án và giải thích")).toBeVisible();
-    await expect(page.getByText("Trợ lý học tập", { exact: true })).toBeVisible();
-    await expect(page.getByText("Luôn sẵn sàng hỗ trợ")).toBeVisible();
+    await page.getByRole("button", { name: "Nộp bài" }).click();
+    await expect(page.getByText("3/3 điểm")).toBeVisible();
+    await expect(page.getByText("Đáp án đúng").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mở trợ lý học tập" })).toBeVisible();
+
+    // Demo bật "cho phép làm lại": làm lại -> quay về câu 1, trợ lý ẩn lại.
+    await page.getByRole("button", { name: "Làm lại" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Làm lại" }).click();
+    await expect(page.getByText("Câu 1 / 3")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mở trợ lý học tập" })).toHaveCount(0);
   });
 
   test("login demo bằng email bất kỳ", async ({ page }) => {

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   buildCalibrationPoints,
+  calibrationMargins,
+  CALIBRATION_EDGE_INSET_PX,
+  DEFAULT_CALIBRATION_MARGIN,
   getContainedImageRect,
   screenGazeToSlide,
 } from "@/lib/api/calibration";
@@ -18,13 +21,60 @@ describe("buildCalibrationPoints", () => {
     );
   });
 
-  it("mọi toạ độ nằm trong [0,1] và giữ margin", () => {
+  it("mọi toạ độ nằm trong [0,1] và sát rìa theo margin mặc định", () => {
     for (const { x, y } of buildCalibrationPoints()) {
-      expect(x).toBeGreaterThanOrEqual(0.1 - 1e-9);
-      expect(x).toBeLessThanOrEqual(0.9 + 1e-9);
-      expect(y).toBeGreaterThanOrEqual(0.1 - 1e-9);
-      expect(y).toBeLessThanOrEqual(0.9 + 1e-9);
+      expect(x).toBeGreaterThanOrEqual(DEFAULT_CALIBRATION_MARGIN - 1e-9);
+      expect(x).toBeLessThanOrEqual(1 - DEFAULT_CALIBRATION_MARGIN + 1e-9);
+      expect(y).toBeGreaterThanOrEqual(DEFAULT_CALIBRATION_MARGIN - 1e-9);
+      expect(y).toBeLessThanOrEqual(1 - DEFAULT_CALIBRATION_MARGIN + 1e-9);
     }
+  });
+
+  it("sát rìa hơn hẳn mức cũ (margin 0.1)", () => {
+    expect(DEFAULT_CALIBRATION_MARGIN).toBeLessThan(0.1);
+  });
+
+  it("nhận margin tuỳ chỉnh và đặt 4 góc sát rìa", () => {
+    const points = buildCalibrationPoints({ x: 0.02, y: 0.05 });
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    expect(Math.min(...xs)).toBeCloseTo(0.02, 6);
+    expect(Math.max(...xs)).toBeCloseTo(0.98, 6);
+    expect(Math.min(...ys)).toBeCloseTo(0.05, 6);
+    expect(Math.max(...ys)).toBeCloseTo(0.95, 6);
+  });
+});
+
+describe("calibrationMargins", () => {
+  it("giữ khoảng cách tới rìa ~cố định theo pixel trên nhiều cỡ màn hình", () => {
+    for (const [w, h] of [
+      [1366, 768],
+      [1920, 1080],
+      [2560, 1440],
+    ]) {
+      const m = calibrationMargins(w, h);
+      expect(m.x * w).toBeCloseTo(CALIBRATION_EDGE_INSET_PX, 4);
+      expect(m.y * h).toBeCloseTo(CALIBRATION_EDGE_INSET_PX, 4);
+    }
+  });
+
+  it("chặn margin khi màn hình rất nhỏ để chấm không bị cắt", () => {
+    const m = calibrationMargins(320, 240);
+    expect(m.x).toBeCloseTo(0.06, 6);
+    expect(m.y).toBeCloseTo(0.06, 6);
+  });
+
+  it("chặn margin khi màn hình siêu rộng", () => {
+    const m = calibrationMargins(8000, 8000);
+    expect(m.x).toBeCloseTo(0.015, 6);
+    expect(m.y).toBeCloseTo(0.015, 6);
+  });
+
+  it("trả margin mặc định khi thiếu kích thước viewport", () => {
+    expect(calibrationMargins(0, 0)).toEqual({
+      x: DEFAULT_CALIBRATION_MARGIN,
+      y: DEFAULT_CALIBRATION_MARGIN,
+    });
   });
 });
 

@@ -22,7 +22,7 @@ def _setup_pdf_course(client):
     course_id = client.post(
         "/teacher/courses",
         headers=auth(teacher),
-        json={"title": "Khóa Mastery", "level": "beginner", "status": "published"},
+        json={"title": "Khóa Mastery", "status": "published"},
     ).json()["id"]
     module_id = client.post(
         f"/teacher/courses/{course_id}/modules",

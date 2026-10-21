@@ -13,7 +13,7 @@ def _setup_course(client):
     r = client.post(
         "/teacher/courses",
         headers=auth(teacher),
-        json={"title": "Khóa Test", "description": "Mô tả", "level": "beginner", "status": "published"},
+        json={"title": "Khóa Test", "description": "Mô tả", "status": "published"},
     )
     assert r.status_code == 201, r.text
     course_id = r.json()["id"]
@@ -112,13 +112,6 @@ def test_full_learning_flow(client):
     assert r.json()["inserted"] >= 2
 
     r = client.patch(
-        f"/api/lessons/{lesson_id}/progress",
-        headers=auth(student),
-        json={"lastSlide": 0},
-    )
-    assert r.status_code == 200
-
-    r = client.patch(
         f"/api/learning-sessions/{session['id']}",
         headers=auth(student),
         json={"status": "completed"},
@@ -148,6 +141,121 @@ def test_full_learning_flow(client):
     assert len(rows) == 1
     assert rows[0]["name"] == "Sinh Viên"
     assert len(rows[0]["lessons"]) == 1
+
+
+def test_lesson_show_gaze_dot_toggle(client):
+    teacher, student, course_id, lesson_id, _ = _setup_course(client)
+
+    # Mặc định tắt ở cả cây GV và outline của SV.
+    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["lessons"][0]["showGazeDot"] is False
+
+    r = client.get(f"/api/courses/{course_id}", headers=auth(student))
+    assert r.status_code == 200, r.text
+    assert r.json()["modules"][0]["lessons"][0]["showGazeDot"] is False
+
+    # GV bật → cả hai nơi phản ánh true.
+    r = client.patch(
+        f"/teacher/lessons/{lesson_id}",
+        headers=auth(teacher),
+        json={"showGazeDot": True},
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
+    assert r.json()[0]["lessons"][0]["showGazeDot"] is True
+
+    r = client.get(f"/api/courses/{course_id}", headers=auth(student))
+    assert r.json()["modules"][0]["lessons"][0]["showGazeDot"] is True
+
+    # Đổi tên riêng không đụng tới cờ.
+    r = client.patch(
+        f"/teacher/lessons/{lesson_id}",
+        headers=auth(teacher),
+        json={"title": "Bài 1 đổi tên"},
+    )
+    assert r.status_code == 200, r.text
+    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
+    node = r.json()[0]["lessons"][0]
+    assert node["title"] == "Bài 1 đổi tên"
+    assert node["showGazeDot"] is True
+
+
+def test_course_gaze_dot_toggle(client):
+    teacher, student, course_id, lesson_id, _ = _setup_course(client)
+
+    # Khóa có 1 bài giảng, công tắc cấp khóa mặc định tắt.
+    r = client.get("/teacher/courses", headers=auth(teacher))
+    course = r.json()[0]
+    assert course["lessonCount"] == 1
+    assert course["showGazeDot"] is False
+
+    # Bật cấp khóa → áp cho mọi bài giảng.
+    r = client.patch(
+        f"/teacher/courses/{course_id}/gaze-dot",
+        headers=auth(teacher),
+        json={"showGazeDot": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 1
+
+    r = client.get("/teacher/courses", headers=auth(teacher))
+    assert r.json()[0]["showGazeDot"] is True
+
+    r = client.get(f"/api/courses/{course_id}", headers=auth(student))
+    assert r.json()["modules"][0]["lessons"][0]["showGazeDot"] is True
+
+    # Tắt riêng một bài → công tắc cấp khóa trở về false (chỉ true khi mọi bài bật).
+    r = client.patch(
+        f"/teacher/lessons/{lesson_id}",
+        headers=auth(teacher),
+        json={"showGazeDot": False},
+    )
+    assert r.status_code == 200, r.text
+    r = client.get("/teacher/courses", headers=auth(teacher))
+    assert r.json()[0]["showGazeDot"] is False
+
+    # Tắt cấp khóa.
+    r = client.patch(
+        f"/teacher/courses/{course_id}/gaze-dot",
+        headers=auth(teacher),
+        json={"showGazeDot": False},
+    )
+    assert r.status_code == 200, r.text
+    r = client.get("/teacher/courses", headers=auth(teacher))
+    assert r.json()[0]["showGazeDot"] is False
+
+
+def _calibration_row_counts(email: str) -> tuple[int, int]:
+    """Số dòng (calibration_params, calibration_sessions) của 1 user."""
+    from sqlalchemy import text
+
+    from app.db.session import SessionLocal
+
+    async def run() -> tuple[int, int]:
+        async with SessionLocal() as session:
+            params = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM calibration_params cp "
+                        "JOIN users u ON u.id = cp.user_id WHERE u.email = :e"
+                    ),
+                    {"e": email},
+                )
+            ).scalar_one()
+            sessions = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM calibration_sessions cs "
+                        "JOIN users u ON u.id = cs.user_id WHERE u.email = :e"
+                    ),
+                    {"e": email},
+                )
+            ).scalar_one()
+            return int(params), int(sessions)
+
+    return asyncio.run(run())
 
 
 def test_calibration_flow(client):
@@ -195,11 +303,28 @@ def test_calibration_flow(client):
     assert r.status_code == 200
     assert r.json()["modelUbjBase64"] == model_v1
 
-    # Bộ mới thay thế bộ cũ (bộ cũ bị deactivate)
+    # Bộ mới GHI ĐÈ bộ cũ tại chỗ (không thêm dòng, không giữ lịch sử)
     r = post_model(model_v2, mae=0.01)
     assert r.status_code == 201, r.text
     r = active_model()
     assert r.json()["modelUbjBase64"] == model_v2
+    assert _calibration_row_counts("sv2@t.vn") == (1, 1)
+
+    # Thiết bị khác → bản ghi riêng, vẫn đúng 1 dòng / thiết bị
+    r = client.post(
+        "/api/calibrations",
+        headers=auth(student),
+        json={
+            "deviceFingerprint": "fp-2",
+            "numPoints": 16,
+            "modelUbjBase64": model_v1,
+            "maePx": 0.03,
+            "screenWidthPx": 1366,
+            "screenHeightPx": 768,
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert _calibration_row_counts("sv2@t.vn") == (2, 2)
 
     # base64 hỏng -> 422
     r = post_model("!!!khong-phai-base64!!!")
@@ -213,8 +338,9 @@ def test_calibration_flow(client):
     )
     assert r.status_code == 422
 
-    # model vẫn là bộ v2 sau các request lỗi
+    # model vẫn là bộ v2 sau các request lỗi, không sinh thêm dòng
     assert active_model().json()["modelUbjBase64"] == model_v2
+    assert _calibration_row_counts("sv2@t.vn") == (2, 2)
 
     r = client.get(
         "/api/calibrations/active",
@@ -302,7 +428,6 @@ def test_teacher_upload_pdf_slides(client):
     assert r.status_code == 400
 
     # Xóa bài → file media được dọn.
-    from pathlib import Path
     from app.core.config import settings
 
     lesson_dir = settings.media_path / "lessons" / lesson_id

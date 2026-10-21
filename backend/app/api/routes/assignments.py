@@ -1,16 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import can_access_course, get_current_user, require_roles
-from app.core.ratelimit import rate_limit
-from app.core.config import settings
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, CourseTeacher, Enrollment, Lesson, Module
@@ -21,9 +17,8 @@ from app.schemas.quiz import (
     QuizAssignmentUpdate,
     QuizAttemptCreate,
     QuizAttemptOut,
-    QuizChatIn,
-    QuizChatOut,
 )
+from app.services.study_chat import question_correct_ids
 
 router = APIRouter(prefix="/api/assignments", tags=["assignments"])
 
@@ -74,6 +69,21 @@ async def _require_assignment_access(
     return course, attempt
 
 
+def _public_question(question: dict) -> dict:
+    """Bản câu hỏi cho học viên chưa nộp: ẩn đáp án đúng và giải thích."""
+    clean = {key: value for key, value in question.items() if key != "correctOptionId"}
+    clean["correctOptionIds"] = []
+    clean["explanation"] = ""
+    return clean
+
+
+def _reveal_question(question: dict) -> dict:
+    """Bản câu hỏi đầy đủ (giáo viên hoặc học viên đã nộp)."""
+    clean = {key: value for key, value in question.items() if key != "correctOptionId"}
+    clean["correctOptionIds"] = question_correct_ids(question)
+    return clean
+
+
 async def _assignment_out(
     db: AsyncSession,
     assignment: QuizAssignment,
@@ -82,14 +92,16 @@ async def _assignment_out(
 ) -> QuizAssignmentOut:
     course = await db.get(Course, assignment.course_id)
     lesson = await db.get(Lesson, assignment.lesson_id) if assignment.lesson_id else None
-    questions = assignment.questions
-    if not reveal_answers:
-        questions = [
-            {**question, "correctOptionId": "", "explanation": ""}
-            for question in questions
-        ]
+    questions = [
+        _reveal_question(question) if reveal_answers else _public_question(question)
+        for question in assignment.questions
+    ]
     effective_status = assignment.status
-    if effective_status == "published" and assignment.due_at < datetime.now(timezone.utc):
+    if (
+        effective_status == "published"
+        and assignment.due_at is not None
+        and assignment.due_at < datetime.now(timezone.utc)
+    ):
         effective_status = "closed"
     return QuizAssignmentOut(
         id=assignment.id,
@@ -104,8 +116,17 @@ async def _assignment_out(
         status=effective_status,
         created_at=assignment.created_at,
         expires_at=expires_at,
+        allow_retry=assignment.allow_retry,
         questions=questions,
     )
+
+
+def _deadline(assignment: QuizAssignment, session: QuizAttemptSession) -> datetime:
+    """Hạn chót của lượt làm: min(hạn nộp bài, lúc bắt đầu + thời lượng)."""
+    deadline = session.started_at + timedelta(minutes=assignment.duration_minutes)
+    if assignment.due_at is not None:
+        return min(assignment.due_at, deadline)
+    return deadline
 
 
 @router.get("", response_model=list[QuizAssignmentOut])
@@ -142,7 +163,16 @@ async def list_assignments(
         reveal = False
     else:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
-    assignments = list((await db.execute(stmt.order_by(QuizAssignment.due_at))).scalars().all())
+    assignments = list(
+        (
+            await db.execute(
+                stmt.order_by(
+                    QuizAssignment.due_at.asc().nullslast(),
+                    QuizAssignment.created_at.desc(),
+                )
+            )
+        ).scalars().all()
+    )
     return [await _assignment_out(db, item, reveal) for item in assignments]
 
 
@@ -174,6 +204,7 @@ async def create_assignment(
         due_at=body.due_at,
         duration_minutes=body.duration_minutes,
         status=body.status,
+        allow_retry=body.allow_retry,
         questions=[question.model_dump(by_alias=True) for question in body.questions],
     )
     db.add(assignment)
@@ -196,6 +227,10 @@ async def update_assignment(
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
     if body.title is not None:
         assignment.title = body.title.strip()
+        if assignment.lesson_id:
+            lesson = await db.get(Lesson, assignment.lesson_id)
+            if lesson is not None and lesson.kind == "quiz":
+                lesson.title = assignment.title
     if body.instructions is not None:
         assignment.instructions = body.instructions.strip()
     if body.due_at is not None:
@@ -204,10 +239,17 @@ async def update_assignment(
         assignment.duration_minutes = body.duration_minutes
     if body.status is not None:
         assignment.status = body.status
+    if body.allow_retry is not None:
+        assignment.allow_retry = body.allow_retry
     if body.questions is not None:
         assignment.questions = [
             question.model_dump(by_alias=True) for question in body.questions
         ]
+    if assignment.status == "published" and not assignment.questions:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Cần ít nhất một câu hỏi trước khi giao bài",
+        )
     await db.commit()
     await db.refresh(assignment)
     return await _assignment_out(db, assignment, True)
@@ -223,11 +265,12 @@ async def get_assignment(
     _, attempt = await _require_assignment_access(db, assignment, user)
     reveal = bool({"teacher", "admin"} & set(user.role_codes)) or attempt is not None
     expires_at = None
+    due_open = assignment.due_at is None or assignment.due_at > datetime.now(timezone.utc)
     if (
         "student" in user.role_codes
         and attempt is None
         and assignment.status == "published"
-        and assignment.due_at > datetime.now(timezone.utc)
+        and due_open
     ):
         session = await db.get(
             QuizAttemptSession,
@@ -247,10 +290,7 @@ async def get_assignment(
             else:
                 await db.refresh(session)
         if session is not None:
-            expires_at = min(
-                assignment.due_at,
-                session.started_at + timedelta(minutes=assignment.duration_minutes),
-            )
+            expires_at = _deadline(assignment, session)
     return await _assignment_out(db, assignment, reveal, expires_at)
 
 
@@ -265,6 +305,43 @@ async def get_attempt(
     return attempt
 
 
+@router.post("/{assignment_id}/retry", response_model=QuizAssignmentOut)
+async def retry_attempt(
+    assignment_id: UUID,
+    user: User = Depends(require_roles("student")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Xoá lượt làm cũ để học viên làm lại (chỉ khi giáo viên cho phép).
+
+    Mỗi học viên vẫn chỉ giữ 1 lượt: bản ghi cũ bị xoá hẳn và đồng hồ làm bài
+    được đặt lại từ đầu. Đáp án vì thế cũng bị ẩn lại cho tới lần nộp kế tiếp.
+    """
+    assignment = await _assignment_or_404(db, str(assignment_id))
+    _, attempt = await _require_assignment_access(db, assignment, user)
+    if not assignment.allow_retry:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="Giáo viên chưa cho phép làm lại bài này"
+        )
+    if assignment.status != "published" or (
+        assignment.due_at is not None and assignment.due_at < datetime.now(timezone.utc)
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Bài tập đã đóng")
+    # Không cho reset đồng hồ khi chưa từng nộp (tránh gia hạn thời gian làm bài).
+    if attempt is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Bạn chưa nộp bài")
+    await db.delete(attempt)
+    session = await db.get(
+        QuizAttemptSession,
+        {"assignment_id": assignment.id, "student_id": user.id},
+    )
+    if session is None:
+        session = QuizAttemptSession(assignment_id=assignment.id, student_id=user.id)
+        db.add(session)
+    session.started_at = datetime.now(timezone.utc)
+    await db.commit()
+    return await _assignment_out(db, assignment, False, _deadline(assignment, session))
+
+
 @router.post("/{assignment_id}/attempts", response_model=QuizAttemptOut, status_code=201)
 async def submit_attempt(
     assignment_id: UUID,
@@ -276,7 +353,10 @@ async def submit_attempt(
     _, existing = await _require_assignment_access(db, assignment, user)
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Bài tập đã được nộp")
-    if assignment.status != "published" or assignment.due_at < datetime.now(timezone.utc):
+    if assignment.status != "published" or (
+        assignment.due_at is not None
+        and assignment.due_at < datetime.now(timezone.utc)
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Bài tập đã đóng")
     session = await db.get(
         QuizAttemptSession,
@@ -286,19 +366,22 @@ async def submit_attempt(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Bài làm chưa được bắt đầu")
     if session.started_at + timedelta(minutes=assignment.duration_minutes) < datetime.now(timezone.utc):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Đã hết thời gian làm bài")
-    valid_answers: dict[str, str] = {}
+    valid_answers: dict[str, list[str]] = {}
     score = 0
     max_score = 0
     for question in assignment.questions:
         question_id = question["id"]
         points = int(question["points"])
         max_score += points
-        selected = body.answers.get(question_id)
         valid_option_ids = {option["id"] for option in question["options"]}
-        if selected in valid_option_ids:
-            valid_answers[question_id] = selected
-            if selected == question["correctOptionId"]:
-                score += points
+        selected = body.answers.get(question_id) or []
+        if isinstance(selected, str):
+            selected = [selected]
+        chosen = {option_id for option_id in selected if option_id in valid_option_ids}
+        valid_answers[question_id] = sorted(chosen)
+        # Chấm "tất cả hoặc không": đúng đủ và không dư đáp án mới được điểm.
+        if chosen and chosen == set(question_correct_ids(question)):
+            score += points
     attempt = QuizAttempt(
         assignment_id=assignment.id,
         student_id=user.id,
@@ -315,45 +398,3 @@ async def submit_attempt(
     await db.refresh(attempt)
     return attempt
 
-
-@router.post("/{assignment_id}/chat", response_model=QuizChatOut)
-async def chat_about_assignment(
-    assignment_id: UUID,
-    body: QuizChatIn,
-    user: User = Depends(require_roles("student")),
-    db: AsyncSession = Depends(get_db),
-    _: None = Depends(rate_limit(10, 60, "assignment-chat")),
-):
-    assignment = await _assignment_or_404(db, str(assignment_id))
-    course, attempt = await _require_assignment_access(db, assignment, user)
-    if not settings.chatbot_url or not settings.chatbot_internal_token:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Trợ lý học tập chưa được cấu hình")
-    review = attempt is not None
-    context_lines = [f"Bài tập: {assignment.title}"]
-    for index, question in enumerate(assignment.questions, start=1):
-        context_lines.append(f"Câu {index}: {question['prompt']}")
-        for option in question["options"]:
-            context_lines.append(f"- {option['id']}: {option['text']}")
-        # Chỉ gửi đáp án/giải thích sau khi học viên đã nộp; nếu chưa nộp,
-        # chatbot không được biết đáp án để tránh lộ bài qua kênh trò chuyện.
-        if review:
-            context_lines.append(f"Học viên chọn: {attempt.answers.get(question['id'], 'chưa trả lời')}")
-            context_lines.append(f"Đáp án đúng: {question['correctOptionId']}")
-            context_lines.append(f"Giải thích: {question['explanation']}")
-    payload = {
-        "message": body.message,
-        "course_id": course.id,
-        "thread_id": f"{user.id}:{assignment.id}:{body.thread_id}",
-        "assignment_context": "\n".join(context_lines)[:30000],
-        "support_mode": "review" if review else "hint",
-    }
-    try:
-        async with httpx.AsyncClient(
-            timeout=settings.chatbot_timeout_seconds,
-            headers={"X-Chatbot-Token": settings.chatbot_internal_token},
-        ) as client:
-            response = await client.post(f"{settings.chatbot_url.rstrip('/')}/chat", json=payload)
-            response.raise_for_status()
-            return QuizChatOut.model_validate(response.json())
-    except (httpx.HTTPError, ValueError, ValidationError):
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="Trợ lý học tập tạm thời không phản hồi")

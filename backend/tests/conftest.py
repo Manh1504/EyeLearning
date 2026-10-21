@@ -33,7 +33,8 @@ TRUNCATE = """
 TRUNCATE TABLE users, courses, enrollments, devices, calibration_sessions,
 calibration_params, learning_sessions, gaze_events, gaze_slide_stats,
 heatmap_aggregates, aoi_regions, aoi_dwell_stats, engagement_scores,
-slide_coverage_stats, lesson_mastery_scores, auth_sessions CASCADE
+slide_coverage_stats, lesson_mastery_scores, auth_sessions,
+chat_sessions, chat_messages CASCADE
 """
 
 # Tự động áp migrations cho DB test (để stack update/recreate vẫn tự migrate)

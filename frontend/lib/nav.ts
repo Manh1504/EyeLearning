@@ -14,13 +14,11 @@ const under =
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   student: [
-    { href: "/student", label: "Tổng quan", icon: "ri-home-line", match: (p) => p === "/student" },
-    { href: "/student/assignments", label: "Bài tập", icon: "ri-list-check-3", match: under("/student/assignments") },
+    { href: "/student", label: "Khóa học", icon: "ri-home-line", match: (p) => p === "/student" },
     { href: "/student/profile", label: "Hồ sơ", icon: "ri-user-line", match: under("/student/profile") },
   ],
   teacher: [
-    { href: "/teacher", label: "Tổng quan", icon: "ri-dashboard-line", match: (p) => p === "/teacher" },
-    { href: "/teacher/assignments", label: "Giao bài", icon: "ri-list-check-3", match: under("/teacher/assignments") },
+    { href: "/teacher", label: "Khóa học", icon: "ri-dashboard-line", match: (p) => p === "/teacher" },
     { href: "/teacher/profile", label: "Hồ sơ", icon: "ri-user-line", match: under("/teacher/profile") },
   ],
   admin: [

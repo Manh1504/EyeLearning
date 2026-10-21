@@ -1,9 +1,3 @@
-export const LEVEL_LABEL: Record<string, string> = {
-  beginner: "Cơ bản",
-  intermediate: "Trung cấp",
-  advanced: "Nâng cao",
-};
-
 export const STATUS_LABEL: Record<string, string> = {
   draft: "Nháp",
   published: "Đã xuất bản",

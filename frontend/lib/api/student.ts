@@ -14,9 +14,8 @@ export interface LearningSession {
   calibrated: boolean;
   status: string;
   trackingConsent: boolean;
-  // first: lần đầu (tracking), continue: học tiếp phiên cũ (tracking),
-  // review: học lại bài đã xong (không tracking).
-  mode: "first" | "continue" | "review";
+  // first: lần đầu (tracking), continue: học tiếp phiên cũ (tracking).
+  mode: "first" | "continue";
 }
 
 export interface CreateLearningSessionInput {
@@ -96,27 +95,5 @@ export function postGazeSamples(
     method: "POST",
     body: { learningSessionId, samples, source },
     keepalive,
-  });
-}
-
-export function fetchLessonProgress(
-  lessonId: string,
-): Promise<{ lastSlide: number; viewed: number[]; completed: boolean; updatedAt: string | null }> {
-  return apiFetch<{
-    lastSlide: number;
-    viewed: number[];
-    completed: boolean;
-    updatedAt: string | null;
-  }>(`/api/lessons/${lessonId}/progress`);
-}
-
-export function patchLessonProgress(
-  lessonId: string,
-  lastSlide: number,
-  completed?: boolean,
-): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(`/api/lessons/${lessonId}/progress`, {
-    method: "PATCH",
-    body: { lastSlide, ...(completed !== undefined ? { completed } : {}) },
   });
 }

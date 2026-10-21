@@ -16,7 +16,6 @@ import pymupdf
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.analytics import AoiRegion
 from app.models.course import LessonContent
 from app.services import media_storage

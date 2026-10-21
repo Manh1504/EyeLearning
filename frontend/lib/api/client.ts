@@ -124,15 +124,27 @@ function refreshAccessToken(): Promise<boolean> {
 
 export const AUTH_CHANGE_EVENT = "gaze-auth-change";
 
-function notifyAuthChange(): void {
-  globalThis.window?.dispatchEvent(
-    new CustomEvent(AUTH_CHANGE_EVENT, { detail: "session-expired" }),
-  );
+function notifyAuthChange(
+  reason: "session-expired" | "password-change-required" = "session-expired",
+): void {
+  globalThis.window?.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT, { detail: reason }));
 }
 
 function extractError(status: number, data: unknown): string {
   const d = data as { detail?: string; message?: string } | null;
   return d?.detail ?? d?.message ?? `HTTP ${status}`;
+}
+
+/**
+ * Khi backend trả 403 PASSWORD_CHANGE_REQUIRED (tài khoản phải đổi mật khẩu),
+ * phát sự kiện auth để tầng UI điều hướng tới trang đổi mật khẩu
+ * (xem `AuthCacheSync` trong app/providers.tsx). Không điều hướng trực tiếp ở
+ * đây để Next.js router quản lý navigation.
+ */
+function emitPasswordChangeRequired(status: number, message: string): void {
+  if (status === 403 && message === "PASSWORD_CHANGE_REQUIRED") {
+    notifyAuthChange("password-change-required");
+  }
 }
 
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -183,6 +195,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     } catch {
       /* body không phải JSON */
     }
+    emitPasswordChangeRequired(res.status, message);
     throw new ApiError(res.status, message);
   }
   return res.json() as Promise<T>;

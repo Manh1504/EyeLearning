@@ -85,3 +85,77 @@ def test_me_profile_get_and_update(client):
     assert r.status_code == 200
     assert r.json()["fullName"] == "Sinh Viên B"
     assert r.json()["program"] == "CNTT K20"
+
+
+def _force_password_change(email: str) -> None:
+    import asyncio
+
+    from sqlalchemy import text
+
+    from app.db.session import SessionLocal
+
+    async def run():
+        async with SessionLocal() as session:
+            await session.execute(
+                text("UPDATE users SET must_change_password = true WHERE email = :e"),
+                {"e": email},
+            )
+            await session.commit()
+
+    asyncio.run(run())
+
+
+def test_must_change_password_flow(client):
+    import asyncio
+
+    asyncio.run(make_user("pw@test.vn", "student", full_name="Đổi Mật Khẩu"))
+    _force_password_change("pw@test.vn")
+
+    data = login(client, "pw@test.vn")
+    assert data["user"]["mustChangePassword"] is True
+
+    # Các endpoint thường bị chặn cho tới khi đổi mật khẩu.
+    blocked = client.get("/api/me/profile", headers=auth(data))
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "PASSWORD_CHANGE_REQUIRED"
+
+    # Sai mật khẩu hiện tại -> 400.
+    bad = client.post(
+        "/api/auth/change-password",
+        headers=auth(data),
+        json={"currentPassword": "sai-hoan-toan", "newPassword": "MatKhauMoi123"},
+    )
+    assert bad.status_code == 400
+
+    # Mật khẩu mới trùng mật khẩu hiện tại -> 422 (schema từ chối).
+    same = client.post(
+        "/api/auth/change-password",
+        headers=auth(data),
+        json={"currentPassword": "Password123!", "newPassword": "Password123!"},
+    )
+    assert same.status_code == 422
+
+    ok = client.post(
+        "/api/auth/change-password",
+        headers=auth(data),
+        json={"currentPassword": "Password123!", "newPassword": "MatKhauMoi123"},
+    )
+    assert ok.status_code == 200, ok.text
+
+    # Đổi xong thì dùng được API thường.
+    assert client.get("/api/me/profile", headers=auth(data)).status_code == 200
+
+    # Mật khẩu cũ hết hiệu lực; mật khẩu mới đăng nhập được và cờ đã tắt.
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={"email": "pw@test.vn", "password": "Password123!"},
+        ).status_code
+        == 401
+    )
+    fresh = client.post(
+        "/api/auth/login",
+        json={"email": "pw@test.vn", "password": "MatKhauMoi123"},
+    )
+    assert fresh.status_code == 200
+    assert fresh.json()["user"]["mustChangePassword"] is False

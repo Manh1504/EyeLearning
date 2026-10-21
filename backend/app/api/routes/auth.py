@@ -1,5 +1,5 @@
-import ipaddress
 import asyncio
+import ipaddress
 import logging
 import time
 from datetime import date
@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user_allow_password_change
 from app.core import security
 from app.core.config import settings
 from app.core.csrf import new_csrf_token
@@ -16,6 +17,7 @@ from app.crud import user as user_crud
 from app.db.session import get_db
 from app.models.auth import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -46,6 +48,7 @@ def _token_pair(user: User, access: str, refresh: str) -> TokenPair:
             email=user.email,
             roles=user.role_codes,
             full_name=user.profile.full_name if user.profile else None,
+            must_change_password=user.must_change_password,
         ),
     )
 
@@ -245,6 +248,45 @@ async def refresh(
     await db.commit()
     _set_auth_cookies(response, pair.access_token, pair.refresh_token)
     return pair
+
+
+@router.post(
+    "/change-password",
+    dependencies=[Depends(rate_limit(10, 60, "change-password"))],
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    user: User = Depends(get_current_user_allow_password_change),
+    db: AsyncSession = Depends(get_db),
+):
+    """Đổi mật khẩu (dùng cho lần đăng nhập đầu / tự đổi mật khẩu).
+
+    Endpoint này KHÔNG bị chặn bởi cờ `must_change_password` (nếu không sẽ khoá
+    cứng tài khoản). Đổi thành công sẽ thu hồi mọi refresh session khác, giữ lại
+    phiên hiện tại.
+    """
+    if not await asyncio.to_thread(
+        security.verify_password, body.current_password, user.password_hash
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu hiện tại không đúng",
+        )
+    user.password_hash = await asyncio.to_thread(
+        security.hash_password, body.new_password
+    )
+    user.must_change_password = False
+    raw_refresh = request.cookies.get("refresh_token")
+    await user_crud.revoke_all_sessions(
+        db,
+        user.id,
+        except_token_hash=(
+            security.hash_refresh_token(raw_refresh) if raw_refresh else None
+        ),
+    )
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/logout")

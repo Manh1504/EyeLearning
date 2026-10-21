@@ -1,23 +1,19 @@
 # syntax=docker/dockerfile:1
 #
-# Một bản duy nhất (GPU). CUDA/cuDNN đến từ wheel pip của torch
-# (`--extra-index-url .../cu126` trong requirements.txt) nên KHÔNG cần base
-# image NVIDIA; host chỉ cần NVIDIA driver + nvidia-container-toolkit
-# (docker-compose đã đặt `gpus: all`). Chạy CPU vẫn được qua DEVICE=cpu.
-FROM python:3.12-slim
+# Gaze service — build FROM image nền dùng chung (docker/ai-base) để chia sẻ
+# layer torch/CUDA 12.4 với service chatbot. Base đã có torch/torchvision cu124,
+# numpy, libgomp1, curl; ở đây chỉ thêm thư viện riêng của gaze.
+#
+# CUDA/cuDNN đến từ wheel pip cu124 trong base nên KHÔNG cần base image NVIDIA;
+# host chỉ cần NVIDIA driver + nvidia-container-toolkit (docker-compose đặt
+# `gpus: all`). Chạy CPU vẫn được qua DEVICE=cpu.
+ARG AI_BASE=ghcr.io/manh1504/eyelearning-ai-base:latest
+FROM ${AI_BASE}
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    DEBIAN_FRONTEND=noninteractive \
-    PYUBJSON_NO_EXTENSION=1
-
-# Thư viện hệ thống cho OpenCV / MediaPipe (GL, OpenMP, glib).
+# Thư viện hệ thống cho OpenCV / MediaPipe (GL, EGL) — base chỉ có libgomp1/curl.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
-    libgomp1 \
     libegl1 \
     libgles2 \
     && rm -rf /var/lib/apt/lists/*
@@ -25,17 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Cài dependencies trước để tận dụng cache layer. Assert ngay trong build để
-# phát hiện sớm nếu pip chọn nhầm wheel torch (CPU/cu124...).
+# phát hiện sớm nếu thiếu deps hoặc unigaze không dựng được model. Dòng này build
+# thử b16 (ViT nhỏ nhất) như một smoke test phụ thuộc — KHÔNG phải model đang
+# dùng; model thật được kiểm tra ở RUN cuối (đọc từ app/services/pipeline.py),
+# vì dựng thử l16/h14 ngay lúc build sẽ cấp phát vài GB RAM.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip check \
-    && python -c "import torch, torchvision, cv2, mediapipe, sklearn, ubjson, unigaze.loader as l; assert torch.__version__.startswith('2.7.0'), torch.__version__; assert torch.version.cuda == '12.6', torch.version.cuda; import torchvision as tv; assert tv.__version__.startswith('0.22.0'), tv.__version__; l.build_unigaze_model('unigaze_b16_joint')"
+    && python -c "import cv2, mediapipe, ubjson, unigaze.loader as l; l.build_unigaze_model('unigaze_b16_joint')"
 
 COPY app ./app
 COPY scripts ./scripts
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh \
-    && python -c "from app.main import app; paths={r.path for r in app.routes}; assert {'/health','/session','/session/{sid}'} <= paths, paths"
+    && python -c "from app.main import app; paths={r.path for r in app.routes}; assert {'/health','/ready','/session','/session/{sid}'} <= paths, paths" \
+    && python -c "from app.services.pipeline import UNIGAZE_WEIGHTS; import unigaze.loader as l; assert UNIGAZE_WEIGHTS.stem in l.MODEL_INDEX, (UNIGAZE_WEIGHTS.name, sorted(l.MODEL_INDEX))"
 
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 from app.schemas import EmbedResult, EmbedSlideRequest
-from app.services.ingest import Ingestion
+from app.services.ingest import Ingestion, VLMUnavailableError
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -39,7 +39,7 @@ def close_ingestion() -> None:
         _ingestion = None
 
 
-def _embed_new(lesson_content_id: str) -> int:
+def _embed_new(lesson_content_id: str) -> tuple[int, int]:
     with _job_lock:
         # embed_new tự raise LookupError nếu slide không tồn tại (route -> 404)
         return get_ingestion().embed_new(lesson_content_id)
@@ -49,10 +49,15 @@ def _embed_new(lesson_content_id: str) -> int:
 async def embed_slide(payload: EmbedSlideRequest):
     """Embedding (hoặc cập nhật) một slide đơn lẻ."""
     try:
-        processed = await run_in_threadpool(_embed_new, payload.lesson_content_id)
+        processed, failed = await run_in_threadpool(
+            _embed_new, payload.lesson_content_id
+        )
     except LookupError:
         raise HTTPException(
             status_code=404,
             detail=f"Không tìm thấy slide: {payload.lesson_content_id}",
         )
-    return EmbedResult(processed=processed)
+    except VLMUnavailableError as exc:
+        # 503 để backend coi là lỗi tạm thời và retry, không phải lỗi dữ liệu.
+        raise HTTPException(status_code=503, detail=str(exc))
+    return EmbedResult(processed=processed, failed=failed)

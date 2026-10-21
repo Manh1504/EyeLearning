@@ -17,6 +17,7 @@ from app.models.auth import (
     UserStatus,
 )
 from app.models.calibration import CalibrationParam, CalibrationSession, CalibrationSettings, Device
+from app.models.chat import ChatMessage, ChatSession
 from app.models.course import (
     Course,
     CourseStatus,
@@ -24,7 +25,6 @@ from app.models.course import (
     Enrollment,
     Lesson,
     LessonContent,
-    LessonProgress,
     Module,
 )
 from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
@@ -38,6 +38,8 @@ __all__ = [
     "CalibrationParam",
     "CalibrationSession",
     "CalibrationSettings",
+    "ChatMessage",
+    "ChatSession",
     "Course",
     "CourseStatus",
     "CourseTeacher",
@@ -51,7 +53,6 @@ __all__ = [
     "Lesson",
     "LessonContent",
     "LessonMasteryScore",
-    "LessonProgress",
     "LearningSession",
     "Module",
     "OAuthAccount",

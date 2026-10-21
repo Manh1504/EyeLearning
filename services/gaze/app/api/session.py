@@ -1,23 +1,40 @@
 """Session calibration + streaming gaze (HTTP + WebSocket).
 
-Đây là toàn bộ endpoint theo vòng đời 4 bước:
+Vòng đời 4 bước:
     POST /session                  -> tạo session, khai báo N điểm
     POST /session/{sid}/calibrate  -> thu 1 mẫu cho 1 điểm
-    POST /session/{sid}/train      -> fit LinearRegression
+    POST /session/{sid}/train      -> fit hồi quy tuyến tính
     WS   /session/{sid}/stream     -> streaming gaze
-Model đã train có thể tải về (/model) và nạp lại (/import) để khỏi calibration lại.
+
+Model đã train có thể tải về (/model) và nạp lại (/import, format .ubj v2) để
+khỏi calibration lại.
 """
 
-import asyncio
+import logging
 
-import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket
 from fastapi.responses import JSONResponse, Response
 
-from app.schemas import SessionRequest
+from app.schemas import (
+    CalibrateResult,
+    DeletedResult,
+    ImportResult,
+    InsufficientSamples,
+    SessionCreated,
+    SessionRequest,
+    SessionStatus,
+    TrainResult,
+)
 from app.services import inference
 from app.services.sessions import SessionManager
-from app.settings import MAX_SESSIONS, MIN_SAMPLES, SESSION_TTL_SECONDS
+from app.settings import (
+    MAX_SESSIONS,
+    MAX_UPLOAD_BYTES,
+    MIN_SAMPLES,
+    SESSION_TTL_SECONDS,
+)
+
+logger = logging.getLogger("app.gaze")
 
 router = APIRouter(tags=["session"])
 
@@ -31,54 +48,69 @@ def _get_or_404(sid: str):
     return session
 
 
-@router.get("/session/{sid}")
+async def _read_limited(upload: UploadFile, limit: int = MAX_UPLOAD_BYTES) -> bytes:
+    """Đọc tối đa `limit` bytes; vượt -> 413 (không nạp cả file khổng lồ vào RAM)."""
+    data = await upload.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, "file quá lớn")
+    return data
+
+
+@router.get("/session/{sid}", response_model=SessionStatus)
 def session_status(sid: str):
     session = _get_or_404(sid)
-    return {
-        "state": session.state,
-        "calibrated": session.state == "ready",
-    }
+    return SessionStatus(
+        state=session.state, calibrated=session.state == "ready"
+    )
 
 
-@router.post("/session")
+@router.post("/session", response_model=SessionCreated)
 def create_session(req: SessionRequest):
+    points = {p.id: (p.x, p.y) for p in req.points}
     try:
-        points = {p.id: (p.x, p.y) for p in req.points}
         sid = sessions.create(points)
     except RuntimeError as e:
         raise HTTPException(503, str(e))
-    return {"session_id": sid}
+    return SessionCreated(session_id=sid)
 
 
-@router.delete("/session/{sid}")
+@router.delete("/session/{sid}", response_model=DeletedResult)
 def delete_session(sid: str):
     if sessions.delete(sid) is None:
         raise HTTPException(404, "session not found")
-    return {"status": "deleted"}
+    return DeletedResult()
 
 
-@router.post("/session/{sid}/calibrate")
+@router.post("/session/{sid}/calibrate", response_model=CalibrateResult)
 async def calibrate(sid: str, image: UploadFile = File(...), point_id: str = Form(...)):
     session = _get_or_404(sid)
     if point_id not in session.points:
-        return {"status": "unknown_point"}
+        return CalibrateResult(status="unknown_point")
+    if not inference.pipeline_ready():
+        raise HTTPException(503, "pipeline chưa sẵn sàng")
 
-    frame = inference.decode_jpeg(await image.read())
+    frame = inference.decode_jpeg(await _read_limited(image))
     if frame is None:
-        return {"status": "invalid_image"}
+        return CalibrateResult(status="invalid_image")
 
-    result = await asyncio.to_thread(inference.process_frame, frame)
+    try:
+        result = await inference.run_inference(inference.process_frame, frame)
+    except Exception:  # lỗi suy luận không được làm sập request
+        logger.exception("Calibration inference lỗi (sid=%s, point=%s)", sid, point_id)
+        raise HTTPException(500, "inference failed")
     if result is None:
-        return {"status": "no_face"}  # client bắt người dùng chụp lại điểm này
+        return CalibrateResult(status="no_face")
 
     pitch, yaw = result
-    session.samples.setdefault(point_id, []).append(
-        [pitch, yaw, *session.points[point_id]]
-    )
-    return {"status": "accepted", "count": len(session.samples[point_id])}
+    count = session.add_sample(point_id, pitch, yaw)
+    return CalibrateResult(status="accepted", count=count)
 
 
-@router.post("/session/{sid}/train")
+@router.post(
+    "/session/{sid}/train",
+    response_model=TrainResult,
+    responses={422: {"model": InsufficientSamples}},
+)
 def train(sid: str):
     session = _get_or_404(sid)
 
@@ -86,15 +118,15 @@ def train(sid: str):
     bad = {pid: n for pid, n in missing.items() if n < MIN_SAMPLES}
     if bad:  # bảo đảm đủ N điểm × K mẫu
         return JSONResponse(
-            {"status": "insufficient_samples", "detail": bad}, status_code=422
+            InsufficientSamples(detail=bad).model_dump(), status_code=422
         )
 
-    X = np.array([m[:2] for ms in session.samples.values() for m in ms])
-    y = np.array([m[2:] for ms in session.samples.values() for m in ms])
-    session.calib.create_model(X, y)
-    mae = session.calib.evaluate(X, y)
+    X = [m[:2] for ms in session.samples.values() for m in ms]
+    y = [m[2:] for ms in session.samples.values() for m in ms]
+    mae = session.calib.evaluate(X, y)  # fit full ở cuối
     session.state = "ready"
-    return {"status": "ok", "n_samples": len(X), "mae_px": mae}
+    logger.info("Train xong sid=%s n_samples=%d mae=%s", sid, len(X), mae)
+    return TrainResult(n_samples=len(X), mae_px=mae)
 
 
 @router.get("/session/{sid}/model")
@@ -111,27 +143,29 @@ def download_model(sid: str):
     )
 
 
-@router.post("/session/{sid}/import")
+@router.post("/session/{sid}/import", response_model=ImportResult)
 async def import_model(sid: str, model: UploadFile = File(...)):
     session = _get_or_404(sid)
     try:
-        session.calib.deserialize(await model.read())
-    except Exception:
-        return {"status": "invalid_model"}
+        session.calib.deserialize(await _read_limited(model))
+    except (ValueError, KeyError, TypeError):
+        return ImportResult(status="invalid_model")
     session.state = "ready"  # bỏ qua calibration
-    return {"status": "ready"}
+    return ImportResult(status="ready")
 
 
 @router.websocket("/session/{sid}/stream")
 async def stream(ws: WebSocket, sid: str):
+    await ws.accept()
     session = sessions.get(sid)
     if session is None or session.state != "ready":
-        # Phải accept() trước khi close(): nếu close lúc còn ở trạng thái
-        # handshake, uvicorn trả HTTP 403 và client không nhận được close code.
-        await ws.accept()
+        # accept() trước để client nhận đúng close code (không phải HTTP 403).
         await ws.close(code=1008, reason="not_calibrated")
         return
-    await ws.accept()
+    if not inference.pipeline_ready():
+        await ws.close(code=1013, reason="pipeline_not_ready")
+        return
+
     while True:
         msg = await ws.receive()
         if msg["type"] == "websocket.disconnect":
@@ -143,10 +177,15 @@ async def stream(ws: WebSocket, sid: str):
             continue
         session.processing = True
         try:
-            error, point = await asyncio.to_thread(inference.predict, session, data)
+            error, point = await inference.run_inference(
+                inference.predict, session, data
+            )
             if error:
                 await ws.send_json({"ok": False, "error": error})
             else:
                 await ws.send_json({"ok": True, "x": point[0], "y": point[1]})
+        except Exception:
+            # Lỗi suy luận 1 frame không được ngắt phiên stream.
+            await ws.send_json({"ok": False, "error": "internal"})
         finally:
             session.processing = False

@@ -103,7 +103,7 @@ a final answer or complete solution.
 
 SLIDE_VLM_PROMPT = """
 Convert the lecture slide image into faithful Markdown for retrieval.
-Follow the provided output schema. 
+Follow the provided output schema.
 Put all Markdown in the transcript field, without an introduction or an outer code fence around its content.
 
 Preserve meaningful content and reading order, including original wording,

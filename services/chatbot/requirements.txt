@@ -1,33 +1,28 @@
 # Dependencies cho service chatbot: web API + ingest slide + workflow RAG.
+# Version được PIN để build tái lập được (trước đây để trôi nổi).
 #
-# KHÔNG gồm các gói embedding local (sentence-transformers,
-# langchain-huggingface, torch...) vì trong container dùng EMBEDDING_NAME=api
-# hoặc gemini. Xem app/workflow/shared/providers.py: import HuggingFaceEmbeddings
-# đã được chuyển thành lazy nên không cần cài các gói này.
+# Embedding local (EMBEDDING_NAME=local) cần thêm stack nặng (torch/sentence-
+# transformers/langchain-huggingface) — tách ở requirements-embedding.txt để
+# Docker image cài (cùng file này), còn CI/unit test không phải kéo torch.
 
 # Web service
-fastapi
-uvicorn[standard]
-python-dotenv
+fastapi==0.146.0
+uvicorn[standard]==0.54.0
+python-dotenv==1.2.4
 
 # PostgreSQL + pgvector (checkpoint hội thoại & vector truy hồi)
-psycopg[binary]
-psycopg_pool
-pgvector
-langgraph
-langgraph-checkpoint-postgres
+psycopg[binary]==3.3.6
+psycopg_pool==3.3.3
+pgvector==0.5.1
+langgraph==1.2.16
+langgraph-checkpoint-postgres==3.2.0
 
-# LangChain + các LLM provider (Gemini/DeepSeek/Ollama)
-langchain-core
-langchain-google-genai
-langchain-deepseek
-langchain-ollama
-langsmith
+# LangChain + provider model (River AI OpenAI-compatible cho LLM + VLM)
+langchain-core==1.6.12
+langchain-openai==1.7.2
+langsmith==0.14.11
 
 # Tiện ích
-httpx
-pymupdf      # render slide PDF -> PNG (ingest)
-boto3        # đọc file từ S3/R2 (app/services/storage.py)
-
-# Test (chỉ dùng khi chạy pytest; không ảnh hưởng runtime)
-pytest
+httpx==0.28.1
+pymupdf==1.28.2    # render slide PDF -> PNG (ingest)
+boto3==1.43.114    # đọc file từ S3/R2 (app/services/storage.py)

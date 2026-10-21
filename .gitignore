@@ -5,11 +5,16 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 backend/.venv
 services/chatbot/.venv/
 
 # Env (giữ .env.example)
 .env
+frontend/.env.local
+
+# Override chỉ dùng local (mở cổng web); giữ nguyên compose production
+docker-compose.override.yml
 
 # Gaze: weights tải runtime + DB dev cục bộ
 services/gaze/weights/

@@ -1,167 +1,108 @@
 """Factory tạo LLM / embedding / VLM theo tên trong biến môi trường.
 
-`message_text` chuẩn hóa nội dung model trả về (Gemini trả list content block,
-Ollama trả string) thành string.
+Các factory được **cache** (`get_llm`/`get_embedding`/`get_vlm`) để cả tiến trình
+dùng chung một client cho mỗi loại model thay vì mỗi node tạo một instance.
+
+LLM (định tuyến / kiểm duyệt / sinh câu trả lời) và VLM (mô tả slide lúc ingest)
+đều gọi qua **River AI** — endpoint OpenAI-compatible, KHÔNG tốn VRAM local.
+Embedding chạy local (Qwen3-Embedding-0.6B trên GPU).
+
+`message_text` chuẩn hóa nội dung model trả về thành string.
 """
 
 import os
-from pathlib import Path
+from functools import lru_cache
 
-import httpx
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_deepseek import ChatDeepSeek
-from langchain_ollama import ChatOllama
-from langchain_core.language_models import BaseChatModel
 from langchain_core.embeddings import Embeddings
+from langchain_core.language_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+
+from app.settings import embedding_device as _embedding_device
+from app.settings import embedding_local_files_only as _embedding_local_files_only
+from app.settings import embedding_model_path as _embedding_model_path
+from app.settings import embedding_name as _embedding_name
+from app.settings import llm_name as _llm_name
+from app.settings import river_api_key as _river_api_key
+from app.settings import river_base_url as _river_base_url
+from app.settings import river_llm_model as _river_llm_model
+from app.settings import river_vlm_model as _river_vlm_model
+from app.settings import vlm_name as _vlm_name
 
 
-# Model embedding mặc định cho API kiểu Ollama (override qua EMBEDDING_MODEL)
-DEFAULT_API_EMBED_MODEL = "qwen3-embedding:8b-ctx16k"
+def _river_chat(model: str, max_tokens: int) -> ChatOpenAI:
+    """Client ChatOpenAI trỏ tới River AI (LLM và VLM dùng chung cấu hình)."""
+    return ChatOpenAI(
+        model=model,
+        base_url=_river_base_url(),
+        api_key=_river_api_key(),
+        temperature=0,
+        max_tokens=max_tokens,
+        timeout=float(os.getenv("RIVER_TIMEOUT", "180")),
+        max_retries=int(os.getenv("RIVER_MAX_RETRIES", "2")),
+    )
 
-# Model embedding local mặc định: app/workflow/weights/Qwen3-Embedding-0.6B.
-# Override bằng EMBEDDING_MODEL_PATH khi chạy ở môi trường khác (vd Docker).
-DEFAULT_LOCAL_EMBED_PATH = str(
-    Path(__file__).resolve().parents[1] / "weights" / "Qwen3-Embedding-0.6B"
-)
 
-
-class OllamaAPIEmbeddings(Embeddings):
-    """Embedding qua HTTP API kiểu Ollama, dùng cho EMBEDDING_NAME="api".
-
-    Gửi POST tới OLLAMA_API_URL với body {"model": ..., "input": [...]} kèm
-    header "x-ollama-seckey". Endpoint trả về {"embeddings": [[...], ...]}.
-    """
-
-    def __init__(
-        self,
-        url: str | None = None,
-        secret: str | None = None,
-        model: str | None = None,
-    ):
-        self.url = url or os.environ["OLLAMA_API_URL"]
-        self.secret = secret or os.environ["OLLAMA_SECKEY"]
-        self.model = model or os.getenv("EMBEDDING_MODEL", DEFAULT_API_EMBED_MODEL)
-
-        # Tái sử dụng 1 client để tận dụng connection pooling
-        self.http = httpx.Client(
-            timeout=float(os.getenv("OLLAMA_TIMEOUT", "120"))
+def _build_llm(name: str) -> BaseChatModel:
+    if name == "river":
+        # max_tokens đủ rộng vì model có "reasoning" (token suy luận tính vào output).
+        return _river_chat(
+            _river_llm_model(), int(os.getenv("RIVER_LLM_MAX_TOKENS", "4096"))
         )
-
-    def _embed(self, texts: list[str]) -> list[list[float]]:
-        response = self.http.post(
-            self.url,
-            headers={
-                "Content-Type": "application/json",
-                "x-ollama-seckey": self.secret,
-            },
-            json={"model": self.model, "input": texts},
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        # Endpoint /api/embed trả "embeddings"; vài biến thể trả "embedding"
-        embeddings = data.get("embeddings")
-        if embeddings is None and "embedding" in data:
-            embeddings = [data["embedding"]]
-        if embeddings is None:
-            raise ValueError(
-                "Phản hồi embedding không hợp lệ, thiếu 'embeddings': "
-                f"{list(data)}"
-            )
-
-        expected_dim = int(os.getenv("EMBEDDING_DIM", "4096"))
-        if len(embeddings) != len(texts):
-            raise ValueError("Số vector embedding không khớp số văn bản")
-        if any(len(vector) != expected_dim for vector in embeddings):
-            raise ValueError(f"Embedding phải có đúng {expected_dim} chiều")
-        return embeddings
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._embed(list(texts))
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._embed([text])[0]
+    raise ValueError(f"LLM không được hỗ trợ: {name!r}")
 
 
-def create_llm(llm_name: str) -> BaseChatModel:
-    if llm_name == "gemini":
-        return ChatGoogleGenerativeAI(
-            model=os.getenv("GEMINI_LLM_MODEL", "gemini-flash-lite-latest"),
-            temperature=0,
-            timeout=float(os.getenv("GEMINI_TIMEOUT", "45")),
-            max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "1")),
-        )
-    elif llm_name == "deepseek":
-        return ChatDeepSeek(
-            model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-            temperature=0,
-        )
-    elif llm_name == "local":
-        return ChatOllama(
-            model=os.getenv("OLLAMA_LLM_MODEL", "qwen3.5:9b"),
-            temperature=0,
-            reasoning=False,
-            num_predict=int(os.getenv("OLLAMA_NUM_PREDICT", "512")),
-        )
+@lru_cache(maxsize=None)
+def get_llm(name: str | None = None) -> BaseChatModel:
+    """LLM dùng chung (cache theo tên). Mặc định lấy từ LLM_NAME."""
+    return _build_llm(name or _llm_name())
 
-    raise ValueError(f"LLM không được hỗ trợ: {llm_name!r}")
 
-def create_embedding(embedding_name: str) -> Embeddings:
-    if embedding_name == "local":
-        # Import muộn: container thường chỉ dùng embedding qua API ("api"/"gemini")
-        # nên không cần cài langchain-huggingface/sentence-transformers (rất nặng).
+def _build_embedding(name: str) -> Embeddings:
+    if name == "local":
+        # Import muộn để đường không cần embedding local khỏi kéo torch/sentence-transformers.
+        # Weights do scripts/download_embedding.py tải sẵn vào EMBEDDING_MODEL_PATH.
         from langchain_huggingface import HuggingFaceEmbeddings
 
-        embedding = HuggingFaceEmbeddings(
-            model_name=os.getenv("EMBEDDING_MODEL_PATH", DEFAULT_LOCAL_EMBED_PATH),
+        return HuggingFaceEmbeddings(
+            model_name=_embedding_model_path(),
             model_kwargs={
-                "device": os.getenv("EMBEDDING_DEVICE", "cuda"),
-                "local_files_only": True
+                "device": _embedding_device(),
+                "local_files_only": _embedding_local_files_only(),
             },
-            encode_kwargs={
-                "batch_size": 8,
-                "normalize_embeddings": True
-            },
+            encode_kwargs={"batch_size": 8, "normalize_embeddings": True},
             query_encode_kwargs={
                 "normalize_embeddings": True,
                 "prompt": (
-                        "Instruct: Retrieve relevant educational documents for answering student questions.\n"
-                        "Query: "
-                )
-            }
+                    "Instruct: Retrieve relevant educational documents for "
+                    "answering student questions.\nQuery: "
+                ),
+            },
         )
+    raise ValueError(f"Embedding không được hỗ trợ: {name!r}")
 
-    elif embedding_name == "gemini":
-        embedding = GoogleGenerativeAIEmbeddings(
-            model="gemini-embedding-2",
-            output_dimensionality=int(os.getenv("EMBEDDING_DIM", "4096")),
-        )        
 
-    elif embedding_name == "api":
-        embedding = OllamaAPIEmbeddings()
+@lru_cache(maxsize=None)
+def get_embedding(name: str | None = None) -> Embeddings:
+    """Embedding dùng chung (cache theo tên). Mặc định từ EMBEDDING_NAME."""
+    return _build_embedding(name or _embedding_name())
 
-    else:
-        raise ValueError(f"Embedding không được hỗ trợ: {embedding_name!r}")
 
-    return embedding
-
-def create_vlm(vlm_name: str) -> BaseChatModel:
-    if vlm_name == "local":
-        vlm = ChatOllama(
-            model=os.getenv("OLLAMA_VLM_MODEL", "qwen3-vl:8b-instruct"),
-            temperature=0,
-            reasoning=False
+def _build_vlm(name: str) -> BaseChatModel:
+    if name == "river":
+        return _river_chat(
+            _river_vlm_model(), int(os.getenv("RIVER_VLM_MAX_TOKENS", "16384"))
         )
-    else:
-        raise ValueError(f"VLM không được hỗ trợ: {vlm_name!r}")
+    raise ValueError(f"VLM không được hỗ trợ: {name!r}")
 
-    return vlm
+
+@lru_cache(maxsize=None)
+def get_vlm(name: str | None = None) -> BaseChatModel:
+    """VLM dùng chung (cache theo tên). Mặc định từ VLM_NAME."""
+    return _build_vlm(name or _vlm_name())
+
 
 def message_text(content: object) -> str:
-    """Chuẩn hóa nội dung trả về của model thành string.
-
-    Gemini có thể trả list content block; Ollama trả string. Ghép các phần text.
-    """
+    """Chuẩn hóa nội dung trả về của model thành string."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):

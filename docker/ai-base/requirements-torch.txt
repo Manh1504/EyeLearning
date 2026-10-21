@@ -1,0 +1,17 @@
+# torch + torchvision (CUDA 12.4) — dùng CHUNG cho services/gaze và services/chatbot.
+#
+# Cài MỘT LẦN trong base image (docker/ai-base/Dockerfile) để hai service `FROM`
+# image này chia sẻ layer nặng (~vài GB: torch + các gói nvidia-cuda-*), tránh
+# lưu trùng 2 bản trên host/registry.
+#
+# LƯU Ý CUDA: torch 2.7.0 KHÔNG có wheel cu124 (chỉ cu118/cu126/cu128). Bản mới
+# nhất hỗ trợ CUDA 12.4 là 2.6.0 → torchvision tương ứng 0.21.0.
+# CUDA/cuDNN đến từ wheel pip cu124 nên KHÔNG cần base image NVIDIA; host chỉ cần
+# NVIDIA driver + nvidia-container-toolkit (docker-compose đặt `gpus: all`).
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+
+# numpy pin sẵn ở base (torchvision cần numpy) để gaze/chatbot dùng lại, khớp
+# numpy==1.26.4 mà service gaze yêu cầu (mediapipe/opencv chỉ hợp numpy 1.x).
+numpy==1.26.4

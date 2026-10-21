@@ -4,7 +4,7 @@ Mỗi intent chỉ khác nhau ở node `answer`, nên phần ráp graph được
 `graph.py` (graph chính) chỉ việc import 3 subgraph đã compile sẵn.
 """
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
 from ..state import GraphState
 from .common import build_rag_subgraph

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -18,12 +18,13 @@ from app.models.course import (
     CourseTeacher,
     Enrollment,
     Lesson,
-    LessonProgress,
     Module,
 )
 from app.models.profile import StudentProfile, TeacherProfile, UserProfile
+from app.models.quiz import QuizAssignment
 from app.schemas.course import (
     CourseCreateIn,
+    CourseGazeDotIn,
     CourseOutlineOut,
     CourseUpdateIn,
     LessonItemOut,
@@ -76,6 +77,30 @@ async def _get_viewable_course(db: AsyncSession, course_id: str, user: User) -> 
     return course
 
 
+async def _course_lesson_stats(
+    db: AsyncSession, course_ids: list[str]
+) -> tuple[dict[str, int], dict[str, bool]]:
+    """Số bài giảng mỗi khóa + cờ 'mọi bài đều bật hiển thị điểm nhìn'."""
+    counts: dict[str, int] = {}
+    all_on: dict[str, bool] = {}
+    if not course_ids:
+        return counts, all_on
+    rows = await db.execute(
+        select(
+            Module.course_id,
+            func.count(Lesson.id),
+            func.count(Lesson.id).filter(Lesson.show_gaze_dot.is_(True)),
+        )
+        .join(Lesson, Lesson.module_id == Module.id)
+        .where(Module.course_id.in_(course_ids))
+        .group_by(Module.course_id)
+    )
+    for course_id, total, enabled in rows:
+        counts[course_id] = total
+        all_on[course_id] = total > 0 and enabled == total
+    return counts, all_on
+
+
 @router.get("/teacher/courses", response_model=list[TeacherCourseOut])
 async def list_teacher_courses(
     status_filter: str | None = Query(default=None, alias="status"),
@@ -110,29 +135,24 @@ async def list_teacher_courses(
 
     ids = [c.id for c in courses]
     enroll_counts = await course_stats.enrollment_counts(db, ids)
-    lesson_counts = await course_stats.lesson_counts(db, ids)
-    completed_counts = await course_stats.completed_progress_counts(db, ids)
     attention = await course_stats.attention_avg_by_course(db, ids)
     sessions = await course_stats.session_counts_by_course(db, ids)
+    lesson_counts, gaze_all = await _course_lesson_stats(db, ids)
 
     return [
         TeacherCourseOut(
             id=c.id,
             title=c.title,
             description=c.description or "",
-            level=c.level or "beginner",
             gradient=gradient_for(c.id),
             status=c.status.code,
             students=enroll_counts.get(c.id, 0),
-            completion=course_stats.completion_percent(
-                completed_counts.get(c.id, 0),
-                enroll_counts.get(c.id, 0),
-                lesson_counts.get(c.id, 0),
-            ),
             attention=round(attention[c.id], 1) if c.id in attention else None,
             sessions=sessions.get(c.id, 0),
             updated_at=c.updated_at,
             is_owner="admin" in user.role_codes or c.teacher_id == user.id,
+            lesson_count=lesson_counts.get(c.id, 0),
+            show_gaze_dot=gaze_all.get(c.id, False),
         )
         for c in courses
     ]
@@ -162,7 +182,6 @@ async def create_course(
     course = Course(
         title=body.title,
         description=body.description,
-        level=body.level,
         thumbnail_url=body.thumbnail_url,
         status_id=await _course_status_id(db, body.status),
         teacher_id=user.id,
@@ -176,11 +195,9 @@ async def create_course(
         id=course.id,
         title=course.title,
         description=course.description or "",
-        level=course.level or "beginner",
         gradient=gradient_for(course.id),
         status=course.status.code,
         students=0,
-        completion=0,
         attention=None,
         sessions=0,
         updated_at=course.updated_at,
@@ -199,8 +216,6 @@ async def update_course(
         course.title = body.title
     if body.description is not None:
         course.description = body.description
-    if body.level is not None:
-        course.level = body.level
     if body.thumbnail_url is not None:
         course.thumbnail_url = body.thumbnail_url
     if body.status is not None:
@@ -209,27 +224,44 @@ async def update_course(
     await db.refresh(course)
     ids = [course.id]
     enroll_counts = await course_stats.enrollment_counts(db, ids)
-    lesson_counts = await course_stats.lesson_counts(db, ids)
-    completed_counts = await course_stats.completed_progress_counts(db, ids)
     attention = await course_stats.attention_avg_by_course(db, ids)
     sessions = await course_stats.session_counts_by_course(db, ids)
+    lesson_counts, gaze_all = await _course_lesson_stats(db, ids)
     return TeacherCourseOut(
         id=course.id,
         title=course.title,
         description=course.description or "",
-        level=course.level or "beginner",
         gradient=gradient_for(course.id),
         status=course.status.code,
         students=enroll_counts.get(course.id, 0),
-        completion=course_stats.completion_percent(
-            completed_counts.get(course.id, 0),
-            enroll_counts.get(course.id, 0),
-            lesson_counts.get(course.id, 0),
-        ),
         attention=round(attention[course.id], 1) if course.id in attention else None,
         sessions=sessions.get(course.id, 0),
         updated_at=course.updated_at,
+        lesson_count=lesson_counts.get(course.id, 0),
+        show_gaze_dot=gaze_all.get(course.id, False),
     )
+
+
+@router.patch("/teacher/courses/{course_id}/gaze-dot", response_model=dict)
+async def set_course_gaze_dot(
+    course_id: str,
+    body: CourseGazeDotIn,
+    user: User = Depends(require_roles("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bật/tắt 'hiển thị điểm nhìn cho sinh viên' cho TẤT CẢ bài giảng của khóa.
+
+    Cờ gốc lưu theo từng bài (lessons.show_gaze_dot); endpoint này chỉ là thao tác
+    nhanh cấp khóa từ dashboard."""
+    course = await _get_owned_course(db, course_id, user)
+    module_ids = select(Module.id).where(Module.course_id == course.id)
+    result = await db.execute(
+        update(Lesson)
+        .where(Lesson.module_id.in_(module_ids))
+        .values(show_gaze_dot=body.show_gaze_dot)
+    )
+    await db.commit()
+    return {"ok": True, "updated": result.rowcount or 0}
 
 
 @router.delete("/teacher/courses/{course_id}")
@@ -254,16 +286,6 @@ async def get_course_tree(
 ):
     course = await _get_viewable_course(db, course_id, user)
 
-    completed_stmt = (
-        select(LessonProgress.lesson_id, func.count(LessonProgress.id))
-        .join(Enrollment, Enrollment.id == LessonProgress.enrollment_id)
-        .where(
-            Enrollment.course_id == course.id, LessonProgress.status == "completed"
-        )
-        .group_by(LessonProgress.lesson_id)
-    )
-    completed = {r[0]: r[1] for r in await db.execute(completed_stmt)}
-
     attention_stmt = (
         select(EngagementScore.lesson_id, func.avg(EngagementScore.score))
         .join(Enrollment, Enrollment.id == EngagementScore.enrollment_id)
@@ -280,31 +302,35 @@ async def get_course_tree(
     )
     mastery = {r[0]: float(r[1]) for r in await db.execute(mastery_stmt)}
 
-    students_stmt = (
-        select(func.count(Enrollment.id))
-        .where(Enrollment.course_id == course.id, Enrollment.status != "dropped")
-    )
-    students = (await db.execute(students_stmt)).scalar_one()
+    quiz_rows = (
+        await db.execute(
+            select(QuizAssignment).where(QuizAssignment.course_id == course.id)
+        )
+    ).scalars().all()
+    quizzes = {q.lesson_id: q for q in quiz_rows if q.lesson_id}
+
+    def _lesson_node(lesson: Lesson) -> LessonNodeOut:
+        quiz = quizzes.get(lesson.id)
+        return LessonNodeOut(
+            id=lesson.id,
+            title=lesson.title,
+            kind=lesson.kind,
+            slides=len(lesson.contents),
+            attention=round(attention[lesson.id], 1) if lesson.id in attention else None,
+            mastery=round(mastery[lesson.id], 1) if lesson.id in mastery else None,
+            quiz_id=quiz.id if quiz else None,
+            quiz_status=quiz.status if quiz else None,
+            question_count=len(quiz.questions) if quiz else 0,
+            duration_minutes=quiz.duration_minutes if quiz else None,
+            due_at=quiz.due_at if quiz else None,
+            show_gaze_dot=lesson.show_gaze_dot,
+        )
 
     return [
         ModuleNodeOut(
             id=m.id,
             title=m.title,
-            lessons=[
-                LessonNodeOut(
-                    id=l.id,
-                    title=l.title,
-                    slides=len(l.contents),
-                    completion=(
-                        round(completed[l.id] / students * 100, 1)
-                        if students and l.id in completed
-                        else 0.0
-                    ),
-                    attention=round(attention[l.id], 1) if l.id in attention else None,
-                    mastery=round(mastery[l.id], 1) if l.id in mastery else None,
-                )
-                for l in m.lessons
-            ],
+            lessons=[_lesson_node(lesson) for lesson in m.lessons],
         )
         for m in course.modules
     ]
@@ -328,10 +354,6 @@ async def get_course_students(
             )
         ).scalars().all()
     )
-    lesson_slide_counts = {
-        l.id: len(l.contents) for l in lessons
-    }
-
     enroll_stmt = (
         select(Enrollment, User, UserProfile, StudentProfile)
         .join(User, User.id == Enrollment.student_id)
@@ -345,12 +367,6 @@ async def get_course_students(
         return []
 
     enrollment_ids = [e.id for e, *_ in rows]
-
-    progress_stmt = select(LessonProgress).where(
-        LessonProgress.enrollment_id.in_(enrollment_ids)
-    )
-    progress_rows = (await db.execute(progress_stmt)).scalars().all()
-    progress_map = {(p.enrollment_id, p.lesson_id): p for p in progress_rows}
 
     engagement_stmt = select(EngagementScore).where(
         EngagementScore.enrollment_id.in_(enrollment_ids)
@@ -373,30 +389,20 @@ async def get_course_students(
     )
     last_active = {r[0]: r[1] for r in await db.execute(last_active_stmt)}
 
-    total_lessons = len(lessons)
     out: list[StudentRowOut] = []
     for enrollment, student, profile, sp in rows:
-        completed_count = sum(
-            1
-            for l in lessons
-            if (enrollment.id, l.id) in progress_map
-            and progress_map[(enrollment.id, l.id)].status == "completed"
-        )
         scores = [
             s.score
-            for l in lessons
-            if (s := engagement_map.get((enrollment.id, l.id))) is not None
+            for lesson in lessons
+            if (s := engagement_map.get((enrollment.id, lesson.id))) is not None
         ]
         lesson_outs = []
-        for l in lessons:
-            p = progress_map.get((enrollment.id, l.id))
-            eng = engagement_map.get((enrollment.id, l.id))
-            m = mastery_map.get((enrollment.id, l.id))
+        for lesson in lessons:
+            eng = engagement_map.get((enrollment.id, lesson.id))
+            m = mastery_map.get((enrollment.id, lesson.id))
             lesson_outs.append(
                 StudentLessonOut(
-                    lesson_id=l.id,
-                    viewed=len(p.viewed_slides) if p else 0,
-                    total=lesson_slide_counts[l.id],
+                    lesson_id=lesson.id,
                     attention=round(eng.score, 1) if eng else None,
                     mastery=round(m.score, 1) if m else None,
                     key_done=m.key_done if m else 0,
@@ -410,11 +416,6 @@ async def get_course_students(
                 code=sp.student_code if sp else "",
                 color=color_for(student.id),
                 avatar_url=profile.avatar_url if profile else None,
-                progress=(
-                    round(completed_count / total_lessons * 100, 1)
-                    if total_lessons
-                    else 0.0
-                ),
                 attention=round(sum(scores) / len(scores), 1) if scores else None,
                 last_active=relative_time_vn(last_active.get(enrollment.id)),
                 status=enrollment.status,
@@ -547,13 +548,27 @@ async def get_course_outline(
     if not is_owner and enrolled is None and course.status.code != "published":
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
 
-    completed_lessons: set[str] = set()
-    if enrolled is not None:
-        stmt = select(LessonProgress.lesson_id).where(
-            LessonProgress.enrollment_id == enrolled.id,
-            LessonProgress.status == "completed",
+    quiz_rows = (
+        await db.execute(
+            select(QuizAssignment).where(QuizAssignment.course_id == course.id)
         )
-        completed_lessons = set((await db.execute(stmt)).scalars().all())
+    ).scalars().all()
+    quizzes = {q.lesson_id: q for q in quiz_rows if q.lesson_id}
+
+    def _lesson_item(lesson: Lesson) -> LessonItemOut:
+        quiz = quizzes.get(lesson.id)
+        return LessonItemOut(
+            id=lesson.id,
+            title=lesson.title,
+            kind=lesson.kind,
+            slide_count=len(lesson.contents),
+            quiz_id=quiz.id if quiz else None,
+            quiz_status=quiz.status if quiz else None,
+            question_count=len(quiz.questions) if quiz else 0,
+            duration_minutes=quiz.duration_minutes if quiz else None,
+            due_at=quiz.due_at if quiz else None,
+            show_gaze_dot=lesson.show_gaze_dot,
+        )
 
     return CourseOutlineOut(
         id=course.id,
@@ -563,15 +578,7 @@ async def get_course_outline(
                 id=m.id,
                 order_index=m.order_index,
                 title=m.title,
-                lessons=[
-                    LessonItemOut(
-                        id=l.id,
-                        title=l.title,
-                        slide_count=len(l.contents),
-                        completed=l.id in completed_lessons,
-                    )
-                    for l in m.lessons
-                ],
+                lessons=[_lesson_item(lesson) for lesson in m.lessons],
             )
             for m in course.modules
         ],

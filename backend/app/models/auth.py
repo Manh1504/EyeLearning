@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, SmallInteger, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String, Text, text
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +39,12 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Buộc đổi mật khẩu ở lần đăng nhập đầu (dùng cho tài khoản seed dev —
+    # xem db/seed_dev_users.sql). Khi true, mọi endpoint cần đăng nhập (trừ
+    # /api/auth/change-password) trả 403 PASSWORD_CHANGE_REQUIRED.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     status: Mapped[UserStatus] = relationship(lazy="joined")
     roles: Mapped[list["Role"]] = relationship(

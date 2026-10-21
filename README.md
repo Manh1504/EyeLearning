@@ -39,9 +39,11 @@ docker compose up -d              # postgres (:5435) + backend (:8001)
 - Postgres: `localhost:5435` (user/pass/db: `postgres/postgres/eyetracking`)
 
 Service ML (`services/gaze/`, cần GPU) chạy image `eyelearning-gaze`; image được
-CI build từ `services/gaze/Dockerfile`. Base image là `python:3.12-slim` —
-CUDA/cuDNN lấy từ wheel pip của torch (`requirements.txt`), không cần base image
-NVIDIA; host chỉ cần driver + nvidia-container-toolkit. Frontend kết nối trực tiếp
+CI build từ `services/gaze/Dockerfile`. Cả hai service AI (gaze + chatbot) build
+`FROM` một **image nền dùng chung** `docker/ai-base` (`ghcr.io/.../eyelearning-ai-base`)
+chứa `python:3.12-slim` + torch/torchvision CUDA 12.4 — nhờ đó layer nặng chỉ lưu
+một bản. CUDA/cuDNN lấy từ wheel pip `cu124`, không cần base image NVIDIA; host chỉ
+cần driver + nvidia-container-toolkit. Frontend kết nối trực tiếp
 WS `/session/{sid}/stream` của service này — khi nó tắt, frontend tự fallback mock
 (backend chỉ dùng `AI_HTTP_URL` để probe `/ai/health`).
 
@@ -80,7 +82,17 @@ python -m venv .venv
 > `.env` gốc repo — tạo từ `.env.example`. `docker-compose.yml` và
 > `backend/app/core/config.py` đều đọc từ file này; không còn giá trị mẫu nhúng.
 
-## Tài khoản mẫu (mật khẩu: `Password123!`)
+## Tài khoản mẫu (CHỈ dùng khi dev — mật khẩu `Password123!`)
+
+> ⚠️ Các tài khoản này **không** được tạo tự động bởi migrations. Chạy thủ công:
+>
+> ```bash
+> psql -h localhost -p 5435 -U postgres -d eyetracking -f db/seed_dev_users.sql
+> ```
+>
+> Cả 3 bị đặt `must_change_password` → **bắt buộc đổi mật khẩu ở lần đăng nhập đầu**
+> (trang `/account/change-password`). Production: tự tạo admin thật, KHÔNG dùng
+> mật khẩu mặc định.
 
 | Email | Vai trò |
 |---|---|
@@ -118,15 +130,17 @@ docker compose down           # dừng, giữ dữ liệu
 docker compose down -v        # XÓA volume — mất dữ liệu, migrations chạy lại từ đầu
 ```
 
-- Migrations tự chạy lần đầu tạo volume (mount vào `/docker-entrypoint-initdb.d`).
-- Partition `gaze_events`: chạy `db/maintain_partitions.sql` định kỳ (xem `db/README.md`).
+- Migrations chạy qua service một-lần `migrate` (`Dockerfile.migrations`) mỗi lần
+  deploy — không dùng `/docker-entrypoint-initdb.d`.
+- Partition `gaze_events`: service `db-maintenance` trong `docker-compose.yml` tự
+  tạo partition tháng mới mỗi 24h; chạy thủ công bằng `ops/maintain_partitions.sql`
+  (xem `db/README.md`).
 
 ## Tests
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest tests -v     # cần postgres + DB eyetracking_test
-.venv\Scripts\python e2e_check.py           # smoke test full flow qua HTTP
+.venv/bin/python -m pytest tests -v         # cần postgres + DB eyetracking_test
 ```
 
 Tạo DB test một lần:

@@ -40,15 +40,15 @@ const TEACHER_COURSE = {
   id: "course-1",
   title: "Lập trình Python cơ bản",
   description: "Khóa nhập môn dành cho sinh viên năm nhất.",
-  level: "beginner",
   gradient: "",
   status: "published",
   students: 2,
-  completion: 68,
   attention: 72,
   sessions: 5,
   updatedAt: "01/10/2026",
   isOwner: true,
+  lessonCount: 3,
+  showGazeDot: false,
 };
 
 const MODULES = [
@@ -56,15 +56,28 @@ const MODULES = [
     id: "mod-1",
     title: "Chương 1: Nhập môn",
     lessons: [
-      { id: "lesson-1", title: "Bài 1: Giới thiệu", slides: 3, completion: 80, attention: 70 },
-      { id: "lesson-2", title: "Bài 2: Biến và kiểu dữ liệu", slides: 2, completion: 40, attention: 60 },
+      { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slides: 3, attention: 70, showGazeDot: false },
+      { id: "lesson-2", title: "Bài 2: Biến và kiểu dữ liệu", kind: "lesson", slides: 2, attention: 60, showGazeDot: false },
+      {
+        id: "lesson-quiz-1",
+        title: "Bài tập: Kiểm tra nhập môn",
+        kind: "quiz",
+        slides: 0,
+        attention: null,
+        mastery: null,
+        quizId: "quiz-python-1",
+        quizStatus: "published",
+        questionCount: 3,
+        durationMinutes: 15,
+        dueAt: null,
+      },
     ],
   },
   {
     id: "mod-2",
     title: "Chương 2: Cấu trúc điều khiển",
     lessons: [
-      { id: "lesson-3", title: "Bài 3: Vòng lặp", slides: 4, completion: 20, attention: 55 },
+      { id: "lesson-3", title: "Bài 3: Vòng lặp", kind: "lesson", slides: 4, attention: 55, showGazeDot: false },
     ],
   },
 ];
@@ -75,13 +88,12 @@ const STUDENTS = [
     name: "Nguyễn Văn An",
     code: "SV001",
     color: "#000",
-    progress: 80,
     attention: 72,
     lastActive: "2 giờ trước",
     status: "active",
     lessons: [
-      { lessonId: "lesson-1", viewed: 3, total: 3, attention: 70 },
-      { lessonId: "lesson-2", viewed: 1, total: 2, attention: 65 },
+      { lessonId: "lesson-1", attention: 70 },
+      { lessonId: "lesson-2", attention: 65 },
     ],
   },
   {
@@ -89,22 +101,20 @@ const STUDENTS = [
     name: "Trần Thị Bình",
     code: "SV002",
     color: "#000",
-    progress: 100,
     attention: null,
     lastActive: "1 ngày trước",
     status: "completed",
-    lessons: [{ lessonId: "lesson-1", viewed: 3, total: 3, attention: null }],
+    lessons: [{ lessonId: "lesson-1", attention: null }],
   },
   {
     id: "stu-3",
     name: "Phạm Văn Cường",
     code: "SV003",
     color: "#000",
-    progress: 15,
     attention: 48,
     lastActive: "3 ngày trước",
     status: "active",
-    lessons: [{ lessonId: "lesson-1", viewed: 1, total: 3, attention: 48 }],
+    lessons: [{ lessonId: "lesson-1", attention: 48 }],
   },
 ];
 
@@ -113,11 +123,9 @@ const ENROLLMENTS = [
     enrollmentId: "enr-1",
     enrolledAt: "2026-09-01T00:00:00Z",
     status: "active",
-    progress: 45,
     course: {
       id: "course-1",
       title: "Lập trình Python cơ bản",
-      level: "beginner",
       thumbnailUrl: null,
       teacherName: "ThS. Nguyễn Văn Minh",
       moduleCount: 2,
@@ -129,11 +137,9 @@ const ENROLLMENTS = [
     enrollmentId: "enr-2",
     enrolledAt: "2026-08-20T00:00:00Z",
     status: "completed",
-    progress: 100,
     course: {
       id: "course-2",
       title: "Cấu trúc dữ liệu và giải thuật",
-      level: "intermediate",
       thumbnailUrl: null,
       teacherName: "TS. Lê Thị Hoa",
       moduleCount: 3,
@@ -152,15 +158,26 @@ const OUTLINE = {
       orderIndex: 1,
       title: "Chương 1: Nhập môn",
       lessons: [
-        { id: "lesson-1", title: "Bài 1: Giới thiệu", slideCount: 3, completed: true },
-        { id: "lesson-2", title: "Bài 2: Biến và kiểu dữ liệu", slideCount: 2, completed: false },
+        { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slideCount: 3 },
+        { id: "lesson-2", title: "Bài 2: Biến và kiểu dữ liệu", kind: "lesson", slideCount: 2 },
+        {
+          id: "lesson-quiz-1",
+          title: "Bài tập: Kiểm tra nhập môn",
+          kind: "quiz",
+          slideCount: 0,
+          quizId: "quiz-python-1",
+          quizStatus: "published",
+          questionCount: 3,
+          durationMinutes: 15,
+          dueAt: null,
+        },
       ],
     },
     {
       id: "mod-2",
       orderIndex: 2,
       title: "Chương 2: Cấu trúc điều khiển",
-      lessons: [{ id: "lesson-3", title: "Bài 3: Vòng lặp", slideCount: 4, completed: false }],
+      lessons: [{ id: "lesson-3", title: "Bài 3: Vòng lặp", kind: "lesson", slideCount: 4 }],
     },
   ],
 };
@@ -224,10 +241,6 @@ export function demoResponse(path: string, method: string, body?: unknown): unkn
   // Student course
   if (clean.startsWith("/api/courses/")) return OUTLINE;
   if (/^\/api\/lessons\/[^/]+\/contents$/.test(clean)) return SLIDES;
-  if (/^\/api\/lessons\/[^/]+\/progress$/.test(clean)) {
-    if (method === "PATCH") return { ok: true };
-    return { lastSlide: 1, viewed: [0, 1, 2], completed: false, updatedAt: null };
-  }
   if (clean.startsWith("/api/learning-sessions")) {
     if (method === "PATCH") return {};
     return {
@@ -256,6 +269,7 @@ export function demoResponse(path: string, method: string, body?: unknown): unkn
     return STUDENTS;
   }
   if (/^\/api\/teacher\/courses\/[^/]+\/students\/[^/]+$/.test(clean)) return { ok: true };
+  if (/^\/api\/teacher\/courses\/[^/]+\/gaze-dot$/.test(clean)) return { ok: true, updated: 3 };
   if (clean.startsWith("/api/teacher/students")) {
     return [{ id: "stu-9", name: "Hoàng Văn Dũng", code: "SV009", color: "#000" }];
   }
@@ -273,6 +287,33 @@ export function demoResponse(path: string, method: string, body?: unknown): unkn
       slidesTotal: 3,
       slides: [],
     };
+  }
+  if (/^\/api\/teacher\/modules\/[^/]+\/quizzes$/.test(clean) && method === "POST") {
+    return {
+      id: "lesson-quiz-new",
+      title: "Bài tập mới",
+      kind: "quiz",
+      slides: 0,
+      quizId: "quiz-new",
+      quizStatus: "draft",
+      questionCount: 0,
+      durationMinutes: 30,
+      dueAt: null,
+    };
+  }
+  if (/^\/api\/teacher\/modules\/[^/]+\/items\/reorder$/.test(clean)) {
+    // Demo không có backend: sắp xếp lại ngay trong bộ nhớ để thấy kết quả kéo thả.
+    const moduleId = clean.split("/")[4];
+    const items = (body as { items?: { id: string }[] } | undefined)?.items ?? [];
+    const mod = MODULES.find((item) => item.id === moduleId);
+    if (mod) {
+      const position = (lesson: { id: string }) => {
+        const index = items.findIndex((item) => item.id === lesson.id);
+        return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+      };
+      mod.lessons.sort((a, b) => position(a) - position(b));
+    }
+    return { ok: true };
   }
   if (clean.startsWith("/api/teacher/lessons/") || clean.startsWith("/api/teacher/modules/") || clean.startsWith("/api/teacher/slides/")) {
     return { ok: true, id: "demo" };

@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
 from typing import Literal, TypedDict
+
 from langgraph.graph import MessagesState
+from pydantic import BaseModel, Field
 
 
 class RouterOutput(BaseModel):
@@ -47,6 +48,9 @@ class GraphState(MessagesState):
     course_id: str
     lesson_id: str | None
     resource_id: str | None
+    assignment_title: str
+    lesson_title: str
+    module_title: str
     assignment_context: str
     support_mode: str
 
@@ -63,3 +67,5 @@ class GraphState(MessagesState):
     # 5. Validation
     validation_ok: bool | None
     attempts: int
+    # True khi guardrail chặn bản nháp vi phạm và trả câu an toàn.
+    guardrail_blocked: bool | None

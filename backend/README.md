@@ -79,18 +79,35 @@ tới `ROOT_ENV_FILE`). Không còn giá trị mẫu nhúng trong code.
 - `GET/POST /teacher/courses`, `PATCH/DELETE /teacher/courses/{id}`
 - `POST /teacher/courses/{id}/modules`, `PATCH/DELETE /teacher/modules/{id}`
 - `POST /teacher/modules/{id}/lessons`, `PATCH/DELETE /teacher/lessons/{id}`
+- `POST /teacher/modules/{id}/quizzes` — tạo nhanh item bài tập trắc nghiệm (nháp) trong chương
+- `POST /teacher/modules/{id}/items/reorder` — sắp xếp lại item (bài học + bài tập) trong chương
 - `POST /teacher/lessons/{id}/slides`, `DELETE /teacher/slides/{id}`
-- `GET /teacher/courses/{id}` — cây modules/lessons + completion/attention
-- `GET /teacher/courses/{id}/students` — danh sách học viên + tiến độ từng bài
+- `GET /teacher/courses/{id}` — cây modules/lessons (kèm `kind`, thông tin quiz) + attention
+- `GET /teacher/courses/{id}/students` — danh sách học viên + mức quan sát từng bài
 - `GET /teacher/lessons/{id}/heatmap?studentId=` — SlideStat[] (onSlide, fixations, viewSec, hotspots)
 - `POST /teacher/courses/{id}/recompute` — batch tính lại `heatmap_aggregates` + `engagement_scores`
+
+### Bài tập trắc nghiệm (`/api/assignments`)
+- `GET /api/assignments/{id}` — nội dung bài tập (ẩn đáp án khi học viên chưa nộp; tạo phiên làm bài để đếm ngược theo `durationMinutes`); trả `allowRetry` để UI biết có được làm lại không
+- `PATCH /api/assignments/{id}` — sửa câu hỏi/tiêu đề/thời lượng/hạn nộp/trạng thái/`allowRetry`; publish cần ≥1 câu hỏi. Câu hỏi hỗ trợ nhiều đáp án đúng (`correctOptionIds`, `allowMultiple`) và chấm **tất cả-hoặc-không**.
+- `GET /api/assignments/{id}/attempt` / `POST /api/assignments/{id}/attempts` — nộp bài (mỗi học viên một lần)
+- `POST /api/assignments/{id}/retry` — **làm lại**: chỉ khi giáo viên bật `allowRetry` và bài còn mở; xoá lượt làm cũ, đặt lại đồng hồ làm bài (đáp án bị ẩn lại cho tới lần nộp kế tiếp)
+
+Bài tập là một `lessons.kind='quiz'`; mọi item trong chương dùng chung `order_index` nên thứ tự bài học/bài tập được trộn theo đúng thiết kế khóa học.
+
+### Trợ lý học tập (`/api`)
+- `POST /api/courses/{id}/chat` — gửi câu hỏi (chat theo **môn**, tùy chọn `lessonId` để ưu tiên slide của bài đang học). Không có `sessionId` thì tạo phiên mới; trả `{ sessionId, answer, citations, intent }`. Kèm `assignmentId` (chỉ hợp lệ khi **đã nộp** — 403 nếu chưa) để chữa bài.
+- `GET /api/courses/{id}/chat/sessions` — danh sách phiên của học viên trong môn
+- `GET /api/chat/sessions/{sessionId}/messages` — lịch sử tin nhắn của phiên
+- `PATCH /api/chat/sessions/{sessionId}` / `DELETE /api/chat/sessions/{sessionId}` — đổi tên / xoá phiên (xoá kéo theo bộ nhớ hội thoại bên chatbot)
+
+Backend là nguồn sự thật cho lịch sử hiển thị (`chat_sessions`/`chat_messages`, migration 020); chatbot LangGraph giữ bộ nhớ hội thoại theo `thread_id` = id phiên.
 
 ### Học tập (sinh viên — `/api`)
 - `GET /api/me/enrollments`, `GET /api/me/stats` (streak + phút học tuần)
 - `POST /api/courses/{id}/enroll`
 - `GET /api/courses/{id}?include=modules.lessons` — outline
 - `GET /api/lessons/{id}/contents` — slides
-- `PATCH /api/lessons/{id}/progress` — `{lastSlide}` (0-based)
 - `POST /api/learning-sessions` / `PATCH /api/learning-sessions/{id}`
 - `POST /api/lessons/{id}/gaze-samples` — batch `{lessonContentId, x, y, ts}`; clamp [0,1], downsample, cập nhật `gaze_slide_stats`
 

@@ -1,7 +1,8 @@
 # Database — Eyetracking Learning Analytics
 
 PostgreSQL schema cho dự án theo dõi hành vi học bằng eye-tracking.
-Sơ đồ bảng và quan hệ: [`ERD.md`](ERD.md).
+Nguồn schema duy nhất là các file trong [`migrations/`](migrations/) — bắt đầu từ
+`001_init.sql` (bảng, khóa ngoại, CHECK, index) rồi tới các migration tiệm tiến.
 
 ## Yêu cầu
 
@@ -13,22 +14,39 @@ Sơ đồ bảng và quan hệ: [`ERD.md`](ERD.md).
 ```
 db/
 ├── README.md                     # file này
-├── maintain_partitions.sql       # chạy định kỳ (cron) tạo partition tháng mới
-└── migrations/
-    ├── 001_init.sql              # toàn bộ schema: bảng, khóa, CHECK, index
-    ├── 002_seed.sql              # seed lookup + 3 tài khoản mẫu
+├── seed_dev_users.sql            # 3 tài khoản mẫu cho DEV — chạy THỦ CÔNG, không tự động
+└── migrations/                   # chạy đúng thứ tự, TẤT CẢ đều idempotent
+    ├── 001_init.sql              # schema nền: bảng, khóa, CHECK, index, partition gaze_events
+    ├── 002_seed.sql              # seed bảng lookup (roles, permissions, statuses…)
     ├── 003_gaze_partitions.sql   # default partition + 12 tháng đầu + function bảo trì
     ├── 004_analytics.sql         # heatmap_aggregates, aoi_dwell_stats, engagement_scores
-    └── 005_calibration_model.sql # calibration_params: lưu model .ubj + mae/mapping version
+    ├── 005_calibration_model.sql # calibration_params: lưu model .ubj + mae/mapping version
+    ├── …                         # 006→013: quiz/embeddings, index, FK cascade, …
+    ├── 014_drop_course_level.sql # bỏ cột courses.level
+    ├── 015_drop_lesson_progress.sql # bỏ bảng lesson_progress
+    ├── 016_quiz_items.sql        # bài tập trắc nghiệm là một loại lesson (kind)
+    ├── 017_lesson_show_gaze_dot.sql # cờ lessons.show_gaze_dot (GV bật/tắt điểm nhìn)
+    ├── 018_calibration_keep_latest.sql # chỉ giữ 1 bản ghi calibration / (user, device)
+    ├── 019_quiz_allow_retry.sql  # cờ quiz_assignments.allow_retry (GV cho học viên làm lại)
+    └── 020_chat_sessions.sql     # chat_sessions/chat_messages: phiên + lịch sử trợ lý học tập
 ```
+
+> **Calibration không lưu lịch sử**: mỗi lần hiệu chỉnh lại sẽ **ghi đè** bản ghi
+> cũ của (user, thiết bị) — `calibration_params` giữ đúng 1 dòng, kèm 1 dòng
+> `calibration_sessions`. Model `.ubj` cũ bị thay thế hoàn toàn (xem
+> `POST /api/calibrations` và migration `018`).
+
+Sơ đồ partition `gaze_events` được bảo trì bằng `ops/maintain_partitions.sql`
+(xem mục "Bảo trì partition" bên dưới).
 
 ## Có 2 cách cài database
 
 1. **Docker (`docker-compose.yml`)** — nhanh, sạch, khuyến nghị cho dev.
 2. **PostgreSQL native (psql)** — khi đã có Postgres cài trực tiếp trên máy.
 
-Migrate (001→005) sẽ tự chạy đúng thứ tự trong cả 2 cách. Cả 5 file đều
-**idempotent** — chạy lại an toàn.
+Migrations sẽ tự chạy đúng thứ tự trong cả 2 cách. **Tất cả file đều
+idempotent** — chạy lại toàn bộ an toàn (đây là điều kiện bắt buộc vì
+`Dockerfile.migrations` chạy lại tất cả mỗi lần deploy).
 
 ---
 
@@ -40,11 +58,14 @@ Migrate (001→005) sẽ tự chạy đúng thứ tự trong cả 2 cách. Cả 
 docker compose up -d postgres
 ```
 
-Postgres container tự mount `./db/migrations` vào `/docker-entrypoint-initdb.d`
-nên **migrate chạy tự động** lần đầu tạo volume. Kiểm tra:
+Migrations **không** chạy qua `docker-entrypoint-initdb.d` (compose không bind
+mount `./db/migrations`). Thay vào đó, service một-lần `migrate`
+(`Dockerfile.migrations`) chạy **toàn bộ** `db/migrations/*.sql` mỗi lần deploy,
+theo thứ tự tên file và idempotent. Kiểm tra:
 
 ```bash
-# shell vào container
+# chạy migrations (một lần) rồi list bảng
+docker compose up migrate
 docker compose exec postgres psql -U postgres -d eyetracking -c '\dt'
 ```
 
@@ -54,8 +75,13 @@ docker compose exec postgres psql -U postgres -d eyetracking -c '\dt'
 ### Chạy lại seed / migrate thủ công
 
 ```bash
+# seed lookup (roles, permissions, statuses…) — file nằm trong image migrations
+docker compose run --rm migrate bash -c \
+    'psql -h postgres -U $PGUSER -d $PGDATABASE -f /migrations/002_seed.sql'
+
+# tài khoản mẫu cho dev (KHÔNG tự động chạy — mật khẩu mặc định Password123!)
 docker compose exec -T postgres psql -U postgres -d eyetracking \
-    -f docker-entrypoint-initdb.d/002_seed.sql
+    -f - < db/seed_dev_users.sql
 ```
 
 ### Xóa database (xoá hết dữ liệu)
@@ -112,9 +138,18 @@ docker compose exec postgres psql -U postgres -d postgres -c "DROP DATABASE eyet
 
 ---
 
-## Tài khoản mẫu (seed trong `002_seed.sql`)
+## Tài khoản mẫu (CHỈ cho dev — `seed_dev_users.sql`)
 
-`002_seed.sql` seed thêm 3 tài khoản mẫu (idempotent qua email UNIQUE):
+⚠️ **Migrations KHÔNG còn tạo tài khoản người dùng.** Trước đây `002_seed.sql`
+tạo sẵn 3 tài khoản với mật khẩu mặc định `Password123!`, và migration `004`
+còn ghi đè `password_hash` mỗi lần deploy → tài khoản production bị reset mật
+khẩu về mặc định sau mỗi lần deploy. Hai điều này đã được bỏ.
+
+Tài khoản mẫu giờ nằm ở `db/seed_dev_users.sql`, **chỉ chạy thủ công** khi dev:
+
+```bash
+psql -h localhost -p 5435 -U postgres -d eyetracking -f db/seed_dev_users.sql
+```
 
 | Vai trò | Email | Khả năng |
 |---|---|---|
@@ -122,10 +157,11 @@ docker compose exec postgres psql -U postgres -d postgres -c "DROP DATABASE eyet
 | Giáo viên | `teacher@school.edu.vn` | quản lý khóa học + analytics |
 | Sinh viên | `student@school.edu.vn` | học + xem heatmap cá nhân |
 
-- Mỗi user có `user_profiles`, và `teacher_profiles` / `student_profiles` tương ứng.
-- Gán role qua bảng `user_roles`.
-- ⚠️ `password_hash` trong seed là **placeholder** — cần thay bằng bcrypt hash thật
-  trước khi deploy production (mục đích demo/test).
+- Mật khẩu mặc định: `Password123!`.
+- Cả 3 được đặt `must_change_password = true` → **bắt buộc đổi mật khẩu ở lần
+  đăng nhập đầu tiên** (`POST /api/auth/change-password`).
+- Production: tạo tài khoản admin thật qua `/api/auth/register` rồi gán role, hoặc
+  tự thêm user với hash bcrypt riêng. **Không** dùng mật khẩu mặc định.
 
 Kiểm tra nhanh:
 
@@ -143,9 +179,14 @@ psql -d eyetracking -c "SELECT inhrelid::regclass FROM pg_inherits WHERE inhpare
 `003_gaze_partitions.sql` tạo sẵn function `create_gaze_partitions(months_ahead)`
 và 12 partition tháng đầu. Về sau chạy định kỳ để không bao giờ thiếu partition:
 
+Trong `docker-compose.yml`, service **`db-maintenance`** tự gọi function
+`create_gaze_partitions(3)` mỗi 24h (không cần cron của host). Muốn chạy thủ công:
+
 ```bash
-# crontab -e  (ngày 25 hàng tháng, tạo trước 3 tháng)
-0 3 25 * * psql -d eyetracking -f /path/to/db/maintain_partitions.sql
+docker compose exec postgres psql -U postgres -d eyetracking \
+    -c "SELECT create_gaze_partitions(3);"
+# hoặc dùng file (chạy trên host có psql):
+psql -d eyetracking -f ops/maintain_partitions.sql
 ```
 
 Dữ liệu rơi ngoài các tháng đã tạo sẽ vào `gaze_events_default` (không mất,
@@ -188,8 +229,9 @@ DROP TABLE tmp;
 | AOI thêm `CHECK` biên + `x_min < x_max` | Tọa độ giáo viên vẽ phải hợp lệ, cùng hệ [0,1] với gaze |
 | Thêm UNIQUE: `modules(course_id, order_index)`, `lessons(module_id, order_index)`, `aoi_dwell_stats(session_id, aoi_region_id)` | Chống trùng thứ tự / trùng thống kê |
 | `heatmap_aggregates`: 2 partial unique index + CHECK scope↔student_id | UNIQUE thường không hoạt động với `student_id NULL` (scope='class') |
-| CHECK cho các cột VARCHAR "enum": `enrollments.status`, `lesson_progress.status`, `calibration_sessions.status`, `course_instructors.role`, `heatmap_aggregates.scope`, `learning_sessions.status` | Nhất quán ràng buộc, không cần thêm lookup table |
+| CHECK cho các cột VARCHAR "enum": `enrollments.status`, `calibration_sessions.status`, `course_teachers.role`, `heatmap_aggregates.scope`, `learning_sessions.status` | Nhất quán ràng buộc, không cần thêm lookup table |
 | **Slide-only**: bỏ `lesson_types`, `lesson_type_id`, `duration_seconds`, `lesson_contents.content_type`, `start_time_sec`, `end_time_sec` | Nội dung khóa học chỉ gồm slide: `lessons` = bài học (deck slides), `lesson_contents` = từng slide (`image_url`) |
-| `lesson_progress` thêm `last_watched_at`, `updated_at` | Dashboard cần biết học viên đang học bài nào, lần cuối khi nào |
+| `lessons.kind` (`lesson` \| `quiz`) + `quiz_assignments` 1:1 | Bài tập trắc nghiệm là một item **cùng cấp** bài học trong chương; dùng chung `order_index` nên thứ tự bài học/bài tập được trộn. Item `quiz` không có slide và không ghi dữ liệu gaze. `quiz_assignments.due_at` cho phép NULL (hạn nộp tùy chọn). |
+| `quiz_assignments.allow_retry` | Giáo viên cho phép học viên làm lại: **mỗi học viên vẫn chỉ giữ 1 lượt** (`quiz_attempts` UNIQUE theo assignment+student), lượt cũ bị xoá và `quiz_attempt_sessions.started_at` đặt lại để đồng hồ chạy lại từ đầu. |
 | `learning_sessions` thêm `status` | Phân biệt phiên hoàn tất / bị hủy khi tính engagement |
 | Roles: 3 role `admin`, `teacher`, `student` | Theo yêu cầu dự án |

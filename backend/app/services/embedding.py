@@ -15,10 +15,11 @@ session riêng vì background task chạy sau khi response đã trả về.
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -32,6 +33,12 @@ FAILED = "failed"
 NONE = "none"
 
 PENDING_STATUSES = (NONE, PENDING, FAILED)
+
+# Số lần thử và thời gian chờ (giây) giữa các lần khi gọi chatbot. Lỗi 5xx /
+# lỗi kết nối (vd chatbot đang cold-start tải model) là tạm thời nên retry;
+# lỗi 4xx (vd slide không tồn tại) là vĩnh viễn nên bỏ luôn.
+INGEST_ATTEMPTS = int(os.getenv("CHATBOT_INGEST_ATTEMPTS", "3"))
+INGEST_BACKOFF_SECONDS = float(os.getenv("CHATBOT_INGEST_BACKOFF_SECONDS", "5"))
 
 # Trạng thái job backfill toàn cục (in-process). Đủ cho 1 replica backend;
 # dùng để theo dõi tiến độ vì HTTP request không giữ mở tới khi xong.
@@ -64,22 +71,31 @@ async def _mark(session, slide_id: str, status: str, error: str | None = None) -
 
 
 async def _ingest_one(client: httpx.AsyncClient, slide_id: str) -> tuple[bool, str | None]:
-    try:
-        response = await client.post(
-            f"{settings.chatbot_url.rstrip('/')}/ingest/slide",
-            json={"lesson_content_id": slide_id},
-        )
-        response.raise_for_status()
-        return True, None
-    except httpx.HTTPStatusError as exc:
-        detail = ""
+    """Gọi chatbot ingest 1 slide, retry với backoff cho lỗi tạm thời."""
+    last_error: str | None = None
+    for attempt in range(1, INGEST_ATTEMPTS + 1):
         try:
-            detail = exc.response.json().get("detail", "")
-        except Exception:  # noqa: BLE001
-            detail = exc.response.text[:200]
-        return False, f"HTTP {exc.response.status_code}: {detail}"[:500]
-    except httpx.HTTPError as exc:
-        return False, str(exc)[:500]
+            response = await client.post(
+                f"{settings.chatbot_url.rstrip('/')}/ingest/slide",
+                json={"lesson_content_id": slide_id},
+            )
+            response.raise_for_status()
+            return True, None
+        except httpx.HTTPStatusError as exc:
+            detail = ""
+            try:
+                detail = exc.response.json().get("detail", "")
+            except Exception:  # noqa: BLE001
+                detail = exc.response.text[:200]
+            last_error = f"HTTP {exc.response.status_code}: {detail}"[:500]
+            # 4xx: lỗi dữ liệu/cấu hình -> retry vô ích
+            if 400 <= exc.response.status_code < 500:
+                return False, last_error
+        except httpx.HTTPError as exc:
+            last_error = str(exc)[:500]
+        if attempt < INGEST_ATTEMPTS:
+            await asyncio.sleep(INGEST_BACKOFF_SECONDS * attempt)
+    return False, last_error
 
 
 async def sync_slides(slide_ids: list[str]) -> dict[str, int]:
@@ -193,14 +209,31 @@ async def _run_job() -> None:
 
 async def counts() -> dict[str, int]:
     """Thống kê trạng thái embedding để giám sát."""
-    from sqlalchemy import func
-
     async with SessionLocal() as session:
         result = await session.execute(
             select(LessonContent.embedding_status, func.count(LessonContent.id))
             .group_by(LessonContent.embedding_status)
         )
         return {status: count for status, count in result.all()}
+
+
+async def slide_count() -> int:
+    """Tổng số slide (lesson_contents)."""
+    async with SessionLocal() as session:
+        result = await session.execute(select(func.count()).select_from(LessonContent))
+        return int(result.scalar_one())
+
+
+async def vector_count() -> int:
+    """Số dòng vector đã lưu trong lesson_content_embedding.
+
+    Dùng cho bootstrap lần đầu: bằng 0 nghĩa là chưa từng ingest.
+    """
+    async with SessionLocal() as session:
+        result = await session.execute(
+            text("SELECT count(*) FROM lesson_content_embedding")
+        )
+        return int(result.scalar_one())
 
 
 # Đối chiếu `lesson_contents.embedding_status` (nguồn sự thật, do backend ghi)

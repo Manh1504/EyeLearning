@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { StudentHome } from "@/components/student/student-home";
 
@@ -6,9 +7,11 @@ export default function StudentHomePage() {
     <AppShell
       role="student"
       title="Khóa học của tôi"
-      description="Theo dõi tiến độ và tiếp tục học ngay tại nơi bạn dừng lại."
+      description="Mở khóa học và bắt đầu học ngay."
     >
-      <StudentHome />
+      <Suspense fallback={null}>
+        <StudentHome />
+      </Suspense>
     </AppShell>
   );
 }

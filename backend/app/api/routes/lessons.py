@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
 
 import pymupdf
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
@@ -15,8 +14,8 @@ from app.api.deps import (
     require_internal_token,
     require_roles,
 )
-from app.core.ratelimit import rate_limit
 from app.core.config import settings
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.analytics import AoiRegion
 from app.models.auth import User
@@ -25,19 +24,19 @@ from app.models.course import (
     Enrollment,
     Lesson,
     LessonContent,
-    LessonProgress,
     Module,
 )
 from app.schemas.course import (
     EmbeddingSyncOut,
     LessonCreateIn,
+    LessonUpdateIn,
     SlideAdminOut,
     SlideCreateIn,
     SlideKeySetIn,
     SlideKeyUpdateIn,
     SlideOut,
 )
-from app.schemas.gaze import OkOut, ProgressPatchIn
+from app.schemas.gaze import OkOut
 from app.services import analytics, aoi, embedding, media_storage
 
 router = APIRouter(tags=["lessons"])
@@ -120,6 +119,7 @@ async def create_lesson(
         title=body.title,
         order_index=next_index,
         content_url=body.content_url,
+        show_gaze_dot=body.show_gaze_dot,
     )
     db.add(lesson)
     await db.commit()
@@ -130,15 +130,18 @@ async def create_lesson(
 @router.patch("/teacher/lessons/{lesson_id}")
 async def update_lesson(
     lesson_id: str,
-    body: LessonCreateIn,
+    body: LessonUpdateIn,
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
     lesson = await _get_lesson_or_404(db, lesson_id)
     await _check_course_owner(db, lesson, user)
-    lesson.title = body.title
+    if body.title is not None:
+        lesson.title = body.title
     if body.content_url is not None:
         lesson.content_url = body.content_url
+    if body.show_gaze_dot is not None:
+        lesson.show_gaze_dot = body.show_gaze_dot
     await db.commit()
     return {"ok": True}
 
@@ -557,73 +560,6 @@ async def get_lesson_contents(
     ]
 
 
-@router.get("/api/lessons/{lesson_id}/progress")
-async def get_lesson_progress(
-    lesson_id: str,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    lesson = await _get_lesson_or_404(db, lesson_id)
-    enrollment = await _get_enrollment_for_lesson(db, lesson, user)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Chưa đăng ký khóa học")
-    stmt = select(LessonProgress).where(
-        LessonProgress.enrollment_id == enrollment.id,
-        LessonProgress.lesson_id == lesson_id,
-    )
-    progress = (await db.execute(stmt)).scalar_one_or_none()
-    if progress is None:
-        return {"lastSlide": 0, "viewed": [], "completed": False, "updatedAt": None}
-    max_viewed = max(progress.viewed_slides) if progress.viewed_slides else 0
-    return {
-        "lastSlide": max(0, max_viewed - 1),
-        "viewed": progress.viewed_slides or [],
-        "completed": progress.status == "completed",
-        "updatedAt": progress.last_watched_at,
-    }
-
-
-@router.patch("/api/lessons/{lesson_id}/progress", response_model=OkOut)
-async def patch_lesson_progress(
-    lesson_id: str,
-    body: ProgressPatchIn,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    lesson = await _get_lesson_or_404(db, lesson_id)
-    enrollment = await _get_enrollment_for_lesson(db, lesson, user)
-    if enrollment is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Chưa đăng ký khóa học")
-
-    stmt = select(LessonProgress).where(
-        LessonProgress.enrollment_id == enrollment.id,
-        LessonProgress.lesson_id == lesson_id,
-    )
-    progress = (await db.execute(stmt)).scalar_one_or_none()
-    if progress is None:
-        progress = LessonProgress(enrollment_id=enrollment.id, lesson_id=lesson_id)
-        db.add(progress)
-
-    slide_order = body.last_slide + 1
-    viewed = set(progress.viewed_slides or [])
-    viewed.add(slide_order)
-    progress.viewed_slides = sorted(viewed)
-    progress.last_watched_at = datetime.now(timezone.utc)
-
-    total_slides = (
-        await db.execute(
-            select(func.count(LessonContent.id)).where(
-                LessonContent.lesson_id == lesson_id
-            )
-        )
-    ).scalar_one()
-    if body.completed or (total_slides and len(viewed) >= total_slides):
-        progress.status = "completed"
-        progress.completed_at = progress.completed_at or datetime.now(timezone.utc)
-    await db.commit()
-    return OkOut()
-
-
 @router.post(
     "/teacher/lessons/{lesson_id}/reindex",
     response_model=EmbeddingSyncOut,
@@ -684,6 +620,8 @@ async def internal_embedding_status():
     """Thống kê trạng thái embedding + tiến độ job backfill + độ lệch vector."""
     return {
         "counts": await embedding.counts(),
+        "vectors": await embedding.vector_count(),
+        "slides": await embedding.slide_count(),
         "drift": await embedding.drift(),
         "job": embedding.job_status(),
     }

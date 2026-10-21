@@ -19,15 +19,15 @@ export const TEACHER_COURSE = {
   id: "course-1",
   title: "Lập trình Python cơ bản",
   description: "Khóa nhập môn",
-  level: "beginner",
   gradient: "",
   status: "published",
   students: 2,
-  completion: 68,
   attention: 72,
   sessions: 5,
   updatedAt: "01/10/2026",
   isOwner: true,
+  lessonCount: 3,
+  showGazeDot: false,
 };
 
 export const MODULES = [
@@ -35,8 +35,21 @@ export const MODULES = [
     id: "mod-1",
     title: "Chương 1: Nhập môn",
     lessons: [
-      { id: "lesson-1", title: "Bài 1: Giới thiệu", slides: 3, completion: 80, attention: 70 },
-      { id: "lesson-2", title: "Bài 2: Biến", slides: 2, completion: 40, attention: 60 },
+      { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slides: 3, attention: 70, showGazeDot: false },
+      { id: "lesson-2", title: "Bài 2: Biến", kind: "lesson", slides: 2, attention: 60, showGazeDot: false },
+      {
+        id: "lesson-quiz-1",
+        title: "Bài tập: Kiểm tra nhập môn",
+        kind: "quiz",
+        slides: 0,
+        attention: null,
+        mastery: null,
+        quizId: "quiz-python-1",
+        quizStatus: "published",
+        questionCount: 3,
+        durationMinutes: 15,
+        dueAt: null,
+      },
     ],
   },
 ];
@@ -47,22 +60,20 @@ export const STUDENTS = [
     name: "Nguyễn Văn An",
     code: "SV001",
     color: "#000",
-    progress: 80,
     attention: 72,
     lastActive: "2 giờ trước",
     status: "active",
-    lessons: [{ lessonId: "lesson-1", viewed: 3, total: 3, attention: 70 }],
+    lessons: [{ lessonId: "lesson-1", attention: 70 }],
   },
   {
     id: "stu-2",
     name: "Trần Thị Bình",
     code: "SV002",
     color: "#000",
-    progress: 100,
     attention: null,
     lastActive: "1 ngày trước",
     status: "completed",
-    lessons: [{ lessonId: "lesson-1", viewed: 3, total: 3, attention: null }],
+    lessons: [{ lessonId: "lesson-1", attention: null }],
   },
 ];
 
@@ -71,11 +82,9 @@ export const ENROLLMENTS = [
     enrollmentId: "enr-1",
     enrolledAt: "2026-09-01T00:00:00Z",
     status: "active",
-    progress: 45,
     course: {
       id: "course-1",
       title: "Lập trình Python cơ bản",
-      level: "beginner",
       thumbnailUrl: null,
       teacherName: "ThS. Nguyễn Văn Minh",
       moduleCount: 1,
@@ -94,11 +103,100 @@ export const OUTLINE = {
       orderIndex: 1,
       title: "Chương 1: Nhập môn",
       lessons: [
-        { id: "lesson-1", title: "Bài 1: Giới thiệu", slideCount: 3, completed: true },
-        { id: "lesson-2", title: "Bài 2: Biến", slideCount: 2, completed: false },
+        { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slideCount: 3 },
+        {
+          id: "lesson-quiz-1",
+          title: "Bài tập: Kiểm tra nhập môn",
+          kind: "quiz",
+          slideCount: 0,
+          quizId: "quiz-python-1",
+          quizStatus: "published",
+          questionCount: 3,
+          durationMinutes: 15,
+          dueAt: null,
+        },
+        { id: "lesson-2", title: "Bài 2: Biến", kind: "lesson", slideCount: 2 },
       ],
     },
   ],
+};
+
+const QUIZ_BASE = {
+  id: "quiz-python-1",
+  courseId: "course-1",
+  courseTitle: "Lập trình Python cơ bản",
+  lessonId: "lesson-quiz-1",
+  lessonTitle: "Bài tập: Kiểm tra nhập môn",
+  title: "Kiểm tra kiến thức Python nhập môn",
+  instructions: "Chọn đáp án đúng cho mỗi câu.",
+  dueAt: null,
+  durationMinutes: 15,
+  status: "published",
+  createdAt: "2026-10-14T08:00:00.000Z",
+  allowRetry: true,
+};
+
+const QUIZ_QUESTIONS = [
+  {
+    id: "q-1",
+    prompt: "Từ khóa nào dùng để khai báo một hàm trong Python?",
+    options: [
+      { id: "q-1-a", text: "func" },
+      { id: "q-1-b", text: "def" },
+      { id: "q-1-c", text: "function" },
+    ],
+    correctOptionIds: ["q-1-b"],
+    allowMultiple: false,
+    explanation: "Python dùng từ khóa def.",
+    points: 1,
+  },
+  {
+    id: "q-2",
+    prompt: "Kiểu dữ liệu nào lưu dãy phần tử có thứ tự và thay đổi được?",
+    options: [
+      { id: "q-2-a", text: "tuple" },
+      { id: "q-2-b", text: "set" },
+      { id: "q-2-c", text: "list" },
+    ],
+    correctOptionIds: ["q-2-c"],
+    allowMultiple: false,
+    explanation: "list có thứ tự và thay đổi được.",
+    points: 1,
+  },
+  {
+    id: "q-3",
+    prompt: "Kết quả của 3 ** 2 là gì?",
+    options: [
+      { id: "q-3-a", text: "6" },
+      { id: "q-3-b", text: "9" },
+      { id: "q-3-c", text: "32" },
+    ],
+    correctOptionIds: ["q-3-b"],
+    allowMultiple: false,
+    explanation: "3 ** 2 = 9.",
+    points: 1,
+  },
+];
+
+// Bản công khai cho học viên chưa nộp (ẩn đáp án + giải thích).
+export const QUIZ_PUBLIC = {
+  ...QUIZ_BASE,
+  questions: QUIZ_QUESTIONS.map((question) => ({
+    ...question,
+    correctOptionIds: [],
+    explanation: "",
+  })),
+};
+
+export const QUIZ_REVEALED = { ...QUIZ_BASE, questions: QUIZ_QUESTIONS };
+
+export const QUIZ_ATTEMPT = {
+  id: "attempt-1",
+  assignmentId: "quiz-python-1",
+  answers: { "q-1": ["q-1-b"], "q-2": ["q-2-c"], "q-3": ["q-3-b"] },
+  submittedAt: "2026-10-15T08:00:00.000Z",
+  score: 3,
+  maxScore: 3,
 };
 
 export const SLIDES = [
@@ -173,10 +271,6 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
   await page.route("**/api/me/stats", (r) => json(r, { streakDays: 5, weekStudyMinutes: 200 }));
   await page.route("**/api/courses/**", (r) => json(r, OUTLINE));
   await page.route("**/api/lessons/**/contents", (r) => json(r, SLIDES));
-  await page.route("**/api/lessons/**/progress", (r) => {
-    if (r.request().method() === "PATCH") return json(r, { ok: true });
-    return json(r, { lastSlide: 1, viewed: [0, 1, 2], completed: false, updatedAt: null });
-  });
   await page.route("**/api/learning-sessions**", (r) => {
     if (r.request().method() === "PATCH") return json(r, {});
     return json(r, {
@@ -190,6 +284,40 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
     });
   });
   await page.route("**/api/lessons/**/gaze-samples", (r) => json(r, { ok: true, inserted: 1 }));
+
+  // Quiz / bài tập trắc nghiệm (nhúng trong bài học)
+  let quizSubmitted = false;
+  await page.route("**/api/assignments/*", (r) =>
+    json(r, {
+      ...QUIZ_PUBLIC,
+      id: r.request().url().split("/").pop(),
+      status: "draft",
+      questions: [],
+    }),
+  );
+  await page.route("**/api/assignments/*/attempt", (r) => json(r, null));
+  await page.route("**/api/assignments/*/attempts", (r) => json(r, QUIZ_ATTEMPT, 201));
+  // Trợ lý học tập theo môn (chat session)
+  await page.route("**/api/courses/*/chat/sessions", (r) => json(r, []));
+  await page.route("**/api/chat/sessions/*/messages", (r) => json(r, []));
+  await page.route("**/api/courses/*/chat", (r) =>
+    json(r, { sessionId: "session-1", answer: "Gợi ý", citations: [], intent: "qa" }),
+  );
+  // Route cụ thể đăng ký sau route tổng để được ưu tiên (last match wins).
+  await page.route("**/api/assignments/quiz-python-1", (r) =>
+    json(r, quizSubmitted ? QUIZ_REVEALED : QUIZ_PUBLIC),
+  );
+  await page.route("**/api/assignments/quiz-python-1/attempt", (r) =>
+    json(r, quizSubmitted ? QUIZ_ATTEMPT : null),
+  );
+  await page.route("**/api/assignments/quiz-python-1/attempts", (r) => {
+    quizSubmitted = true;
+    return json(r, QUIZ_ATTEMPT, 201);
+  });
+  await page.route("**/api/assignments/quiz-python-1/retry", (r) => {
+    quizSubmitted = false;
+    return json(r, QUIZ_PUBLIC);
+  });
 
   // Calibrations
   await page.route("**/api/calibrations", (r) => json(r, { ok: true }));
@@ -205,7 +333,12 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
   );
 
   // Teacher
-  await page.route("**/api/teacher/courses/**", (r) => json(r, MODULES));
+  // Bản sao mutable của cây khóa học: kéo thả xong, refetch phải thấy thứ tự mới.
+  const courseTree = MODULES.map((mod) => ({
+    ...mod,
+    lessons: mod.lessons.map((lesson) => ({ ...lesson })),
+  }));
+  await page.route("**/api/teacher/courses/**", (r) => json(r, courseTree));
   await page.route("**/api/teacher/courses", (r) => {
     if (r.request().method() === "POST") return json(r, TEACHER_COURSE);
     return json(r, [TEACHER_COURSE]);
@@ -215,6 +348,39 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
     return json(r, STUDENTS);
   });
   await page.route("**/api/teacher/courses/*/students/*", (r) => json(r, { ok: true }));
+  await page.route("**/api/teacher/courses/*/gaze-dot", (r) =>
+    json(r, { ok: true, updated: 3 }),
+  );
+  await page.route("**/api/teacher/modules/*/quizzes", (r) =>
+    json(
+      r,
+      {
+        id: "lesson-quiz-new",
+        title: "Bài tập mới",
+        kind: "quiz",
+        slides: 0,
+        quizId: "quiz-new",
+        quizStatus: "draft",
+        questionCount: 0,
+        durationMinutes: 30,
+        dueAt: null,
+      },
+      201,
+    ),
+  );
+  await page.route("**/api/teacher/modules/*/items/reorder", (r) => {
+    const moduleId = /\/modules\/([^/]+)\/items\/reorder/.exec(r.request().url())?.[1];
+    const items = (r.request().postDataJSON() as { items?: { id: string }[] }).items ?? [];
+    const mod = courseTree.find((item) => item.id === moduleId);
+    if (mod) {
+      const position = (lesson: { id: string }) => {
+        const index = items.findIndex((item) => item.id === lesson.id);
+        return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+      };
+      mod.lessons.sort((a, b) => position(a) - position(b));
+    }
+    return json(r, { ok: true });
+  });
   await page.route("**/api/teacher/students**", (r) => {
     const q = new URL(r.request().url()).searchParams.get("q");
     return json(

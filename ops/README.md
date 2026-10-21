@@ -56,6 +56,26 @@ Chỉ `docker image prune` và `docker builder prune` cho tài nguyên cũ hơn 
 ./ops/docker_cleanup.sh
 ```
 
+## `build_ai_base.sh` — build image nền dùng chung
+
+Build image nền `ghcr.io/manh1504/eyelearning-ai-base:latest` (torch/torchvision
+CUDA 12.4) mà cả `services/gaze` và `services/chatbot` đều `FROM`. Phải có image
+này trước khi build 2 service ở local (CI tự build/push khi `docker/ai-base/**` đổi).
+
+```bash
+./ops/build_ai_base.sh
+```
+
+## `maintain_partitions.sql` — bảo trì partition gaze_events
+
+Gọi `create_gaze_partitions(3)` để tạo partition tháng mới. Trong
+`docker-compose.yml`, service `db-maintenance` đã tự gọi mỗi 24h — file này chỉ
+để chạy thủ công:
+
+```bash
+psql -d eyetracking -f ops/maintain_partitions.sql
+```
+
 ## Crontab mẫu
 
 ```cron

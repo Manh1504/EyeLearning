@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install PostgreSQL client
@@ -61,7 +61,7 @@ jobs:
             psql -h localhost -U postgres -d eyetracking_test -v ON_ERROR_STOP=1 -f "$f"
           done
       - name: Install backend deps
-        run: pip install -r backend/requirements.txt
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
       - name: Run tests
         working-directory: backend
         env:
@@ -110,9 +110,48 @@ jobs:
           cache-dependency-path: services/chatbot/requirements.txt
       - name: Install dependencies
         working-directory: services/chatbot
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Unit tests
         working-directory: services/chatbot
         run: python -m pytest -q
+      # Image chatbot `FROM` image nền dùng chung (docker/ai-base). Build base
+      # trước rồi mới build chatbot (dùng `docker build` thường để base vừa build
+      # hiện diện trong image store local cho bước FROM).
+      - name: Build shared base image
+        run: docker build -t ghcr.io/manh1504/eyelearning-ai-base:latest ./docker/ai-base
       - name: Build image
         run: docker build -t eyelearning-chatbot:ci ./services/chatbot
+
+  # Test gaze chạy với bộ deps NHẸ (không cần torch/mediapipe/cv2) nhờ các import
+  # nặng trong service đã được chuyển thành lazy và pipeline được cắm giả.
+  gaze:
+    name: Gaze tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/gaze/requirements-dev.txt
+      - name: Install light test deps
+        run: |
+          pip install \
+            "fastapi==0.115.12" "python-multipart==0.0.20" "py-ubjson==0.16.1" \
+            "numpy==1.26.4" "httpx==0.28.1" "pytest==8.3.4"
+      - name: Unit tests
+        working-directory: services/gaze
+        run: python -m pytest tests -q
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install "ruff==0.17.1"
+      - name: Ruff check
+        run: ruff check backend services/gaze services/chatbot

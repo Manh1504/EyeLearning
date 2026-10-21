@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Tránh buffer log để thấy log realtime trong `docker logs`.
 ENV PYTHONUNBUFFERED=1 \

@@ -27,12 +27,13 @@ FILES = [
         "min_size": 50_000,
     },
     {
+        # Đổi model: tên file phải trùng key trong unigaze.loader.MODEL_INDEX
+        # (xem app/services/pipeline.py). `min_size` chặn file tải dở.
         "name": "unigaze_b16_joint.safetensors",
         "sources": [
-            ("drive", "1i6JofQgqeIHsntnhlhEY1NNSVza_EKt1"),
             ("url", "https://huggingface.co/UniGaze/UniGaze-models/resolve/main/unigaze_b16_joint.safetensors"),
         ],
-        "min_size": 100_000_000,
+        "min_size": 340_000_000,
     },
 ]
 

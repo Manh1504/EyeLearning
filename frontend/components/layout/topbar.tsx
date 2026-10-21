@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { BrandLogo } from "@/components/ui/brand-logo";
@@ -9,13 +10,9 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar } from "@/components/layout/sidebar";
 import { UserMenu } from "@/components/layout/user-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { NAV_BY_ROLE } from "@/lib/nav";
+import { cn } from "@/lib/utils";
 import type { AuthUser, Role } from "@/lib/api/auth";
-
-const SECTION_LABEL: Record<string, string> = {
-  student: "Học viên",
-  teacher: "Giảng viên",
-  admin: "Quản trị",
-};
 
 export function Topbar({
   role,
@@ -26,12 +23,15 @@ export function Topbar({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-  const segments = pathname.split("/").filter(Boolean);
-  const section = SECTION_LABEL[segments[0] ?? role] ?? "GazeEdu";
-  const showSearch = pathname === `/${role}` && role !== "admin";
+  // "Hồ sơ" đã nằm trong menu tài khoản (avatar) nên chỉ hiện nav chính.
+  // Logo đã là link về trang chính của role (`/{role}`) nên bỏ luôn pill trùng
+  // đích đứng cạnh logo cho đỡ rối: "Khóa học" (học viên/giảng viên), "Phân công" (admin).
+  const primaryItems = (NAV_BY_ROLE[role] ?? []).filter(
+    (item) => !item.href.endsWith("/profile") && item.href !== `/${role}`,
+  );
 
   return (
-    <header className="sticky top-0 z-30 flex h-20 items-center gap-3 bg-[#f5f6f2]/95 px-4 backdrop-blur-sm sm:px-6 lg:px-0 lg:pr-4">
+    <header className="sticky top-0 z-30 flex h-20 items-center gap-3 bg-[#f5f6f2]/95 px-4 backdrop-blur-sm sm:px-6">
       <Button
         variant="ghost"
         size="icon"
@@ -42,44 +42,42 @@ export function Topbar({
         <Icon name="ri-menu-line" className="size-5" />
       </Button>
 
-      <div className="lg:hidden">
-        <BrandLogo variant="light" className="h-6 w-auto grayscale" />
-      </div>
+      <Link href={`/${role}`} aria-label="GazeEdu" className="flex items-center">
+        <BrandLogo variant="light" className="h-6 w-auto" priority />
+      </Link>
 
-      <div className="hidden items-center gap-3 lg:flex">
-        {showSearch ? (
-          <button
-            type="button"
-            onClick={() => document.getElementById("page-search")?.focus()}
-            className="flex h-9 w-64 items-center gap-2 rounded-full border border-border bg-surface px-3.5 text-xs text-muted-foreground shadow-xs transition hover:border-foreground/15"
-          >
-            <Icon name="ri-search-line" className="size-4" />
-            Tìm kiếm
-          </button>
-        ) : (
-          <span className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground">
-            {section}
-          </span>
-        )}
-      </div>
+      {primaryItems.length > 0 && (
+        <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label="Điều hướng chính">
+          {primaryItems.map((item) => {
+            const active = item.match(pathname);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-9 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon name={item.icon} className="size-4" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
-        <Button variant="ghost" size="icon-sm" className="hidden border border-border bg-surface sm:inline-flex" asChild>
-          <a href="mailto:support@eyelearning.id.vn">
-            <Icon name="ri-question-line" className="size-4" />
-            <span className="sr-only">Trợ giúp</span>
-          </a>
-        </Button>
-        <Button variant="ghost" size="icon-sm" className="hidden border border-border bg-surface sm:inline-flex" aria-label="Thông báo">
-          <Icon name="ri-inbox-line" className="size-4" />
-        </Button>
         {user ? <UserMenu user={user} role={role} /> : <Spinner className="text-muted-foreground" />}
       </div>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="max-w-64 border-none bg-background p-0">
           <SheetTitle className="sr-only">Điều hướng</SheetTitle>
-          <Sidebar role={role} expanded onNavigate={() => setMobileOpen(false)} />
+          <Sidebar role={role} onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
     </header>

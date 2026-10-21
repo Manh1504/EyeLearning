@@ -23,11 +23,24 @@ UUIDString = Annotated[
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(description="Câu hỏi của sinh viên.")
+    message: str = Field(min_length=1, description="Câu hỏi của sinh viên.")
     course_id: UUIDString = Field(description="UUID khóa học để giới hạn phạm vi truy hồi.")
-    thread_id: str = Field(description="ID hội thoại, dùng để giữ ngữ cảnh.")
+    thread_id: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[\w.:-]+$",
+        description="ID hội thoại, dùng để giữ ngữ cảnh.",
+    )
     assignment_context: str = Field(default="", max_length=30000)
     support_mode: Literal["hint", "review"] = "hint"
+    # Ngữ cảnh LMS: sinh viên đang hỏi trong bài tập / bài học nào. `lesson_id`
+    # giúp ưu tiên truy hồi slide của đúng bài; các nhãn còn lại để LLM trả lời
+    # đúng ngữ cảnh (đang ở chương nào, bài nào).
+    assignment_id: UUIDString | None = None
+    assignment_title: str = Field(default="", max_length=255)
+    lesson_id: UUIDString | None = None
+    lesson_title: str = Field(default="", max_length=255)
+    module_title: str = Field(default="", max_length=255)
 
 
 class CitationOut(BaseModel):
@@ -49,4 +62,5 @@ class EmbedSlideRequest(BaseModel):
 
 
 class EmbedResult(BaseModel):
-    processed: int = Field(description="Số slide đã xử lý.")
+    processed: int = Field(description="Số slide đã xử lý thành công.")
+    failed: int = Field(default=0, description="Số slide bị bỏ qua do lỗi.")

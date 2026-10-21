@@ -10,36 +10,41 @@ Không push/merge vào `main` trước khi hoàn tất checklist cuối tài li�
 CHATBOT_URL=http://127.0.0.1:8002
 CHATBOT_TIMEOUT_SECONDS=90
 CHATBOT_INGEST_TIMEOUT_SECONDS=600
+CHATBOT_INGEST_ATTEMPTS=3
+CHATBOT_INGEST_BACKOFF_SECONDS=5
 CHATBOT_INTERNAL_TOKEN=<chuoi-ngau-nhien-dai>
 CHATBOT_DATABASE_URL=postgresql://postgres:<password>@localhost:5435/eyetracking
 CHATBOT_DATABASE_URL_DOCKER=postgresql://postgres:<password>@postgres:5432/eyetracking
 
-LLM_NAME=gemini
-GEMINI_API_KEY=<key>
-GEMINI_LLM_MODEL=gemini-flash-lite-latest
-GEMINI_TIMEOUT=45
-
-EMBEDDING_NAME=api
-EMBEDDING_MODEL=qwen3-embedding:8b-ctx16k
-EMBEDDING_DIM=4096
-OLLAMA_API_URL=<endpoint-embed-day-du>/api/embed
-OLLAMA_SECKEY=<secret>
-VLM_NAME=local
-OLLAMA_VLM_MODEL=qwen3-vl:8b-instruct
+# Embedding local Qwen3-Embedding-0.6B (1024 chiều, chạy GPU). Deps + torch cu124
+# đã có trong base image dùng chung (docker/ai-base) của image chatbot; weights
+# tải về volume /app/weights lúc khởi động.
+EMBEDDING_NAME=local
+EMBEDDING_DIM=1024
+EMBEDDING_MODEL_PATH=/app/weights/Qwen3-Embedding-0.6B
+EMBEDDING_DEVICE=cuda
+# ---------- LLM + VLM: River AI (OpenAI-compatible, không tốn VRAM local) ----------
+LLM_NAME=river
+VLM_NAME=river
+RIVER_API_KEY=<key>
+RIVER_BASE_URL=https://api.river.ai/v1
+RIVER_LLM_MODEL=deepseek-ai/DeepSeek-V4.1-Flash-1017
+RIVER_VLM_MODEL=deepseek-ai/DeepSeek-V4.1-Flash-1017
 RAG_SCORE_THRESHOLD=0.3
 ```
 
-Chú ý: `RAG_SCORE_THRESHOLD` phải đủ thấp (mặc định `0.3`). Nếu đặt quá cao (ví dụ `0.7`), retrieval sẽ rỗng nên chatbot không có tài liệu và dễ trả lời sai, thiếu citation.
+Chú ý về LLM/VLM: cả LLM (sinh câu trả lời) và VLM (mô tả slide lúc ingest) đều chạy qua **River AI** — API OpenAI-compatible, **không tốn VRAM local**, **không cần service `ollama`**. Bắt buộc có `RIVER_API_KEY`. Embedding chạy local trong image chatbot.
+
+Chú ý khác: `RAG_SCORE_THRESHOLD` phải đủ thấp (mặc định `0.3`). Nếu đặt quá cao (ví dụ `0.7`), retrieval sẽ rỗng nên chatbot không có tài liệu và dễ trả lời sai, thiếu citation.
 
 Khi chạy chatbot trực tiếp ngoài Docker, dùng `CHATBOT_DATABASE_URL` và đặt `DATABASE_URL` cho tiến trình chatbot (chatbot đọc `DATABASE_URL`): `$env:DATABASE_URL = $env:CHATBOT_DATABASE_URL`.
 
 ```powershell
-ollama pull qwen3-vl:8b-instruct
 docker compose up -d postgres redis
 docker compose run --rm --build migrate
 ```
 
-Migration `011_quiz_and_embeddings.sql` cố định vector ở 4096 chiều (`qwen3-embedding:8b-ctx16k`). Không đổi embedding model sang model có dimension khác nếu chưa có migration rebuild bảng và re-ingest toàn bộ slide. Vì 4096 > 2000, pgvector không dùng được HNSW/IVFFlat cho `vector`; bảng dùng quét tuần tự (đủ nhanh ở quy mô slide của một khóa học).
+Migration `011_quiz_and_embeddings.sql` tạo bảng vector; `012_embedding_index.sql` đặt cột về 1024 chiều (Qwen3-Embedding-0.6B) và tạo **index HNSW cosine** cho pgvector (`EMBEDDING_DIM=1024`). Đổi sang model embedding số chiều khác phải viết migration đổi cột tương ứng và re-ingest toàn bộ slide — nếu không chatbot fail-fast lúc khởi động (dim lệch cột vector).
 
 ## 2. Chạy service
 
@@ -48,7 +53,8 @@ Chạy chatbot local:
 ```powershell
 Set-Location services\chatbot
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# Embedding local cần thêm stack torch/sentence-transformers (requirements-embedding.txt).
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-embedding.txt
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8002
 ```
 
@@ -71,27 +77,34 @@ Nếu dùng toàn bộ Docker stack, đặt `CHATBOT_URL=http://chatbot:8000` ch
 docker compose up -d --build postgres migrate redis chatbot backend frontend
 ```
 
-## 3. Test embedding
+Lần đầu chatbot tải weights embedding (~vài trăm MB) vào volume `chatbot-weights`; theo dõi bằng `docker compose logs -f chatbot`. Service one-shot `ingest-bootstrap` sau đó tự chạy ingest lần đầu nếu chưa có vector.
 
-Test provider trực tiếp:
+Lưu ý image cũ: `docker-compose.yml` đặt `pull_policy: always` cho chatbot (đúng cho production). Ở local, `docker-compose.override.yml` đã hạ xuống `pull_policy: missing` để `--build` dùng bản build tại chỗ thay vì bị image GHCR cũ ghi đè. Nếu vẫn nghi ngờ, rebuild tường minh:
+
+```powershell
+docker compose build --no-cache chatbot
+docker compose up -d --force-recreate chatbot ingest-bootstrap
+```
+
+## 3. Test embedding & VLM
+
+Kiểm tra nhanh VLM River AI (OpenAI-compatible):
 
 ```powershell
 $body = @{
-  model = "qwen3-embedding:8b-ctx16k"
-  input = @("Python dùng def để khai báo hàm", "Cách định nghĩa hàm Python")
-} | ConvertTo-Json
+  model = $env:RIVER_VLM_MODEL
+  messages = @(@{ role = "user"; content = "Say hello in one short sentence." })
+  max_tokens = 64
+} | ConvertTo-Json -Depth 6
 
-$result = Invoke-RestMethod -Method Post `
-  -Uri $env:OLLAMA_API_URL `
-  -Headers @{ "x-ollama-seckey" = $env:OLLAMA_SECKEY } `
+Invoke-RestMethod -Method Post `
+  -Uri "$env:RIVER_BASE_URL/chat/completions" `
+  -Headers @{ Authorization = "Bearer $env:RIVER_API_KEY" } `
   -ContentType "application/json" `
   -Body $body
-
-$result.embeddings.Count
-$result.embeddings[0].Count
 ```
 
-Kết quả bắt buộc là 2 vector và mỗi vector có 4096 phần tử.
+Embedding local (`EMBEDDING_NAME=local`) chạy trong tiến trình chatbot; kiểm tra gián tiếp qua ingest slide bên dưới — vector phải có đúng **1024 chiều** (khớp `EMBEDDING_DIM` và cột `vector(1024)`).
 
 Upload một PDF từ màn giáo viên. Backend tự gọi `/ingest/slide` (kèm header `X-Chatbot-Token`) trong background và cập nhật `lesson_contents.embedding_status` (`pending` → `ready`/`failed`).
 
@@ -111,7 +124,13 @@ gửi ảnh cho VLM (ảnh PNG render ở native pixel; PDF nguồn render ở 1
 
 Backfill / reindex slide cũ (bắt buộc sau khi bật tính năng hoặc đổi model embedding).
 
-Cách 1 — pipeline tự động (không cần SSH): sau deploy backend gọi endpoint nội bộ xác thực bằng `CHATBOT_INTERNAL_TOKEN`. Cần đặt trong GitHub repo:
+Cách 0 — **tự động khi khởi động stack (khuyến nghị)**: service one-shot `ingest-bootstrap` trong `docker-compose.yml` chạy sau khi backend + chatbot `healthy`. Nó đọc `GET /internal/embeddings/status`:
+- Nếu **chưa có vector** (`vectors == 0`) và **đã có slide** (`slides > 0`) → gọi `POST /internal/embeddings/reindex-all` để ingest toàn bộ slide hiện có.
+- Nếu **đã có vector** → bỏ qua (log "Đã có vector — bỏ qua ingest lần đầu").
+
+Nhờ vậy chỉ cần tạo container là hệ thống tự bật RAG cho dữ liệu sẵn có; chạy lại mỗi lần deploy cũng an toàn (idempotent). Extension `vector` do migration `009` tạo, bảng `lesson_content_embedding` do `011`, index HNSW do `012` — không phải bootstrap.
+
+Cách 1 — pipeline tự động (tùy chọn, không cần SSH): sau deploy backend gọi endpoint nội bộ xác thực bằng `CHATBOT_INTERNAL_TOKEN`. Cần đặt trong GitHub repo:
 - `vars.CHATBOT_API_URL` = URL backend công khai (vd `https://api.eyelearning.id.vn`)
 - `secrets.CHATBOT_INTERNAL_TOKEN` = cùng giá trị `CHATBOT_INTERNAL_TOKEN` của stack
 
@@ -141,6 +160,12 @@ GROUP BY c.id;
 ```
 
 `embedded` phải bằng `slides` trước khi test citation.
+
+**Phạm vi truy hồi:** backend gửi kèm `lesson_id` (bài học chứa bài tập) mỗi khi
+gọi `/chat`, nên slide của **đúng bài đang học** được ưu tiên trong citation.
+Nếu bài đó chưa có slide nào vượt `RAG_SCORE_THRESHOLD`, retriever tự nới ra toàn
+khóa học để câu trả lời không rỗng — vì vậy citation vẫn có thể thuộc bài khác khi
+bài hiện tại chưa được embed.
 
 Trạng thái embedding từng slide:
 
@@ -189,24 +214,36 @@ Gặp lệch: gọi `POST /teacher/courses/{id}/reindex` (hoặc `/internal/embe
 
 ### 3.2 Số chiều vector
 
-`EMBEDDING_DIM` phải khớp `VECTOR(n)` của `lesson_content_embedding.embedding` (4096).
+`EMBEDDING_DIM` phải khớp `VECTOR(n)` của `lesson_content_embedding.embedding` (1024).
 Chatbot kiểm tra lúc khởi động và **fail-fast** kèm hướng dẫn nếu lệch — không đợi
 tới lần ingest đầu tiên mới báo lỗi.
 
 ## 4. Test chức năng
 
-1. Đăng nhập giáo viên, mở `/teacher/assignments`, tạo một bài `published` cho khóa học có học viên.
-2. Đăng nhập học viên, mở `/student/assignments`; xác nhận bài vừa tạo xuất hiện.
-3. Mở bài và kiểm tra response `GET /api/assignments/{id}` không chứa đáp án đúng trước khi nộp.
-4. Hỏi chatbot. Kiểm tra trạng thái chờ, câu trả lời và link citation mở đúng slide.
-5. Nộp bài. Kiểm tra điểm được chấm đúng, trang kết quả hiện đáp án/giải thích và chatbot hỗ trợ chữa câu sai.
-6. Thử nộp lần hai, dùng học viên ngoài khóa học và bài quá hạn; API phải từ chối.
+1. Đăng nhập giáo viên, mở khóa học (`/teacher/courses/{id}`) và soạn một bài tập
+   (`kind='quiz'`) đã `published` cho khóa học có học viên.
+2. Đăng nhập học viên, mở khóa học trong reader (`/student/courses/{id}?lesson=<lesson-quiz-id>`).
+3. Kiểm tra `GET /api/assignments/{id}` **không** chứa đáp án đúng trước khi nộp, và
+   **không có** nút "Trợ lý học tập" trên trang bài tập.
+4. Nộp bài. Kiểm tra điểm được chấm đúng, trang kết quả hiện đáp án/giải thích — và
+   **lúc này mới** hiện "Trợ lý học tập".
+5. Mở "Trợ lý học tập" ở trang **đọc slide** (không cần nộp bài) và hỏi một câu kiến
+   thức: câu trả lời bám tài liệu, citation mở đúng slide (ưu tiên slide của bài học
+   đang học — xem mục 3). Kiểm tra phiên được **lưu lại** (thu gọn rồi mở lại vẫn còn
+   lịch sử; "Chat mới", đổi tên và xoá phiên đều hoạt động).
+6. Gọi `POST /api/courses/{id}/chat` kèm `assignmentId` **trước khi nộp** phải trả
+   `403` ("Hãy nộp bài trước khi dùng trợ lý học tập").
+7. Bật công tắc "Cho phép học viên làm lại" ở **đầu phần soạn bài tập** (bật là lưu
+   ngay), rồi bấm "Làm lại" ở trang kết quả của học viên: kết quả cũ bị xoá, đồng hồ
+   làm bài chạy lại, đáp án + trợ lý học tập ẩn lại cho tới lần nộp kế tiếp.
+8. Thử nộp lần hai khi giáo viên **chưa** bật làm lại, dùng học viên ngoài khóa học
+   và bài quá hạn; API phải từ chối.
 
 Các lệnh kiểm tra code:
 
 ```powershell
 Set-Location backend
-python -m pytest tests/test_assignments.py -vv
+python -m pytest tests/test_assignments.py tests/test_chat.py -vv
 
 Set-Location ..\services\chatbot
 python -m pytest -q
@@ -220,10 +257,10 @@ npm.cmd run build
 
 ## 5. Checklist production
 
-- Chọn LLM đạt kiểm thử chất lượng. `qwen3.5:2b` chỉ dùng smoke test và đã cho câu trả lời sai/lộ đáp án, không được dùng production. Cấu hình production hiện dùng Gemini (`gemini-flash-lite-latest`).
-- Model Gemini phải nằm trong danh sách khả dụng của key (`GET /v1beta/models`). Model không tồn tại sẽ treo/timeout. `gemini-2.5-flash` đã ngừng cấp cho key mới.
-- Sau khi deploy lần đầu (hoặc đổi model embedding), chạy backfill `/teacher/courses/{id}/reindex` cho mọi khóa; theo dõi `embedding_status='failed'`.
-- Dùng cùng embedding model/dimension 4096 (`qwen3-embedding:8b-ctx16k`) ở ingest và retrieval; dimension phải khớp `VECTOR(4096)` của migration 011.
+- Chọn LLM đạt kiểm thử chất lượng. `qwen3.5:2b` chỉ dùng smoke test và đã cho câu trả lời sai/lộ đáp án, không được dùng production. Cấu hình production hiện dùng River AI (`deepseek-ai/DeepSeek-V4.1-Flash-1017`) cho cả LLM và VLM.
+- Sau khi deploy lần đầu (hoặc đổi model embedding), việc backfill đã **tự chạy** nhờ service `ingest-bootstrap` (và có thể chạy tay `POST /teacher/courses/{id}/reindex` cho mọi khóa); theo dõi `embedding_status='failed'`.
+- VLM chạy qua **River AI API** (`RIVER_API_KEY`/`RIVER_BASE_URL`/`RIVER_VLM_MODEL`) — không tốn VRAM local, không cần service `ollama`. Chatbot (embedding local) vẫn cần GPU (`gpus: all`). Máy cần NVIDIA driver + nvidia-container-toolkit.
+- Dùng cùng embedding model/dimension 1024 (Qwen3-Embedding-0.6B) ở ingest và retrieval; dimension phải khớp `VECTOR(1024)` của migration 012.
 - Giữ `RAG_SCORE_THRESHOLD` thấp (0.3). Ngưỡng cao làm retrieval rỗng, chatbot trả lời sai và không có citation.
 - Đặt `CHATBOT_INTERNAL_TOKEN` khác rỗng và giống nhau giữa backend và chatbot; chatbot từ chối mọi request thiếu/sai token.
 - Đảm bảo R2 có thể được chatbot đọc; local media volume chỉ phù hợp single-host Docker.

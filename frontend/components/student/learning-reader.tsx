@@ -3,25 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { Progress } from "@/components/ui/progress";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { cn } from "@/lib/utils";
 import { useGazeTracker } from "@/hooks/use-gaze-tracker";
 import {
   useCourseOutline,
-  useLessonProgress,
   useLessonSlides,
   useMyEnrollments,
 } from "@/hooks/use-student";
@@ -29,7 +18,6 @@ import {
   createLearningSession,
   endLearningSession,
   getDeviceFingerprint,
-  patchLessonProgress,
   postGazeSamples,
   type GazeSample,
 } from "@/lib/api/student";
@@ -39,7 +27,8 @@ import {
   screenGazeToSlide,
 } from "@/lib/api/calibration";
 import { resolveMediaUrl } from "@/lib/api/client";
-import { LessonAssignmentList } from "@/components/quiz/lesson-assignment-list";
+import { InlineQuiz } from "@/components/quiz/inline-quiz";
+import { StudyAssistantChat } from "@/components/assistant/study-assistant-chat";
 
 const SLIDE_FALLBACK_IMAGE =
   "data:image/svg+xml;charset=utf-8," +
@@ -60,7 +49,6 @@ const GAZE_MAX_BATCH = 40;
 
 export function LearningReader({ courseId }: { courseId: string }) {
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
   const requestedLessonId = searchParams.get("lesson");
 
   const { data: course, isLoading: courseLoading, isError: courseError, refetch } =
@@ -75,36 +63,35 @@ export function LearningReader({ courseId }: { courseId: string }) {
   const [learningSessionIds, setLearningSessionIds] = useState<Record<string, string>>({});
   const [trackingLessons, setTrackingLessons] = useState<Record<string, boolean>>({});
   const [gazeCalibrated, setGazeCalibrated] = useState(false);
-  const [showResume, setShowResume] = useState(false);
-  const [resumeHandled, setResumeHandled] = useState<string | null>(null);
-  const [resumeDismissed, setResumeDismissed] = useState<string | null>(null);
+  // Vị trí chấm điểm nhìn (chuẩn hóa theo màn hình) khi GV bật hiển thị cho SV.
+  // `key` = bài+trang lúc ghi, để tự ẩn khi đổi trang/bài mà không cần effect.
+  const [gazeDot, setGazeDot] = useState<{ x: number; y: number; key: string } | null>(null);
 
   const slideImgRef = useRef<HTMLImageElement>(null);
   const gazeBufferRef = useRef<GazeSample[]>([]);
   const gazeBufferLessonRef = useRef<string | null>(null);
   const flushTimerRef = useRef<number>(0);
   const sessionsRef = useRef<Record<string, string>>({});
-  const lastSavedSlideRef = useRef<Record<string, number>>({});
 
-  const allLessons = useMemo(
+  const allItems = useMemo(
     () => course?.modules.flatMap((module) => module.lessons) ?? [],
     [course],
   );
 
   const requestedIsValid =
-    !!requestedLessonId && allLessons.some((lesson) => lesson.id === requestedLessonId);
-  const activeLessonIsValid = allLessons.some((lesson) => lesson.id === activeLessonId);
+    !!requestedLessonId && allItems.some((lesson) => lesson.id === requestedLessonId);
+  const activeLessonIsValid = allItems.some((lesson) => lesson.id === activeLessonId);
   const resolvedLessonId =
-    allLessons.length === 0
+    allItems.length === 0
       ? activeLessonId
       : requestedIsValid
         ? (requestedLessonId as string)
         : activeLessonIsValid
           ? activeLessonId
-          : allLessons[0].id;
+          : allItems[0].id;
 
   // Render-phase adjust: tự chọn bài khi outline tải xong mà chưa có bài hợp lệ.
-  if (course && allLessons.length > 0 && resolvedLessonId !== activeLessonId) {
+  if (course && allItems.length > 0 && resolvedLessonId !== activeLessonId) {
     setActiveLessonId(resolvedLessonId);
   }
 
@@ -123,14 +110,20 @@ export function LearningReader({ courseId }: { courseId: string }) {
     [activeModule, activeLessonId],
   );
 
+  const activeIsQuiz = activeLesson?.kind === "quiz";
+  const activeQuizId = activeLesson?.quizId ?? "";
+  // Bài tập trắc nghiệm không có phiên gaze nên không hiển thị chấm.
+  const showGazeDot = Boolean(activeLesson?.showGazeDot) && !activeIsQuiz;
+
   // Render-phase adjust: mở chương chứa bài đang học.
   if (activeModule && !openModules[activeModule.id]) {
     setOpenModules((prev) => ({ ...prev, [activeModule.id]: true }));
   }
 
-  const { data: slides = [], isLoading: slidesLoading } = useLessonSlides(activeLessonId);
+  const { data: slides = [], isLoading: slidesLoading } = useLessonSlides(
+    activeIsQuiz ? "" : activeLessonId,
+  );
   const total = slides.length;
-  const { data: progress } = useLessonProgress(activeLessonId);
   // Render-phase adjust: đổi bài có ít slide hơn → quay về slide đầu.
   if (total > 0 && currentSlide > total - 1) setCurrentSlide(0);
   const currentContent = slides[currentSlide];
@@ -140,13 +133,8 @@ export function LearningReader({ courseId }: { courseId: string }) {
     [currentContent],
   );
 
-  const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
-  const courseProgress = allLessons.length
-    ? Math.round((completedLessons / allLessons.length) * 100)
-    : 0;
-
-  const flatLessonIndex = allLessons.findIndex((lesson) => lesson.id === activeLessonId);
-  const nextLesson = allLessons[flatLessonIndex + 1];
+  const flatLessonIndex = allItems.findIndex((lesson) => lesson.id === activeLessonId);
+  const nextLesson = allItems[flatLessonIndex + 1];
 
   const enrollmentId = enrollments.find((enrollment) => enrollment.course.id === courseId)?.enrollmentId;
 
@@ -177,8 +165,9 @@ export function LearningReader({ courseId }: { courseId: string }) {
   }, [flushGazeForLesson]);
 
   // Mỗi lần vào bài tạo một phiên mới; phiên đã đóng bị xóa khỏi cả ref và state.
+  // Bài tập trắc nghiệm không có phiên theo dõi điểm nhìn.
   useEffect(() => {
-    if (!activeLessonId || !enrollmentId || sessionsRef.current[activeLessonId]) return;
+    if (activeIsQuiz || !activeLessonId || !enrollmentId || sessionsRef.current[activeLessonId]) return;
 
     const lessonId = activeLessonId;
     let cancelled = false;
@@ -208,24 +197,11 @@ export function LearningReader({ courseId }: { courseId: string }) {
       cancelled = true;
       if (createdSessionId) closeLearningSession(lessonId, createdSessionId);
     };
-  }, [activeLessonId, enrollmentId, closeLearningSession]);
+  }, [activeIsQuiz, activeLessonId, enrollmentId, closeLearningSession]);
 
   const learningSessionId = learningSessionIds[activeLessonId];
-  // Chỉ thu gaze khi backend cho phép (lần đầu/học tiếp). Học lại bài đã xong
-  // (review) → trackingConsent=false, không gửi gaze.
+  // Chỉ thu gaze khi backend cho phép (trackingConsent=true trong phiên học).
   const trackingAllowed = Boolean(activeLessonId) && trackingLessons[activeLessonId] !== false;
-
-  const saveProgress = useCallback(
-    async (lessonId: string, lastSlide: number, completed?: boolean) => {
-      await patchLessonProgress(lessonId, lastSlide, completed);
-      void queryClient.invalidateQueries({ queryKey: ["student", "lesson-progress", lessonId] });
-      if (completed) {
-        void queryClient.invalidateQueries({ queryKey: ["student", "course-outline", courseId] });
-        void queryClient.invalidateQueries({ queryKey: ["student", "enrollments"] });
-      }
-    },
-    [courseId, queryClient],
-  );
 
   const flushGaze = useCallback(() => {
     flushGazeForLesson(activeLessonId);
@@ -255,12 +231,19 @@ export function LearningReader({ courseId }: { courseId: string }) {
   }, [learningSessionId, flushGaze]);
 
   const { source: gazeSource } = useGazeTracker({
-    enabled: Boolean(activeLessonId && total > 0 && trackingAllowed),
+    enabled: Boolean(!activeIsQuiz && activeLessonId && total > 0 && trackingAllowed),
     calibrated: gazeCalibrated,
     allowSimulation: false,
     onPoint: useCallback(
       (x: number, y: number, source: string) => {
         if (source !== "real") return;
+        if (showGazeDot) {
+          // Toạ độ gaze chuẩn hoá theo viewport có thể < 0 hoặc > 1 khi nhìn ra
+          // ngoài màn hình → cho chấm đi hẳn ra ngoài thay vì kẹp lại bên trong.
+          // (-1, -1) là sentinel "mất khuôn mặt" (no_face) → ẩn chấm.
+          if (x === -1 && y === -1) setGazeDot(null);
+          else setGazeDot({ x, y, key: `${activeLessonId}:${currentSlide}` });
+        }
         const slide = slides[currentSlide];
         const img = slideImgRef.current;
         const containerRect = img?.getBoundingClientRect();
@@ -288,7 +271,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
           ts: Date.now(),
         });
       },
-      [currentSlide, slides, learningSessionId, enqueueGaze, trackingAllowed],
+      [currentSlide, slides, learningSessionId, enqueueGaze, trackingAllowed, showGazeDot, activeLessonId],
     ),
   });
 
@@ -305,35 +288,6 @@ export function LearningReader({ courseId }: { courseId: string }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [total]);
-
-  // Lưu tiến độ (debounce). Không ghi trang 0 khi người học chỉ đóng hộp thoại resume.
-  useEffect(() => {
-    if (!activeLessonId || total === 0 || !progress) return;
-    const hasResumePoint = !progress.completed && progress.lastSlide > 0 && progress.lastSlide < total;
-    if (hasResumePoint && resumeHandled !== activeLessonId) return;
-    if (resumeDismissed === activeLessonId && currentSlide === 0) return;
-    if (lastSavedSlideRef.current[activeLessonId] === currentSlide) return;
-    const timer = window.setTimeout(() => {
-      lastSavedSlideRef.current[activeLessonId] = currentSlide;
-      saveProgress(activeLessonId, currentSlide).catch(() => {
-        if (lastSavedSlideRef.current[activeLessonId] === currentSlide) {
-          delete lastSavedSlideRef.current[activeLessonId];
-        }
-      });
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [activeLessonId, currentSlide, total, progress, resumeHandled, resumeDismissed, saveProgress]);
-
-  // Resume dialog
-  useEffect(() => {
-    if (!activeLessonId || !progress || total === 0) return;
-    if (resumeHandled === activeLessonId) return;
-    if (progress.completed) return;
-    if (progress.lastSlide > 0 && progress.lastSlide < total) {
-      const id = setTimeout(() => setShowResume(true), 0);
-      return () => clearTimeout(id);
-    }
-  }, [activeLessonId, progress, total, resumeHandled]);
 
   // Đóng mọi phiên còn sống khi rời trang. closeLearningSession xóa ID trước khi gọi API.
   useEffect(() => {
@@ -357,21 +311,11 @@ export function LearningReader({ courseId }: { courseId: string }) {
     if (activeLessonId !== lessonId) closeLearningSession(activeLessonId);
     setActiveLessonId(lessonId);
     setCurrentSlide(0);
-    setShowResume(false);
     setMobileOutlineOpen(false);
     const mod = course?.modules.find((item) =>
       item.lessons.some((lesson) => lesson.id === lessonId),
     );
     if (mod) setOpenModules((prevOpen) => ({ ...prevOpen, [mod.id]: true }));
-  };
-
-  const handleComplete = () => {
-    if (!activeLessonId) return;
-    saveProgress(activeLessonId, currentSlide, true)
-      .then(() => {
-        if (nextLesson) selectLesson(nextLesson.id);
-      })
-      .catch(() => {});
   };
 
   if (courseLoading) {
@@ -421,18 +365,11 @@ export function LearningReader({ courseId }: { courseId: string }) {
         <h2 className="mt-4 line-clamp-2 text-base font-semibold leading-6 tracking-tight text-foreground">
           {course.title}
         </h2>
-        <div className="mt-5 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>
-            {completedLessons}/{allLessons.length} bài đã học
-          </span>
-          <span className="font-medium text-foreground">{courseProgress}%</span>
-        </div>
-        <Progress value={courseProgress} className="mt-2 h-1 bg-[#f0f1ed]" indicatorClassName="bg-[#789472]" />
+        <p className="mt-5 text-[11px] text-muted-foreground">{allItems.length} mục</p>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {course.modules.map((module) => {
-          const moduleDone = module.lessons.filter((lesson) => lesson.completed).length;
           const isOpen = !!openModules[module.id];
           const containsActive = module.lessons.some((lesson) => lesson.id === activeLessonId);
           return (
@@ -455,7 +392,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
                     {module.title}
                   </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    {moduleDone}/{module.lessons.length} bài hoàn thành
+                    {module.lessons.length} mục
                   </span>
                 </span>
                 <Icon
@@ -480,8 +417,14 @@ export function LearningReader({ courseId }: { courseId: string }) {
                             : "text-muted-foreground hover:bg-muted hover:text-foreground",
                         )}
                       >
-                        {lesson.completed ? (
-                          <Icon name="ri-checkbox-circle-fill" className={cn("size-4 shrink-0", active ? "text-white" : "text-foreground")} />
+                        {lesson.kind === "quiz" ? (
+                          <Icon
+                            name="ri-file-text-line"
+                            className={cn(
+                              "size-3.5 shrink-0",
+                              active ? "text-white" : "text-muted-foreground",
+                            )}
+                          />
                         ) : (
                           <span
                             className={cn(
@@ -604,10 +547,14 @@ export function LearningReader({ courseId }: { courseId: string }) {
                 </h1>
               </div>
               <div className="shrink-0 rounded-full bg-muted px-3 py-1.5">
-                <p className="text-xs font-medium tabular-nums text-foreground">
-                  {total ? currentSlide + 1 : 0}
-                  <span className="font-normal text-muted-foreground"> / {total}</span>
-                </p>
+                {activeIsQuiz ? (
+                  <p className="text-xs font-medium text-foreground">Bài tập</p>
+                ) : (
+                  <p className="text-xs font-medium tabular-nums text-foreground">
+                    {total ? currentSlide + 1 : 0}
+                    <span className="font-normal text-muted-foreground"> / {total}</span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -631,6 +578,21 @@ export function LearningReader({ courseId }: { courseId: string }) {
           )}
 
           <div className="min-h-0 flex-1 overflow-auto bg-[#f9f9f5] px-3 pb-24 pt-3 sm:px-5">
+            {activeIsQuiz ? (
+              <div className="mx-auto w-full max-w-4xl py-2">
+                {activeQuizId ? (
+                  <InlineQuiz
+                    quizId={activeQuizId}
+                    onNext={nextLesson ? () => selectLesson(nextLesson.id) : undefined}
+                    hasNext={Boolean(nextLesson)}
+                  />
+                ) : (
+                  <p className="p-8 text-center text-sm text-muted-foreground">
+                    Bài tập chưa sẵn sàng.
+                  </p>
+                )}
+              </div>
+            ) : (
             <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col justify-center gap-8 py-2">
               <div className="mx-auto w-full max-w-[min(1120px,calc((100dvh-10.5rem)*16/9))]">
               {slidesLoading ? (
@@ -665,10 +627,11 @@ export function LearningReader({ courseId }: { courseId: string }) {
                 </div>
               )}
               </div>
-              {activeLessonId && <LessonAssignmentList lessonId={activeLessonId} />}
             </div>
+            )}
           </div>
 
+          {!activeIsQuiz && (
           <footer className="absolute inset-x-0 bottom-3 z-20 px-3 sm:bottom-4 sm:px-5">
             <div className="mx-auto flex max-w-xl items-center gap-2 rounded-full border border-border/80 bg-white/95 p-1.5 shadow-md backdrop-blur-md">
               <Button
@@ -681,39 +644,17 @@ export function LearningReader({ courseId }: { courseId: string }) {
                 <span className="hidden sm:inline">Trước</span>
               </Button>
 
-              <div className="flex min-w-0 flex-1 items-center gap-2 px-1 sm:px-2">
-                <Progress
-                  value={total ? ((currentSlide + 1) / total) * 100 : 0}
-                  className="h-1 flex-1 bg-muted"
-                  indicatorClassName="bg-[#789472]"
-                />
-                <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-                  {total ? Math.round(((currentSlide + 1) / total) * 100) : 0}%
-                </span>
-              </div>
+              <div className="flex-1" />
 
-              {atLast ? (
-                progress?.completed ? (
-                  nextLesson ? (
-                    <Button size="sm" onClick={() => selectLesson(nextLesson.id)}>
-                      Bài tiếp theo
-                      <Icon name="ri-arrow-right-s-line" className="size-4" />
-                    </Button>
-                  ) : (
-                    <span className="hidden items-center gap-1.5 px-2 text-xs font-medium text-foreground sm:inline-flex">
-                      <Icon name="ri-checkbox-circle-fill" className="size-4" />
-                      Đã hoàn thành
-                    </span>
-                  )
-                ) : (
-                  <Button
-                    size="sm"
-                    className="bg-black text-white hover:bg-[#292a27]"
-                    onClick={handleComplete}
-                  >
-                    Hoàn thành
-                  </Button>
-                )
+              {atLast && nextLesson ? (
+                <Button size="sm" onClick={() => selectLesson(nextLesson.id)}>
+                  Bài tiếp theo
+                  <Icon name="ri-arrow-right-s-line" className="size-4" />
+                </Button>
+              ) : atLast ? (
+                <span className="hidden px-2 text-xs font-medium text-muted-foreground sm:inline-flex">
+                  Đã xem hết bài
+                </span>
               ) : (
                 <Button
                   variant="outline"
@@ -729,64 +670,24 @@ export function LearningReader({ courseId }: { courseId: string }) {
               )}
             </div>
           </footer>
+          )}
         </main>
       </div>
 
-      {showResume && progress && (
-        <ResumeDialog
-          currentTotal={total}
-          lastSlide={progress.lastSlide}
-          onResume={() => {
-            setCurrentSlide(progress.lastSlide);
-            setShowResume(false);
-            setResumeHandled(activeLessonId);
-            setResumeDismissed(null);
-          }}
-          onRestart={() => {
-            setCurrentSlide(0);
-            setShowResume(false);
-            setResumeHandled(activeLessonId);
-            // Backend progress is additive; restarting only changes this reader's navigation.
-            setResumeDismissed(activeLessonId);
-          }}
-          onDismiss={() => {
-            setShowResume(false);
-            setResumeHandled(activeLessonId);
-            setResumeDismissed(activeLessonId);
-          }}
-        />
+      {showGazeDot && gazeDot && gazeDot.key === `${activeLessonId}:${currentSlide}` && (
+        <div className="pointer-events-none fixed inset-0 z-30">
+          <span
+            className="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-black shadow-[0_1px_5px_rgba(0,0,0,0.2)]"
+            style={{ left: `${gazeDot.x * 100}%`, top: `${gazeDot.y * 100}%` }}
+          />
+        </div>
+      )}
+
+      {/* Trợ lý học tập: gắn ở trang đọc slide để hỏi ngay trong ngữ cảnh bài đang học.
+          Bài tập (quiz) có widget riêng trong InlineQuiz nên không gắn trùng. */}
+      {!activeIsQuiz && activeLessonId && (
+        <StudyAssistantChat courseId={courseId} lessonId={activeLessonId} />
       )}
     </div>
-  );
-}
-
-function ResumeDialog({
-  currentTotal,
-  lastSlide,
-  onResume,
-  onRestart,
-  onDismiss,
-}: {
-  currentTotal: number;
-  lastSlide: number;
-  onResume: () => void;
-  onRestart: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <Dialog open onOpenChange={(next) => { if (!next) onDismiss(); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Bạn có muốn học tiếp?</DialogTitle>
-          <DialogDescription>
-            Lần trước bạn dừng ở trang {lastSlide + 1}/{currentTotal}. Tiếp tục từ đó hay bắt đầu lại?
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={onRestart}>Bắt đầu lại</Button>
-          <Button onClick={onResume}>Học tiếp</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

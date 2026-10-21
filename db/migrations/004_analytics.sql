@@ -5,8 +5,6 @@
 
 BEGIN;
 
-ALTER TABLE lesson_progress ADD COLUMN IF NOT EXISTS last_watched_at TIMESTAMPTZ;
-
 CREATE TABLE IF NOT EXISTS aoi_regions (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     lesson_content_id UUID NOT NULL REFERENCES lesson_contents(id) ON DELETE CASCADE,
@@ -75,12 +73,10 @@ CREATE TABLE IF NOT EXISTS engagement_scores (
 
 CREATE INDEX IF NOT EXISTS idx_engagement_scores_lesson ON engagement_scores (lesson_id);
 
-UPDATE users
-SET password_hash = '$2b$12$1q/iiUi4DF25DxUvlvyt5uUDwDBsEpGbTj5SqkEudV9QZCQhwYDoq'
-WHERE email IN (
-    'admin@school.edu.vn',
-    'teacher@school.edu.vn',
-    'student@school.edu.vn'
-);
+-- KHÔNG reset mật khẩu tài khoản ở đây. Trước đây file này UPDATE password_hash
+-- của admin/teacher/student về hash mặc định "Password123!"; vì migrations chạy
+-- lại toàn bộ mỗi lần deploy (Dockerfile.migrations) nên mật khẩu đã đổi luôn bị
+-- ghi đè về mặc định sau mỗi lần deploy — lỗ hổng nghiêm trọng.
+-- Tài khoản mẫu cho dev nằm ở db/seed_dev_users.sql (chạy THỦ CÔNG, không tự động).
 
 COMMIT;

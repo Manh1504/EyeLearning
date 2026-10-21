@@ -2,36 +2,28 @@
 // của AI service. HTTP qua /gaze/* (rewrite), WebSocket nối thẳng.
 // GIỮ NGUYÊN hình học: screenGazeToSlide, screen stale detection, storage keys.
 
+import { buildCalibrationPoints, calibrationMargins } from "@/lib/calibration-geometry";
+import type { CalPoint } from "@/lib/calibration-geometry";
+
+// Hình học thuần (CalPoint/buildCalibrationPoints/calibrationMargins/
+// getContainedImageRect/screenGazeToSlide/SlideRect) đã tách sang
+// lib/calibration-geometry.ts — re-export để các import cũ
+// `@/lib/api/calibration` tiếp tục hoạt động.
+export {
+  buildCalibrationPoints,
+  calibrationMargins,
+  CALIBRATION_EDGE_INSET_PX,
+  DEFAULT_CALIBRATION_MARGIN,
+  getContainedImageRect,
+  screenGazeToSlide,
+} from "@/lib/calibration-geometry";
+export type { CalPoint, CalibrationMargins, SlideRect } from "@/lib/calibration-geometry";
+
 const SESSION_KEY = "gaze_session_id";
 const CALIBRATED_AT_KEY = "gaze_calibrated_at";
 const SCREEN_W_KEY = "gaze_screen_w";
 const SCREEN_H_KEY = "gaze_screen_h";
 const DPR_KEY = "gaze_dpr";
-
-export interface CalPoint {
-  id: string;
-  x: number;
-  y: number;
-}
-
-const GRID = 4;
-const MARGIN = 0.1;
-
-export function buildCalibrationPoints(): CalPoint[] {
-  const pos = Array.from(
-    { length: GRID },
-    (_, i) => MARGIN + (i * (1 - 2 * MARGIN)) / (GRID - 1),
-  );
-  const points: CalPoint[] = [];
-  let n = 0;
-  for (const y of pos) {
-    for (const x of pos) {
-      points.push({ id: `p${n}`, x, y });
-      n += 1;
-    }
-  }
-  return points;
-}
 
 export interface SessionCreateResult {
   ok: boolean;
@@ -180,62 +172,6 @@ export function getStoredCalibrationDpr(): number {
   return dpr > 0 ? dpr : 1;
 }
 
-export interface SlideRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-export function getContainedImageRect(
-  container: SlideRect,
-  sourceWidth: number,
-  sourceHeight: number,
-): SlideRect | null {
-  if (
-    container.width <= 0 ||
-    container.height <= 0 ||
-    sourceWidth <= 0 ||
-    sourceHeight <= 0
-  ) {
-    return null;
-  }
-
-  const scale = Math.min(container.width / sourceWidth, container.height / sourceHeight);
-  const width = sourceWidth * scale;
-  const height = sourceHeight * scale;
-  return {
-    left: container.left + (container.width - width) / 2,
-    top: container.top + (container.height - height) / 2,
-    width,
-    height,
-  };
-}
-
-export function screenGazeToSlide(
-  x: number,
-  y: number,
-  rect: SlideRect,
-): { x: number; y: number } | null {
-  if (!(x >= 0 && x <= 1) || !(y >= 0 && y <= 1) || rect.width <= 0 || rect.height <= 0) {
-    return null;
-  }
-  const viewport = globalThis.visualViewport;
-  const viewportWidth = viewport?.width ?? globalThis.innerWidth;
-  const viewportHeight = viewport?.height ?? globalThis.innerHeight;
-  const viewportLeft = viewport?.offsetLeft ?? 0;
-  const viewportTop = viewport?.offsetTop ?? 0;
-  if (!(viewportWidth > 0) || !(viewportHeight > 0)) return null;
-
-  const gx = viewportLeft + x * viewportWidth;
-  const gy = viewportTop + y * viewportHeight;
-
-  const sx = (gx - rect.left) / rect.width;
-  const sy = (gy - rect.top) / rect.height;
-  if (sx < 0 || sx > 1 || sy < 0 || sy > 1) return null;
-  return { x: sx, y: sy };
-}
-
 export function isCalibrationScreenStale(): boolean {
   if (typeof window === "undefined") return false;
   const stored = getStoredCalibrationScreen();
@@ -370,7 +306,11 @@ export async function restoreGazeSessionFromBackend(
 ): Promise<boolean> {
   const stored = await fetchActiveCalibrationModel(deviceFingerprint);
   if (!stored) return false;
-  const session = await createGazeSession(buildCalibrationPoints());
+  const session = await createGazeSession(
+    buildCalibrationPoints(
+      calibrationMargins(globalThis.innerWidth, globalThis.innerHeight),
+    ),
+  );
   if (!session.ok || !session.sessionId) return false;
   const ok = await importGazeModel(session.sessionId, base64ToBytes(stored.modelUbjBase64));
   if (!ok) {

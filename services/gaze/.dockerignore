@@ -25,10 +25,14 @@ weights/
 .env
 .env.*
 
-# --- Tài liệu & compose (không cần trong image) ---
+# --- Tài liệu, test & compose (không cần trong image) ---
 README.md
 *.md
 docker-compose*.yml
+tests/
+requirements-dev.txt
+conftest.py
+.pytest_cache/
 
 # --- IDE / OS ---
 .idea/

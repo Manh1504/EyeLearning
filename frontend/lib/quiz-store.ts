@@ -1,23 +1,25 @@
 "use client";
 
 import { isDemoMode } from "@/lib/demo";
-import type { QuizAssignment, QuizAssignmentInput, QuizAttempt } from "@/lib/types/domain";
+import type { QuizAssignment, QuizAttempt } from "@/lib/types/domain";
+import type { QuizAssignmentPatch } from "@/lib/api/quiz";
 
-const ASSIGNMENTS_KEY = "eyelearning_quiz_assignments_v1";
-const ATTEMPTS_KEY = "eyelearning_quiz_attempts_v1";
+const ASSIGNMENTS_KEY = "eyelearning_quiz_assignments_v2";
+const ATTEMPTS_KEY = "eyelearning_quiz_attempts_v2";
 
 const DEMO_ASSIGNMENT: QuizAssignment = {
   id: "quiz-python-1",
   courseId: "course-1",
   courseTitle: "Lập trình Python cơ bản",
-  lessonId: "lesson-1",
-  lessonTitle: "Bài 1: Giới thiệu",
+  lessonId: "lesson-quiz-1",
+  lessonTitle: "Bài tập: Kiểm tra nhập môn",
   title: "Kiểm tra kiến thức Python nhập môn",
-  instructions: "Chọn một đáp án đúng cho mỗi câu. Bạn có thể xem lại và chữa bài ngay sau khi nộp.",
-  dueAt: "2026-10-20T16:00:00.000Z",
+  instructions: "Chọn một hoặc nhiều đáp án đúng. Bạn xem lại và chữa bài ngay sau khi nộp.",
+  dueAt: null,
   durationMinutes: 15,
   status: "published",
   createdAt: "2026-10-14T08:00:00.000Z",
+  allowRetry: true,
   questions: [
     {
       id: "q-1",
@@ -28,21 +30,23 @@ const DEMO_ASSIGNMENT: QuizAssignment = {
         { id: "q-1-c", text: "function" },
         { id: "q-1-d", text: "method" },
       ],
-      correctOptionId: "q-1-b",
+      correctOptionIds: ["q-1-b"],
+      allowMultiple: false,
       explanation: "Python sử dụng từ khóa def trước tên hàm để bắt đầu phần khai báo hàm.",
       points: 1,
     },
     {
       id: "q-2",
-      prompt: "Kiểu dữ liệu nào lưu một dãy phần tử có thứ tự và có thể thay đổi?",
+      prompt: "Những kiểu dữ liệu nào có thứ tự và có thể thay đổi phần tử?",
       options: [
         { id: "q-2-a", text: "tuple" },
         { id: "q-2-b", text: "set" },
         { id: "q-2-c", text: "list" },
-        { id: "q-2-d", text: "str" },
+        { id: "q-2-d", text: "dict" },
       ],
-      correctOptionId: "q-2-c",
-      explanation: "list có thứ tự, cho phép phần tử trùng nhau và có thể thêm, sửa hoặc xóa phần tử.",
+      correctOptionIds: ["q-2-c", "q-2-d"],
+      allowMultiple: true,
+      explanation: "list và dict có thứ tự và cho phép thêm, sửa hoặc xóa phần tử.",
       points: 1,
     },
     {
@@ -54,7 +58,8 @@ const DEMO_ASSIGNMENT: QuizAssignment = {
         { id: "q-3-c", text: "32" },
         { id: "q-3-d", text: "Lỗi cú pháp" },
       ],
-      correctOptionId: "q-3-b",
+      correctOptionIds: ["q-3-b"],
+      allowMultiple: false,
       explanation: "Toán tử ** là phép lũy thừa, vì vậy 3 ** 2 bằng 9.",
       points: 1,
     },
@@ -84,37 +89,53 @@ function assignments(): QuizAssignment[] {
   return initial;
 }
 
-export async function listQuizAssignments(): Promise<QuizAssignment[]> {
-  return assignments().sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
-}
-
 export async function getQuizAssignment(id: string): Promise<QuizAssignment | null> {
   return assignments().find((item) => item.id === id) ?? null;
 }
 
-export async function createQuizAssignment(input: QuizAssignmentInput): Promise<QuizAssignment> {
-  const item: QuizAssignment = {
-    ...input,
-    id: `quiz-${Date.now()}`,
-    createdAt: new Date().toISOString(),
-  };
-  writeJson(ASSIGNMENTS_KEY, [item, ...assignments()]);
-  return item;
+export async function updateQuizAssignment(
+  id: string,
+  patch: QuizAssignmentPatch,
+): Promise<QuizAssignment> {
+  const current = assignments().find((item) => item.id === id);
+  if (!current) throw new Error("Không tìm thấy bài tập");
+  const next: QuizAssignment = { ...current, ...patch };
+  writeJson(
+    ASSIGNMENTS_KEY,
+    assignments().map((item) => (item.id === id ? next : item)),
+  );
+  return next;
 }
 
 export async function getQuizAttempt(assignmentId: string): Promise<QuizAttempt | null> {
   return readJson<QuizAttempt[]>(ATTEMPTS_KEY, []).find((item) => item.assignmentId === assignmentId) ?? null;
 }
 
+/** Xoá lượt làm cũ để làm lại (demo: dữ liệu nằm trong localStorage). */
+export async function retryQuizAttempt(assignmentId: string): Promise<QuizAssignment> {
+  const assignment = assignments().find((item) => item.id === assignmentId);
+  if (!assignment) throw new Error("Không tìm thấy bài tập");
+  writeJson(
+    ATTEMPTS_KEY,
+    readJson<QuizAttempt[]>(ATTEMPTS_KEY, []).filter(
+      (item) => item.assignmentId !== assignmentId,
+    ),
+  );
+  return assignment;
+}
+
 export async function submitQuizAttempt(
   assignment: QuizAssignment,
-  answers: Record<string, string>,
+  answers: Record<string, string[]>,
 ): Promise<QuizAttempt> {
   const maxScore = assignment.questions.reduce((sum, question) => sum + question.points, 0);
-  const score = assignment.questions.reduce(
-    (sum, question) => sum + (answers[question.id] === question.correctOptionId ? question.points : 0),
-    0,
-  );
+  const score = assignment.questions.reduce((sum, question) => {
+    const selected = new Set(answers[question.id] ?? []);
+    const correct = new Set(question.correctOptionIds);
+    const exact =
+      selected.size === correct.size && [...selected].every((id) => correct.has(id));
+    return sum + (exact ? question.points : 0);
+  }, 0);
   const attempt: QuizAttempt = {
     id: `attempt-${Date.now()}`,
     assignmentId: assignment.id,

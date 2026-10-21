@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   buildCalibrationPoints,
   bytesToBase64,
+  calibrationMargins,
   clearStoredGazeSession,
   createGazeSession,
   deleteGazeSession,
@@ -19,6 +27,31 @@ import { getDeviceFingerprint } from "@/lib/api/student";
 const SAMPLES_PER_POINT = 1;
 const MAX_CAPTURES_PER_POINT = 5;
 const CAPTURE_GAP_MS = 100;
+
+interface ViewportSize {
+  width: number;
+  height: number;
+}
+
+let frozenViewport: ViewportSize | null = null;
+
+// Cố ý KHÔNG theo dõi resize: 16 điểm phải giữ nguyên trong suốt một phiên
+// hiệu chỉnh, nếu không mô hình đã huấn luyện sẽ lệch với điểm đang hiển thị.
+// Đọc một lần lúc mount rồi "đóng băng"; mount sau (đổi màn hình rồi vào lại)
+// sẽ đọc lại kích thước mới.
+function getViewportSnapshot(): ViewportSize | null {
+  if (typeof window === "undefined") return null;
+  if (frozenViewport === null) {
+    frozenViewport = { width: window.innerWidth, height: window.innerHeight };
+  }
+  return frozenViewport;
+}
+
+function subscribeViewport(): () => void {
+  return () => {
+    frozenViewport = null;
+  };
+}
 
 export type CalibrationPhase = "idle" | "calibrating" | "sending" | "training";
 
@@ -56,7 +89,15 @@ export interface UseCalibrationOptions {
 }
 
 export function useCalibration({ onComplete, persistToBackend = true }: UseCalibrationOptions): CalibrationEngine {
-  const points = useMemo<CalPoint[]>(() => buildCalibrationPoints(), []);
+  // null khi còn render phía server / trước hydration → dùng margin mặc định.
+  const viewport = useSyncExternalStore(subscribeViewport, getViewportSnapshot, () => null);
+  const points = useMemo<CalPoint[]>(
+    () =>
+      buildCalibrationPoints(
+        viewport ? calibrationMargins(viewport.width, viewport.height) : undefined,
+      ),
+    [viewport],
+  );
   const total = points.length;
 
   const [idx, setIdx] = useState(0);
@@ -83,10 +124,16 @@ export function useCalibration({ onComplete, persistToBackend = true }: UseCalib
   });
 
   useEffect(() => {
+    // Chỉ tạo phiên khi đã biết kích thước màn hình (tránh tạo phiên với điểm mặc định).
+    if (!viewport) return;
     let cancelled = false;
     createGazeSession(points)
       .then((res) => {
-        if (!cancelled && res.ok && res.sessionId) {
+        if (cancelled) {
+          if (res.ok && res.sessionId) deleteGazeSession(res.sessionId);
+          return;
+        }
+        if (res.ok && res.sessionId) {
           setSessionId(res.sessionId);
           setPhase("calibrating");
         }
@@ -95,7 +142,7 @@ export function useCalibration({ onComplete, persistToBackend = true }: UseCalib
     return () => {
       cancelled = true;
     };
-  }, [points, sessionNonce]);
+  }, [points, viewport, sessionNonce]);
 
   useEffect(() => {
     let cancelled = false;

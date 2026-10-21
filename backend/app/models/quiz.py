@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +30,8 @@ class QuizAssignment(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     duration_minutes: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), server_default=text("'draft'"))
+    # Giáo viên cho phép học viên làm lại (ghi đè lượt làm cũ).
+    allow_retry: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     questions: Mapped[list[dict]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
@@ -37,7 +48,7 @@ class QuizAttempt(Base):
         ForeignKey("quiz_assignments.id", ondelete="CASCADE")
     )
     student_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    answers: Mapped[dict[str, str]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    answers: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     score: Mapped[int] = mapped_column(Integer)
     max_score: Mapped[int] = mapped_column(Integer)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))

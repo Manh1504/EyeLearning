@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Progress } from "@/components/ui/progress";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,10 +29,20 @@ import { useCourseStudents, useCourseTree, useStudentDirectory } from "@/hooks/u
 import { addCourseStudents, removeCourseStudent } from "@/lib/api/teacher";
 import { ENROLL_LABEL } from "@/lib/constants";
 import type { EnrollStatus, StudentRow } from "@/lib/types/domain";
-import { initialsOf } from "@/lib/utils";
+import { cn, initialsOf } from "@/lib/utils";
 
-type StatusFilter = "all" | EnrollStatus;
-type SortMode = "recent" | "progress" | "name";
+type SortColumn = "name" | "status" | "lastActive";
+type SortDir = "asc" | "desc";
+type SortState = { column: SortColumn; dir: SortDir };
+
+// Cột lưới dùng chung cho hàng tiêu đề và từng hàng học viên (từ sm trở lên).
+const LIST_GRID = "lg:grid-cols-[minmax(0,1fr)_140px_130px_200px]";
+
+const STATUS_ORDER: Record<EnrollStatus, number> = {
+  active: 0,
+  completed: 1,
+  dropped: 2,
+};
 
 function relativeMinutes(value: string) {
   const text = value.toLowerCase();
@@ -46,14 +55,51 @@ function relativeMinutes(value: string) {
   return 999999;
 }
 
+function SortButton({
+  label,
+  column,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  column: SortColumn;
+  sort: SortState;
+  onSort: (column: SortColumn) => void;
+  className?: string;
+}) {
+  const active = sort.column === column;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      aria-label={
+        active
+          ? `Đang sắp xếp theo ${label} ${sort.dir === "asc" ? "tăng dần" : "giảm dần"}. Bấm để đổi chiều.`
+          : `Sắp xếp theo ${label}`
+      }
+      className={cn(
+        "inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors",
+        active ? "text-black" : "text-black/40 hover:text-black/70",
+        className,
+      )}
+    >
+      {label}
+      <Icon
+        name={active && sort.dir === "desc" ? "ri-arrow-down-s-line" : "ri-arrow-up-s-line"}
+        className={cn("size-3.5", !active && "opacity-0")}
+      />
+    </button>
+  );
+}
+
 export function StudentsTab({ courseId, canManage }: { courseId: string; canManage: boolean }) {
   const queryClient = useQueryClient();
   const { data: students = [], isLoading, isError, error } = useCourseStudents(courseId);
   const { data: tree = [] } = useCourseTree(courseId);
 
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [sortMode, setSortMode] = useState<SortMode>("recent");
+  const [sort, setSort] = useState<SortState>({ column: "lastActive", dir: "asc" });
   const [studentToRemove, setStudentToRemove] = useState<StudentRow | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -61,40 +107,37 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = students.filter((s) => {
-      const matchesQuery =
-        !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === "all" || s.status === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
+    const filtered = students.filter(
+      (s) => !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q),
+    );
+    const factor = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
-      if (sortMode === "progress") return b.progress - a.progress;
-      if (sortMode === "name") return a.name.localeCompare(b.name, "vi");
-      return relativeMinutes(a.lastActive) - relativeMinutes(b.lastActive);
+      if (sort.column === "name") return factor * a.name.localeCompare(b.name, "vi");
+      if (sort.column === "status")
+        return factor * (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+      return factor * (relativeMinutes(a.lastActive) - relativeMinutes(b.lastActive));
     });
-  }, [students, query, statusFilter, sortMode]);
+  }, [students, query, sort]);
+
+  const toggleSort = (column: SortColumn) =>
+    setSort((prev) =>
+      prev.column === column
+        ? { column, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { column, dir: "asc" },
+    );
 
   const activeCount = students.filter((s) => s.status === "active").length;
   const completedCount = students.filter((s) => s.status === "completed").length;
-  const hasActiveSearch = query.trim().length > 0 || statusFilter !== "all";
+  const hasActiveSearch = query.trim().length > 0;
   const openStudent = students.find((student) => student.id === openId) ?? null;
   const courseLessons = tree.flatMap((module) => module.lessons);
   const lessonTitle = (lessonId: string) =>
     courseLessons.find((lesson) => lesson.id === lessonId)?.title ?? lessonId;
-  const openLessonProgress = openStudent
-    ? [
-        ...courseLessons.map((lesson) =>
-          openStudent.lessons.find((progress) => progress.lessonId === lesson.id) ?? {
-            lessonId: lesson.id,
-            viewed: 0,
-            total: lesson.slides,
-            attention: null,
-          },
-        ),
-        ...openStudent.lessons.filter(
-          (progress) => !courseLessons.some((lesson) => lesson.id === progress.lessonId),
-        ),
-      ]
+  const openStudentLessons = openStudent
+    ? courseLessons.map((lesson) => ({
+        lessonId: lesson.id,
+        attention: openStudent.lessons.find((item) => item.lessonId === lesson.id)?.attention ?? null,
+      }))
     : [];
   const removeStudent = async (id: string) => {
     try {
@@ -156,7 +199,7 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
           title="Chưa có học viên"
           description={
             canManage
-              ? "Thêm học viên vào khóa học để bắt đầu theo dõi tiến độ."
+              ? "Thêm học viên vào khóa học để bắt đầu."
               : "Bạn chưa có quyền quản lý danh sách học viên của khóa học này."
           }
           action={
@@ -184,53 +227,39 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
                 aria-label="Tìm học viên"
               />
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                aria-label="Lọc trạng thái"
-                className="h-11 rounded-full border border-[#eeeee9] bg-[#fdfdfa] px-4 text-sm text-black focus-visible:outline-none"
-              >
-                <option value="all">Tất cả trạng thái</option>
-                <option value="active">Đang học</option>
-                <option value="completed">Hoàn thành</option>
-                <option value="dropped">Đã gỡ</option>
-              </select>
-              <select
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as SortMode)}
-                aria-label="Sắp xếp"
-                className="h-11 rounded-full border border-[#eeeee9] bg-[#fdfdfa] px-4 text-sm text-black focus-visible:outline-none"
-              >
-                <option value="recent">Hoạt động gần nhất</option>
-                <option value="progress">Tiến độ cao → thấp</option>
-                <option value="name">Tên A → Z</option>
-              </select>
-              {hasActiveSearch && (
-                <Button
-                  variant="ghost"
-                  className="col-span-2 rounded-full sm:col-span-1"
-                  onClick={() => {
-                    setQuery("");
-                    setStatusFilter("all");
-                  }}
-                >
-                  Xóa lọc
-                </Button>
-              )}
-            </div>
+            {hasActiveSearch && (
+              <Button variant="ghost" className="rounded-full" onClick={() => setQuery("")}>
+                Xóa tìm kiếm
+              </Button>
+            )}
           </div>
 
           {rows.length === 0 ? (
-            <EmptyState icon="ri-search-line" title="Không tìm thấy học viên phù hợp" description="Thử đổi từ khóa hoặc bộ lọc." />
+            <EmptyState icon="ri-search-line" title="Không tìm thấy học viên phù hợp" description="Thử đổi từ khóa tìm kiếm." />
           ) : (
-            <div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {rows.map((student) => {
-                  return (
-                  <div key={student.id} className="group flex min-h-56 flex-col rounded-[20px] border border-[#eeeee9] bg-white p-5 shadow-xs transition hover:-translate-y-0.5 hover:border-black/10 hover:shadow-sm">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <Avatar className="size-11 bg-white">
+            <div className="divide-y divide-[#eeeee9] overflow-hidden rounded-[20px] border border-[#eeeee9] bg-white shadow-xs">
+              <div
+                className={cn(
+                  "hidden items-center gap-4 bg-[#fdfdfa] px-4 py-2.5 lg:grid lg:px-5",
+                  LIST_GRID,
+                )}
+              >
+                <SortButton label="Học viên" column="name" sort={sort} onSort={toggleSort} className="justify-self-start" />
+                <SortButton label="Trạng thái" column="status" sort={sort} onSort={toggleSort} className="justify-self-start" />
+                <SortButton label="Hoạt động" column="lastActive" sort={sort} onSort={toggleSort} className="justify-self-end" />
+                <span aria-hidden className="hidden lg:block" />
+              </div>
+              {rows.map((student) => {
+                return (
+                  <div
+                    key={student.id}
+                    className={cn(
+                      "grid grid-cols-1 gap-3 px-4 py-4 transition-colors hover:bg-[#fdfdfa] lg:items-center lg:gap-4 lg:px-5",
+                      LIST_GRID,
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar className="size-10 shrink-0 bg-white">
                         {student.avatarUrl ? <AvatarImage src={student.avatarUrl} alt={student.name} /> : null}
                         <AvatarFallback>{initialsOf(student.name)}</AvatarFallback>
                       </Avatar>
@@ -238,20 +267,16 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
                         <p className="truncate text-sm font-semibold text-black">{student.name}</p>
                         <p className="mt-0.5 text-xs text-black/40">{student.code}</p>
                       </div>
-                      <span className="ml-auto rounded-full bg-[#e8f1e6] px-2.5 py-1 text-[10px] font-medium text-[#52704f]">
-                        {student.status === "dropped" ? "Đã gỡ" : ENROLL_LABEL[student.status]}
-                      </span>
                     </div>
-                    <div className="mt-auto pt-8">
-                      <div className="flex items-end justify-between gap-3">
-                        <span className="text-3xl font-semibold tracking-[-0.04em] text-black">{student.progress}%</span>
-                        <span className="pb-1 text-xs text-black/40">{student.lastActive || "—"}</span>
-                      </div>
-                      <Progress value={student.progress} className="mt-3 h-1.5 bg-[#e8f1e6]" indicatorClassName="bg-[#6f8f69]" />
-                    </div>
-                    <div className="mt-5 flex items-center gap-2">
-                      <Button type="button" variant="outline" size="sm" className="flex-1 rounded-full border-black/10 bg-white" onClick={() => setOpenId(student.id)}>
-                        Xem tiến độ &amp; heatmap
+                    <span className="shrink-0 justify-self-start rounded-full bg-[#e8f1e6] px-2.5 py-1 text-[10px] font-medium text-[#52704f] lg:self-center">
+                      {student.status === "dropped" ? "Đã gỡ" : ENROLL_LABEL[student.status]}
+                    </span>
+                    <span className="shrink-0 text-xs text-black/40 lg:justify-self-end lg:text-right">
+                      {student.lastActive || "—"}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-2 lg:justify-self-end">
+                      <Button type="button" variant="outline" size="sm" className="flex-1 rounded-full border-black/10 bg-white lg:flex-none" onClick={() => setOpenId(student.id)}>
+                        Xem heatmap
                         <Icon name="ri-arrow-right-line" className="size-3.5" />
                       </Button>
                       {canManage && student.status !== "dropped" && (
@@ -260,16 +285,15 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
                           size="icon-sm"
                           onClick={() => setStudentToRemove(student)}
                           aria-label={`Gỡ ${student.name}`}
-                           className="rounded-full border border-[#eeeee9] bg-[#fdfdfa] text-black/45 hover:text-destructive"
+                          className="rounded-full border border-[#eeeee9] bg-[#fdfdfa] text-black/45 hover:text-destructive"
                         >
                           <Icon name="ri-delete-bin-line" className="size-4" />
                         </Button>
                       )}
                     </div>
                   </div>
-                  );
-                })}
-              </div>
+                );
+              })}
             </div>
           )}
         </>
@@ -315,23 +339,21 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
                     <SheetDescription>{openStudent.code} · {openStudent.lastActive || "—"}</SheetDescription>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-3 divide-x divide-black/10 rounded-[18px] bg-[#e8f1e6] py-3">
-                  <div className="px-2 text-center"><p className="text-[10px] text-black/40">Tiến độ</p><p className="mt-1 text-sm font-semibold">{openStudent.progress}%</p></div>
+                <div className="mt-4 grid grid-cols-2 divide-x divide-black/10 rounded-[18px] bg-[#e8f1e6] py-3">
                   <div className="px-2 text-center"><p className="text-[10px] text-black/40">Quan sát</p><p className="mt-1 text-sm font-semibold">{openStudent.attention === null ? "—" : `${openStudent.attention}%`}</p></div>
                   <div className="px-2 text-center"><p className="text-[10px] text-black/40">Trạng thái</p><p className="mt-1 truncate text-sm font-semibold">{openStudent.status === "dropped" ? "Đã gỡ" : ENROLL_LABEL[openStudent.status]}</p></div>
                 </div>
               </SheetHeader>
               <SheetBody className="p-5">
                 <div className="mb-4">
-                  <h3 className="text-sm font-semibold text-black">Tiến độ từng bài</h3>
+                  <h3 className="text-sm font-semibold text-black">Bài học</h3>
                   <p className="mt-1 text-xs text-black/40">Chọn một bài để mở heatmap của học viên.</p>
                 </div>
-                {openLessonProgress.length === 0 ? (
+                {openStudentLessons.length === 0 ? (
                   <div className="rounded-[18px] border border-dashed border-[#eeeee9] px-4 py-8 text-center text-sm text-black/40">Khóa học chưa có bài học.</div>
                 ) : (
                   <ul className="space-y-2">
-                    {openLessonProgress.map((lesson) => {
-                      const percent = lesson.total > 0 ? Math.round((lesson.viewed / lesson.total) * 100) : 0;
+                    {openStudentLessons.map((lesson) => {
                       return (
                         <li key={lesson.lessonId}>
                           <Link
@@ -340,12 +362,9 @@ export function StudentsTab({ courseId, canManage }: { courseId: string; canMana
                           >
                             <div className="flex items-start justify-between gap-3">
                               <p className="min-w-0 truncate text-sm font-medium text-black">{lessonTitle(lesson.lessonId)}</p>
-                              <span className="shrink-0 text-xs font-semibold tabular-nums text-black/45">{percent}%</span>
-                            </div>
-                            <Progress value={percent} className="mt-3 h-1.5 bg-[#e8f1e6]" indicatorClassName="bg-[#6f8f69]" />
-                            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-black/40">
-                              <span>{lesson.viewed}/{lesson.total} trang</span>
-                              <span>Quan sát {lesson.attention === null ? "—" : `${lesson.attention}%`}</span>
+                              <span className="shrink-0 text-xs text-black/45">
+                                Quan sát {lesson.attention === null ? "—" : `${lesson.attention}%`}
+                              </span>
                             </div>
                             <div className="mt-3 flex items-center justify-end gap-1 text-xs font-medium text-[#52704f]">
                               Xem heatmap <Icon name="ri-arrow-right-line" className="size-3.5 transition-transform group-hover:translate-x-0.5" />

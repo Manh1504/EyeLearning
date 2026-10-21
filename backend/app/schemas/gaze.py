@@ -22,8 +22,7 @@ class LearningSessionOut(CamelModel):
     status: str
     tracking_consent: bool
     # first: lần đầu mở bài → tracking gaze.
-    # continue: vào lại khi bài chưa xong → ghi gaze vào phiên cũ.
-    # review: vào lại khi bài đã xong → không tracking, chỉ xem lại.
+    # continue: vào lại bài đã có phiên trước → ghi gaze vào phiên cũ.
     mode: str = "first"
 
 
@@ -47,11 +46,6 @@ class GazeBatchIn(CamelModel):
 class GazeBatchOut(CamelModel):
     ok: bool = True
     inserted: int = 0
-
-
-class ProgressPatchIn(CamelModel):
-    last_slide: int = Field(ge=0)
-    completed: bool | None = None
 
 
 class OkOut(CamelModel):

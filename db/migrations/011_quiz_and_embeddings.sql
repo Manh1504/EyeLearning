@@ -3,7 +3,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS quiz_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-    lesson_id UUID REFERENCES lessons(id) ON DELETE SET NULL,
+    lesson_id UUID REFERENCES lessons(id) ON DELETE CASCADE,
     created_by UUID NOT NULL REFERENCES users(id),
     title VARCHAR(255) NOT NULL,
     instructions TEXT NOT NULL DEFAULT '',
@@ -57,12 +57,9 @@ CREATE INDEX IF NOT EXISTS idx_lesson_contents_embedding_status
     ON lesson_contents(embedding_status);
 
 
--- Embedding dimension must match EMBEDDING_DIM (production: qwen3-embedding:8b-ctx16k
--- -> 4096). Changing the embedding model requires a deliberate table migration and
--- re-ingesting all slides.
--- Note: pgvector HNSW/IVFFlat chỉ hỗ trợ tối đa 2000 chiều cho kiểu `vector`,
--- nên bảng 4096 chiều dùng quét tuần tự (exact search). Index được thêm lại
--- bằng `halfvec` nếu sau này cần tối ưu.
+-- Embedding dimension must match EMBEDDING_DIM. Bảng tạo tạm với 4096 chiều;
+-- migration 012 chuyển về 1024 (Qwen3-Embedding-0.6B) và tạo index HNSW cosine.
+-- Đổi model embedding cần migration đổi số chiều tương ứng + re-ingest toàn bộ.
 CREATE TABLE IF NOT EXISTS lesson_content_embedding (
     lesson_content_id UUID PRIMARY KEY REFERENCES lesson_contents(id) ON DELETE CASCADE,
     embedding_content TEXT NOT NULL,

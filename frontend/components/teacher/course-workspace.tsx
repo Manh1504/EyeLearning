@@ -8,17 +8,15 @@ import { Icon } from "@/components/ui/icon";
 import { FullPageSpinner } from "@/components/ui/spinner";
 import { ContentEditor } from "@/components/teacher/content-editor";
 import { StudentsTab } from "@/components/teacher/students-tab";
-import { OverviewTab } from "@/components/teacher/overview-tab";
 import { useTeacherCourses } from "@/hooks/use-teacher";
-import { LEVEL_LABEL, STATUS_LABEL } from "@/lib/constants";
+import { STATUS_LABEL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-type View = "content" | "students" | "overview";
+type View = "content" | "students";
 
 const TABS: { key: View; label: string }[] = [
   { key: "content", label: "Nội dung" },
   { key: "students", label: "Học viên" },
-  { key: "overview", label: "Tổng quan" },
 ];
 
 function Workspace({ courseId }: { courseId: string }) {
@@ -54,7 +52,7 @@ function Workspace({ courseId }: { courseId: string }) {
               </span>
               {!isNew && course && (
                 <span className="truncate">
-                  {LEVEL_LABEL[course.level]} · {course.students} học viên
+                  {course.students} học viên
                 </span>
               )}
             </div>
@@ -92,10 +90,8 @@ function Workspace({ courseId }: { courseId: string }) {
             canManage={canManage}
             onCreated={(id) => router.replace(`/teacher/courses/${id}?tab=content`)}
           />
-        ) : view === "students" ? (
-          <StudentsTab courseId={courseId} canManage={canManage} />
         ) : (
-          <OverviewTab courseId={courseId} />
+          <StudentsTab courseId={courseId} canManage={canManage} />
         )}
       </main>
     </div>

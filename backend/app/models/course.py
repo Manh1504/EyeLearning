@@ -12,7 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -34,7 +34,6 @@ class Course(Base):
     )
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
-    level: Mapped[str | None] = mapped_column(String(30))
     thumbnail_url: Mapped[str | None] = mapped_column(Text)
     status_id: Mapped[int] = mapped_column(ForeignKey("course_statuses.id"))
     teacher_id: Mapped[str] = mapped_column(ForeignKey("teacher_profiles.user_id"))
@@ -115,7 +114,9 @@ class Lesson(Base):
     module_id: Mapped[str] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(255))
     order_index: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(10), server_default=text("'lesson'"))
     content_url: Mapped[str | None] = mapped_column(Text)
+    show_gaze_dot: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSONB, server_default=text("'{}'::jsonb")
     )
@@ -181,35 +182,3 @@ class Enrollment(Base):
     status: Mapped[str] = mapped_column(String(30), server_default=text("'active'"))
 
     course: Mapped[Course] = relationship(lazy="joined")
-
-
-class LessonProgress(Base):
-    __tablename__ = "lesson_progress"
-    __table_args__ = (
-        UniqueConstraint("enrollment_id", "lesson_id"),
-        CheckConstraint(
-            "status IN ('in_progress', 'completed')", name="lesson_progress_status_check"
-        ),
-    )
-
-    id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()")
-    )
-    enrollment_id: Mapped[str] = mapped_column(
-        ForeignKey("enrollments.id", ondelete="CASCADE")
-    )
-    lesson_id: Mapped[str] = mapped_column(ForeignKey("lessons.id", ondelete="CASCADE"))
-    status: Mapped[str] = mapped_column(String(20), server_default=text("'in_progress'"))
-    viewed_slides: Mapped[list[int]] = mapped_column(
-        ARRAY(Integer), server_default=text("'{}'")
-    )
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()")
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_watched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=text("now()"),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )

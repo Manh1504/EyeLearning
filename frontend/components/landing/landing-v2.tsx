@@ -19,10 +19,10 @@ type Role = "student" | "teacher";
 const roles: Record<Role, { title: string; desc: string; points: string[] }> = {
   student: {
     title: "Chủ động với hành trình của mình.",
-    desc: "Quản lý khóa học, đọc tài liệu và theo dõi tiến độ. Mỗi lần quay lại, tiếp tục học ngay từ nơi bạn đã dừng.",
+    desc: "Quản lý khóa học và đọc tài liệu bài giảng trong cùng một nơi.",
     points: [
       "Khóa học và tài liệu trong cùng một nơi",
-      "Theo dõi tiến độ học tập",
+      "Xem bài giảng dạng slide",
       "Xem lại kết quả và quá trình học",
     ],
   },
@@ -372,7 +372,7 @@ export default function LandingV2() {
                       <span className="tick">✓</span> Đọc tài liệu, hoàn thành bài học
                     </li>
                     <li>
-                      <span className="tick">✓</span> Theo dõi tiến độ và kết quả
+                      <span className="tick">✓</span> Xem lại kết quả học tập
                     </li>
                   </ul>
                   <Link href="/try" className="ge-text-link">
@@ -436,7 +436,7 @@ export default function LandingV2() {
                 ],
                 [
                   "Khám phá dữ liệu",
-                  "Theo dõi tiến độ và xem những thông tin trực quan về hành vi quan sát.",
+                  "Xem những thông tin trực quan về hành vi quan sát.",
                   "▥",
                 ],
               ].map(([heading, description, icon], index) => (
