@@ -115,6 +115,7 @@ jobs:
               - '.github/workflows/build.yml'
             migrations:
               - 'Dockerfile.migrations'
+              - 'db/migrate.sh'
               - 'db/migrations/**'
               - '.github/workflows/build.yml'
             deploy:

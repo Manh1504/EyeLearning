@@ -41,25 +41,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
+      # Migrations chạy qua runner chung db/migrate.sh — CÙNG cơ chế với service
+      # `migrate` lúc deploy (bảng schema_migrations): chỉ chạy file chưa áp.
       - name: Apply migrations
         env:
+          PGHOST: localhost
+          PGUSER: postgres
           PGPASSWORD: postgres
-        run: |
-          for f in db/migrations/*.sql; do
-            echo "=== $f ==="
-            psql -h localhost -U postgres -d eyetracking_test -v ON_ERROR_STOP=1 -f "$f"
-          done
-      # Dockerfile.migrations chạy lại toàn bộ *.sql mỗi lần deploy; nếu một
-      # file không idempotent thì backend không lên. Canh lỗi này ngay ở CI
-      # bằng cách chạy lần hai (đã xác nhận idempotent, không nhân đôi dữ liệu).
+          PGDATABASE: eyetracking_test
+        run: bash db/migrate.sh
+      # Chạy lần hai phải KHÔNG áp dụng file nào. Nếu còn file được áp lại thì
+      # bảng tracking hỏng, hoặc file cũ bị sửa nội dung (runner sẽ báo lỗi).
       - name: Re-apply migrations (idempotency guard)
         env:
+          PGHOST: localhost
+          PGUSER: postgres
           PGPASSWORD: postgres
+          PGDATABASE: eyetracking_test
         run: |
-          for f in db/migrations/*.sql; do
-            echo "=== rerun $f ==="
-            psql -h localhost -U postgres -d eyetracking_test -v ON_ERROR_STOP=1 -f "$f"
-          done
+          out="$(bash db/migrate.sh)"
+          echo "$out"
+          echo "$out" | grep -q '=> migration xong: 0 áp dụng' \
+            || { echo "::error::Lần chạy thứ hai vẫn áp dụng migration — kiểm tra schema_migrations/idempotent"; exit 1; }
       - name: Install backend deps
         run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
       - name: Run tests
@@ -71,6 +74,133 @@ jobs:
           CORS_ORIGINS: http://localhost:3000
           AI_HTTP_URL: http://localhost:8000
         run: python -m pytest tests -v
+
+  # Bắt lỗi migration TRƯỚC khi deploy, gồm 2 nhóm:
+  #   a) File migration đã ship mà bị sửa nội dung (so với db/migrations.checksums.txt)
+  #      -> người khác/Môi trường khác đã áp bản cũ thì sẽ lệch schema.
+  #   b) Đường NÂNG CẤP: dựng DB từ bộ migration của commit trước rồi chạy bộ mới,
+  #      schema phải trùng khớp với DB dựng mới hoàn toàn. Đây chính là đường mà
+  #      server thật đi mỗi lần deploy (DB đang có dữ liệu + migration mới).
+  migrations:
+    name: Migration upgrade path
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: File migration đã ship có bị sửa không
+        run: |
+          fail=0
+          for f in db/migrations/*.sql; do
+            n="$(basename "$f")"
+            sum="$(sha256sum "$f" | awk '{print $1}')"
+            want="$(awk -v n="$n" '$1 == n {print $2}' db/migrations.checksums.txt)"
+            if [ -z "$want" ]; then
+              echo "::error file=$f::$n chưa có trong db/migrations.checksums.txt — chạy: MIGRATE_UPDATE_CHECKSUMS=1 bash db/migrate.sh"
+              fail=1
+            elif [ "$want" != "$sum" ]; then
+              echo "::error file=$f::$n đã bị SỬA nội dung. Không sửa file đã ship — hãy thêm file mới (021_...). Nếu thật sự cố ý: MIGRATE_UPDATE_CHECKSUMS=1 bash db/migrate.sh"
+              fail=1
+            fi
+          done
+          while read -r n _; do
+            case "$n" in \#*|"") continue ;; esac
+            [ -f "db/migrations/$n" ] || { echo "::error::$n đã bị xoá hoặc đổi tên"; fail=1; }
+          done < db/migrations.checksums.txt
+          exit "$fail"
+      - name: Lấy migration của bản đang chạy (baseline nâng cấp)
+        id: base
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            BEFORE="${{ github.event.pull_request.base.sha }}"
+          fi
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            BEFORE="$(git rev-list --max-parents=0 HEAD | tail -1)"
+            echo "::warning::Không xác định được commit trước đó — dùng commit gốc ${BEFORE} làm baseline"
+          fi
+          echo "baseline=$BEFORE" >> "$GITHUB_OUTPUT"
+          mkdir -p /tmp/old
+          git archive "$BEFORE" db/migrations | tar -x -C /tmp/old
+      - name: Dựng DB nâng cấp (old -> new) và DB dựng mới
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          MIGRATE_NO_LOCK: "1"
+        run: |
+          set -euo pipefail
+          psql -d postgres -c "CREATE DATABASE mig_upgraded"
+          psql -d postgres -c "CREATE DATABASE mig_fresh"
+          echo "baseline: ${{ steps.base.outputs.baseline }}"
+          # 1) DB "đang chạy": áp bộ migration cũ bằng psql thô — CỐ Ý không tạo
+          #    bảng schema_migrations, đúng tình trạng server thật ở lần deploy đầu
+          #    tiên với runner mới (DB đã có schema + dữ liệu, chưa có tracking).
+          echo "--- 1) dựng DB theo bộ migration của bản đang chạy ---"
+          for f in /tmp/old/db/migrations/*.sql; do
+            echo "=== $(basename "$f") ==="
+            psql -q -d mig_upgraded -v ON_ERROR_STOP=1 -f "$f"
+          done
+          # 2) Nhồi dữ liệu "xấu" mà schema cũ cho phép (2 quiz cùng 1 lesson) —
+          #    DB rỗng sẽ không lộ loại lỗi này. Đây là regression test cho sự cố
+          #    016 tạo unique index trước bước backfill.
+          echo "--- 2) nạp fixture dữ liệu xấu ---"
+          psql -q -d mig_upgraded -v ON_ERROR_STOP=1 -f db/tests/upgrade_fixture.sql
+          echo "--- 3) deploy: runner áp bộ migration MỚI lên DB đang chạy ---"
+          PGDATABASE=mig_upgraded bash db/migrate.sh db/migrations
+          echo "--- 4) dựng mới hoàn toàn ---"
+          PGDATABASE=mig_fresh bash db/migrate.sh db/migrations
+          echo "--- 5) chạy lại trên DB nâng cấp (phải bỏ qua hết) ---"
+          out="$(PGDATABASE=mig_upgraded bash db/migrate.sh db/migrations)"
+          echo "$out"
+          echo "$out" | grep -q '=> migration xong: 0 áp dụng' \
+            || { echo "::error::Chạy lại vẫn áp dụng migration — kiểm tra schema_migrations"; exit 1; }
+      - name: Xác minh dữ liệu xấu đã được xử lý
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          dup=$(psql -tA -d mig_upgraded -c \
+            "SELECT count(*) FROM (SELECT lesson_id FROM quiz_assignments
+              WHERE lesson_id IS NOT NULL GROUP BY 1 HAVING count(*) > 1) x")
+          echo "lesson_id còn trùng sau nâng cấp: $dup"
+          [ "$dup" = "0" ] || { echo "::error::Vẫn còn $dup lesson_id bị trùng sau nâng cấp"; exit 1; }
+          psql -d mig_upgraded -c \
+            "SELECT kind, count(*) FROM lessons GROUP BY 1 ORDER BY 1;"
+      - name: So schema nâng cấp vs dựng mới
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          psql -tA -d mig_fresh    -f db/schema_fingerprint.sql > /tmp/fresh.txt
+          psql -tA -d mig_upgraded -f db/schema_fingerprint.sql > /tmp/upgraded.txt
+          wc -l /tmp/fresh.txt /tmp/upgraded.txt
+          if ! diff -u /tmp/fresh.txt /tmp/upgraded.txt; then
+            echo "::error::Schema sau NÂNG CẤP khác schema dựng mới — xem diff ở trên."
+            exit 1
+          fi
+          echo "OK: nâng cấp old -> new cho ra schema trùng khớp với dựng mới."
 
   frontend:
     name: Frontend checks + build

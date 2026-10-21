@@ -1,9 +1,20 @@
 # One-shot migrations runner — dùng khi bind mount ./db/migrations không tới
 # được container postgres (vd Portainer paste-compose stack).
 # Chạy 1 lần trên cùng compose network rồi xóa container.
-# Env: PGHOST (mặc định postgres), PGUSER (postgres), PGDATABASE (eyetracking), PGPASSWORD (bắt buộc).
+#
+# Logic nằm ở db/migrate.sh (dùng chung với CI): bảng `schema_migrations`, chỉ
+# chạy file chưa áp, chặn sửa file đã ship, advisory lock chống chạy song song.
+# Xem db/README.md mục "Migrations".
+#
+# Env: PGHOST (mặc định postgres), PGUSER (postgres), PGDATABASE (eyetracking),
+#      PGPASSWORD (bắt buộc — phải KHỚP mật khẩu lúc volume postgres được tạo).
 FROM postgres:16
 
-COPY db/migrations /migrations
+ENV PGHOST=postgres \
+    PGUSER=postgres \
+    PGDATABASE=eyetracking
 
-CMD ["bash", "-c", "for f in /migrations/*.sql; do echo \"=== $f ===\"; psql -h \"${PGHOST:-postgres}\" -U \"${PGUSER:-postgres}\" -d \"${PGDATABASE:-eyetracking}\" -v ON_ERROR_STOP=1 -f \"$f\" || exit 1; done"]
+COPY db/migrations /migrations
+COPY db/migrate.sh /migrate.sh
+
+CMD ["bash", "/migrate.sh", "/migrations"]

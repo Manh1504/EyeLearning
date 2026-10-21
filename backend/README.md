@@ -127,7 +127,8 @@ Tests chạy trên DB riêng `eyetracking_test` (tạo 1 lần):
 
 ```bash
 docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE eyetracking_test;"
-# chạy migrations 001-004 vào eyetracking_test
+# áp migration vào DB test qua runner chung (bảng schema_migrations: chỉ chạy file chưa áp)
+docker compose run --rm -e PGDATABASE=eyetracking_test migrate
 ```
 
 ```bash

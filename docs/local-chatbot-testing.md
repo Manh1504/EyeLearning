@@ -128,7 +128,7 @@ Cách 0 — **tự động khi khởi động stack (khuyến nghị)**: service
 - Nếu **chưa có vector** (`vectors == 0`) và **đã có slide** (`slides > 0`) → gọi `POST /internal/embeddings/reindex-all` để ingest toàn bộ slide hiện có.
 - Nếu **đã có vector** → bỏ qua (log "Đã có vector — bỏ qua ingest lần đầu").
 
-Nhờ vậy chỉ cần tạo container là hệ thống tự bật RAG cho dữ liệu sẵn có; chạy lại mỗi lần deploy cũng an toàn (idempotent). Extension `vector` do migration `009` tạo, bảng `lesson_content_embedding` do `011`, index HNSW do `012` — không phải bootstrap.
+Nhờ vậy chỉ cần tạo container là hệ thống tự bật RAG cho dữ liệu sẵn có. Extension `vector` do migration `009` tạo, bảng `lesson_content_embedding` do `011`, index HNSW do `012` — không phải bootstrap. Lưu ý: `012` **xoá toàn bộ** embedding cũ khi đổi số chiều (4096 → 1024), nên sau lần deploy đầu tiên có `012` thì `vectors` sẽ về 0 và phải re-ingest (xem cách 0/1 bên dưới).
 
 Cách 1 — pipeline tự động (tùy chọn, không cần SSH): sau deploy backend gọi endpoint nội bộ xác thực bằng `CHATBOT_INTERNAL_TOKEN`. Cần đặt trong GitHub repo:
 - `vars.CHATBOT_API_URL` = URL backend công khai (vd `https://api.eyelearning.id.vn`)

@@ -14,8 +14,12 @@ Nguồn schema duy nhất là các file trong [`migrations/`](migrations/) — b
 ```
 db/
 ├── README.md                     # file này
+├── migrate.sh                    # runner migration (Docker + CI): schema_migrations, checksum, advisory lock
+├── schema_fingerprint.sql        # in "dấu vân tay" schema để so DB dựng mới vs DB nâng cấp (CI)
+├── migrations.checksums.txt      # checksum sha256 đã chốt — CI chặn sửa file migration đã ship
+├── tests/upgrade_fixture.sql     # dữ liệu "xấu" (2 bài tập cùng 1 item) cho job CI kiểm tra nâng cấp
 ├── seed_dev_users.sql            # 3 tài khoản mẫu cho DEV — chạy THỦ CÔNG, không tự động
-└── migrations/                   # chạy đúng thứ tự, TẤT CẢ đều idempotent
+└── migrations/                   # chạy theo thứ tự tên (sort -V)
     ├── 001_init.sql              # schema nền: bảng, khóa, CHECK, index, partition gaze_events
     ├── 002_seed.sql              # seed bảng lookup (roles, permissions, statuses…)
     ├── 003_gaze_partitions.sql   # default partition + 12 tháng đầu + function bảo trì
@@ -44,9 +48,36 @@ Sơ đồ partition `gaze_events` được bảo trì bằng `ops/maintain_parti
 1. **Docker (`docker-compose.yml`)** — nhanh, sạch, khuyến nghị cho dev.
 2. **PostgreSQL native (psql)** — khi đã có Postgres cài trực tiếp trên máy.
 
-Migrations sẽ tự chạy đúng thứ tự trong cả 2 cách. **Tất cả file đều
-idempotent** — chạy lại toàn bộ an toàn (đây là điều kiện bắt buộc vì
-`Dockerfile.migrations` chạy lại tất cả mỗi lần deploy).
+Migrations chạy qua `db/migrate.sh` (dùng chung cho Docker và CI). Runner ghi lại
+file đã áp vào bảng `schema_migrations` và **chỉ chạy file chưa áp**; file đã áp mà
+đổi nội dung thì dừng ngay. Mọi file **vẫn phải idempotent** — đó là điều kiện để
+DB cũ (chưa có bảng tracking) chạy được trọn bộ một lần rồi ghi dấu.
+
+## Quy tắc migration
+
+1. **Không sửa file migration đã ship.** Muốn đổi schema → thêm file mới
+   (`021_ten_moi.sql`). Runner từ chối chạy nếu file đã áp bị đổi nội dung, và CI
+   cũng chặn qua `db/migrations.checksums.txt`. Nếu thật sự cố ý sửa thì phải chạy
+   lại `MIGRATE_UPDATE_CHECKSUMS=1 bash db/migrate.sh` (thay đổi sẽ lộ rõ trong review).
+2. **Mọi file phải idempotent** — chạy lại nhiều lần không lỗi, không nhân đôi dữ liệu.
+3. **Thứ tự quan trọng.** Trong một file: ví dụ `016` phải backfill (tách bản trùng)
+   TRƯỚC khi tạo unique index — nếu không, DB đang có bản trùng sẽ gãy ngay lúc deploy.
+   Giữa các file: giữ nguyên dãy số, thêm file mới thì tăng số.
+4. **Thao tác phá huỷ dữ liệu** (`TRUNCATE`, đổi số chiều vector, `DROP`) phải ghi rõ
+   hệ quả trong comment — người vận hành cần biết trước khi deploy (ví dụ `012` xoá
+   toàn bộ embedding và bắt buộc re-ingest).
+5. Thêm file mới → cập nhật `db/migrations.checksums.txt`
+   (`MIGRATE_UPDATE_CHECKSUMS=1 bash db/migrate.sh`).
+
+CI (job `migrations`) kiểm tra 2 thứ: file đã ship có bị sửa không, và **đường nâng
+cấp** — dựng DB từ bộ migration của bản đang chạy, **nạp dữ liệu "xấu"**
+(`db/tests/upgrade_fixture.sql`: 2 bài tập cùng một item — đúng loại dữ liệu làm
+`016` gãy), áp bộ mới, rồi so `db/schema_fingerprint.sql` với DB dựng mới. DB rỗng
+sẽ không lộ được loại lỗi này, nên fixture là bắt buộc.
+
+Service `migrate` **exit 1 ⇒ compose huỷ cả lần deploy** và các container cũ vẫn
+chạy (web không đổi). Gặp lỗi này thì đọc log:
+`docker logs eyetracking-migrate 2>&1 | tail -30`.
 
 ---
 
@@ -60,8 +91,8 @@ docker compose up -d postgres
 
 Migrations **không** chạy qua `docker-entrypoint-initdb.d` (compose không bind
 mount `./db/migrations`). Thay vào đó, service một-lần `migrate`
-(`Dockerfile.migrations`) chạy **toàn bộ** `db/migrations/*.sql` mỗi lần deploy,
-theo thứ tự tên file và idempotent. Kiểm tra:
+(`Dockerfile.migrations` → `db/migrate.sh`) chạy các file **chưa áp** theo thứ tự
+tên file. Kiểm tra:
 
 ```bash
 # chạy migrations (một lần) rồi list bảng

@@ -130,8 +130,15 @@ docker compose down           # dừng, giữ dữ liệu
 docker compose down -v        # XÓA volume — mất dữ liệu, migrations chạy lại từ đầu
 ```
 
-- Migrations chạy qua service một-lần `migrate` (`Dockerfile.migrations`) mỗi lần
-  deploy — không dùng `/docker-entrypoint-initdb.d`.
+- Migrations chạy qua service một-lần `migrate` (`Dockerfile.migrations` →
+  `db/migrate.sh`) mỗi lần deploy — không dùng `/docker-entrypoint-initdb.d`.
+  Runner ghi lại file đã áp vào bảng `schema_migrations` và **chỉ chạy file chưa áp**
+  (DB cũ chưa có bảng này thì lần đầu chạy như cũ rồi ghi dấu).
+- **Quy tắc: KHÔNG sửa file migration đã ship** — thay đổi mới thì thêm file mới
+  (`021_...`). CI đối chiếu `db/migrations.checksums.txt`; runner cũng từ chối chạy
+  nếu file đã áp bị đổi nội dung.
+- Job CI `migrations` canh **đường nâng cấp**: dựng DB từ bộ migration của bản đang
+  chạy, áp bộ mới, rồi so `db/schema_fingerprint.sql` với DB dựng mới — phải giống hệt.
 - Partition `gaze_events`: service `db-maintenance` trong `docker-compose.yml` tự
   tạo partition tháng mới mỗi 24h; chạy thủ công bằng `ops/maintain_partitions.sql`
   (xem `db/README.md`).

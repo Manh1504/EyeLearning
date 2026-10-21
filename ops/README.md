@@ -76,6 +76,56 @@ Gọi `create_gaze_partitions(3)` để tạo partition tháng mới. Trong
 psql -d eyetracking -f ops/maintain_partitions.sql
 ```
 
+## Migration (schema DB)
+
+Schema do các file trong `db/migrations/` quyết định. Runner `db/migrate.sh` (nằm
+trong image `eyelearning-migrations`, service một-lần `migrate`) là thứ duy nhất
+nên chạy migration trên production — **không** `psql -f` tay từng file.
+
+Cơ chế:
+
+- Bảng `schema_migrations` lưu `filename` + `checksum` sha256 của mọi file đã áp;
+  lần deploy sau **chỉ chạy file chưa áp** (deploy nhanh, không phụ thuộc idempotency).
+- File đã áp mà bị **sửa nội dung** → runner dừng ngay, in rõ checksum cũ/mới.
+  Muốn đổi schema thì **thêm file mới** (`021_…`) — không sửa file cũ.
+- DB cũ chưa có `schema_migrations` (server trước lần deploy đầu tiên với runner
+  mới) → chạy toàn bộ như trước rồi ghi dấu; mọi file đều idempotent nên an toàn.
+- Service `migrate` exit 1 ⇒ compose **huỷ cả lần deploy** và các container cũ vẫn
+  chạy. Vì vậy thấy lỗi deploy thì xem log: `docker logs eyetracking-migrate`.
+
+Xem file nào đã áp:
+
+```bash
+docker exec eyetracking-postgres psql -U postgres -d eyetracking \
+  -c "SELECT filename, applied_at, duration_ms FROM schema_migrations ORDER BY filename;"
+```
+
+Thêm file migration mới thì phải cập nhật checksum đã chốt (CI bắt buộc):
+
+```bash
+MIGRATE_UPDATE_CHECKSUMS=1 bash db/migrate.sh   # ghi lại db/migrations.checksums.txt
+```
+
+Ghi dấu mà KHÔNG chạy (chỉ khi DB đã đúng schema nhưng bảng tracking còn trống —
+**không dùng cho server đang thiếu migration**, vì sẽ bỏ qua file thật sự cần chạy):
+
+```bash
+docker exec -e MIGRATE_BASELINE=1 eyetracking-migrate bash /migrate.sh /migrations
+```
+
+Kiểm tra đường nâng cấp (CI tự chạy ở job `migrations`; chạy tay cần 2 DB trống):
+
+```bash
+PGDATABASE=db_a bash db/migrate.sh /tmp/migrations-cu   # bộ migration của bản đang chạy
+PGDATABASE=db_a bash db/migrate.sh db/migrations        # áp bộ mới lên DB đó
+PGDATABASE=db_b bash db/migrate.sh db/migrations        # dựng mới hoàn toàn
+psql -tA -d db_a -f db/schema_fingerprint.sql > /tmp/a.txt
+psql -tA -d db_b -f db/schema_fingerprint.sql > /tmp/b.txt
+diff -u /tmp/a.txt /tmp/b.txt      # phải không có khác biệt
+```
+
+Nên chạy `./ops/pg_backup.sh` trước mỗi lần deploy có migration mới.
+
 ## Crontab mẫu
 
 ```cron
