@@ -85,6 +85,8 @@ export interface CourseWriteInput {
   title: string;
   description?: string;
   status?: CourseStatus;
+  /** Cờ cấp khóa: cho sinh viên thấy chấm điểm nhìn (mọi bài giảng + bài tập). */
+  showGazeDot?: boolean;
 }
 
 export function createCourse(input: CourseWriteInput): Promise<TeacherCourse> {
@@ -108,7 +110,7 @@ export function deleteCourse(courseId: string): Promise<{ ok: boolean }> {
 export function setCourseGazeDot(
   courseId: string,
   showGazeDot: boolean,
-): Promise<{ ok: boolean; updated: number }> {
+): Promise<{ ok: boolean; showGazeDot: boolean }> {
   return apiFetch(`/api/teacher/courses/${courseId}/gaze-dot`, {
     method: "PATCH",
     body: { showGazeDot },
@@ -136,11 +138,10 @@ export function deleteModule(moduleId: string): Promise<{ ok: boolean }> {
 export function createLesson(
   moduleId: string,
   title: string,
-  showGazeDot = false,
 ): Promise<{ id: string }> {
   return apiFetch(`/api/teacher/modules/${moduleId}/lessons`, {
     method: "POST",
-    body: { title, showGazeDot },
+    body: { title },
   });
 }
 
@@ -170,7 +171,7 @@ export function reorderModuleItems(
 
 export function updateLesson(
   lessonId: string,
-  patch: { title?: string; showGazeDot?: boolean },
+  patch: { title?: string },
 ): Promise<{ ok: boolean }> {
   return apiFetch(`/api/teacher/lessons/${lessonId}`, {
     method: "PATCH",

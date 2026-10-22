@@ -31,7 +31,8 @@ class LearningSessionEndIn(CamelModel):
 
 
 class GazeSampleIn(CamelModel):
-    lesson_content_id: str
+    # None = bài tập trắc nghiệm (không có slide) — toạ độ theo viewport.
+    lesson_content_id: str | None = None
     x: float
     y: float
     ts: float

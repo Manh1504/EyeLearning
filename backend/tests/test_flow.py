@@ -143,78 +143,48 @@ def test_full_learning_flow(client):
     assert len(rows[0]["lessons"]) == 1
 
 
-def test_lesson_show_gaze_dot_toggle(client):
-    teacher, student, course_id, lesson_id, _ = _setup_course(client)
-
-    # Mặc định tắt ở cả cây GV và outline của SV.
-    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
-    assert r.status_code == 200, r.text
-    assert r.json()[0]["lessons"][0]["showGazeDot"] is False
-
-    r = client.get(f"/api/courses/{course_id}", headers=auth(student))
-    assert r.status_code == 200, r.text
-    assert r.json()["modules"][0]["lessons"][0]["showGazeDot"] is False
-
-    # GV bật → cả hai nơi phản ánh true.
-    r = client.patch(
-        f"/teacher/lessons/{lesson_id}",
-        headers=auth(teacher),
-        json={"showGazeDot": True},
-    )
-    assert r.status_code == 200, r.text
-
-    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
-    assert r.json()[0]["lessons"][0]["showGazeDot"] is True
-
-    r = client.get(f"/api/courses/{course_id}", headers=auth(student))
-    assert r.json()["modules"][0]["lessons"][0]["showGazeDot"] is True
-
-    # Đổi tên riêng không đụng tới cờ.
-    r = client.patch(
-        f"/teacher/lessons/{lesson_id}",
-        headers=auth(teacher),
-        json={"title": "Bài 1 đổi tên"},
-    )
-    assert r.status_code == 200, r.text
-    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
-    node = r.json()[0]["lessons"][0]
-    assert node["title"] == "Bài 1 đổi tên"
-    assert node["showGazeDot"] is True
-
-
 def test_course_gaze_dot_toggle(client):
     teacher, student, course_id, lesson_id, _ = _setup_course(client)
 
-    # Khóa có 1 bài giảng, công tắc cấp khóa mặc định tắt.
+    # Cờ điểm nhìn là cấp KHÓA HỌC (không còn cờ từng bài học).
     r = client.get("/teacher/courses", headers=auth(teacher))
     course = r.json()[0]
     assert course["lessonCount"] == 1
     assert course["showGazeDot"] is False
 
-    # Bật cấp khóa → áp cho mọi bài giảng.
+    # Cây GV và outline của SV không còn field per-lesson.
+    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
+    assert "showGazeDot" not in r.json()[0]["lessons"][0]
+
+    r = client.get(f"/api/courses/{course_id}", headers=auth(student))
+    outline = r.json()
+    assert outline["showGazeDot"] is False
+    assert "showGazeDot" not in outline["modules"][0]["lessons"][0]
+
+    # Bật cấp khóa → áp cho cả khóa (bài giảng + bài tập).
     r = client.patch(
         f"/teacher/courses/{course_id}/gaze-dot",
         headers=auth(teacher),
         json={"showGazeDot": True},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["updated"] == 1
+    assert r.json()["showGazeDot"] is True
 
     r = client.get("/teacher/courses", headers=auth(teacher))
     assert r.json()[0]["showGazeDot"] is True
 
     r = client.get(f"/api/courses/{course_id}", headers=auth(student))
-    assert r.json()["modules"][0]["lessons"][0]["showGazeDot"] is True
+    assert r.json()["showGazeDot"] is True
 
-    # Tắt riêng một bài → công tắc cấp khóa trở về false (chỉ true khi mọi bài bật).
+    # Đổi tên bài học không đụng tới cờ khóa.
     r = client.patch(
         f"/teacher/lessons/{lesson_id}",
         headers=auth(teacher),
-        json={"showGazeDot": False},
+        json={"title": "Bài 1 đổi tên"},
     )
     assert r.status_code == 200, r.text
     r = client.get("/teacher/courses", headers=auth(teacher))
-    assert r.json()[0]["showGazeDot"] is False
+    assert r.json()[0]["showGazeDot"] is True
 
     # Tắt cấp khóa.
     r = client.patch(
@@ -225,6 +195,116 @@ def test_course_gaze_dot_toggle(client):
     assert r.status_code == 200, r.text
     r = client.get("/teacher/courses", headers=auth(teacher))
     assert r.json()[0]["showGazeDot"] is False
+
+    # Có thể đặt ngay khi cập nhật khóa học (PATCH /teacher/courses/{id}).
+    r = client.patch(
+        f"/teacher/courses/{course_id}",
+        headers=auth(teacher),
+        json={"showGazeDot": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["showGazeDot"] is True
+
+
+def _quiz_gaze_rows(session_id: str):
+    """(danh sách (lesson_content_id, surface) của gaze_events, dòng gaze_session_stats)."""
+    from sqlalchemy import text
+
+    from app.db.session import SessionLocal
+
+    async def run():
+        async with SessionLocal() as session:
+            events = (
+                await session.execute(
+                    text(
+                        "SELECT lesson_content_id, surface FROM gaze_events "
+                        "WHERE learning_session_id = :sid"
+                    ),
+                    {"sid": session_id},
+                )
+            ).all()
+            stat = (
+                await session.execute(
+                    text(
+                        "SELECT total_samples, on_screen_samples, view_ms "
+                        "FROM gaze_session_stats WHERE learning_session_id = :sid"
+                    ),
+                    {"sid": session_id},
+                )
+            ).first()
+            return events, stat
+
+    return asyncio.run(run())
+
+
+def test_quiz_gaze_samples_recorded(client):
+    """Bài tập trắc nghiệm cũng ghi gaze (surface='quiz', toạ độ theo viewport)."""
+    teacher, student, course_id, _, _ = _setup_course(client)
+
+    r = client.get(f"/teacher/courses/{course_id}", headers=auth(teacher))
+    module_id = r.json()[0]["id"]
+    r = client.post(
+        f"/teacher/modules/{module_id}/quizzes",
+        headers=auth(teacher),
+        json={"title": "Bài tập 1"},
+    )
+    assert r.status_code == 201, r.text
+    quiz_lesson_id = r.json()["id"]
+
+    r = client.post(f"/api/courses/{course_id}/enroll", headers=auth(student))
+    assert r.status_code == 201, r.text
+    enrollment_id = r.json()["enrollmentId"]
+
+    # Trước 021 endpoint này trả 400 ("Bài tập trắc nghiệm không có phiên ...").
+    r = client.post(
+        "/api/learning-sessions",
+        headers=auth(student),
+        json={
+            "enrollmentId": enrollment_id,
+            "lessonId": quiz_lesson_id,
+            "deviceFingerprint": "fp-quiz",
+            "trackingConsent": True,
+        },
+    )
+    assert r.status_code == 201, r.text
+    session = r.json()
+
+    samples = [
+        {"lessonContentId": None, "x": 0.3 + i * 0.01, "y": 0.4, "ts": 1755000000000 + i * 300}
+        for i in range(10)
+    ] + [{"lessonContentId": None, "x": -1, "y": -1, "ts": 1755000004000}]
+    r = client.post(
+        f"/api/lessons/{quiz_lesson_id}/gaze-samples",
+        headers=auth(student),
+        json={"learningSessionId": session["id"], "samples": samples},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["inserted"] >= 2
+
+    events, stat = _quiz_gaze_rows(session["id"])
+    assert events, "phải có gaze_events cho phiên bài tập"
+    assert all(content_id is None for content_id, _ in events)
+    assert all(surface == "quiz" for _, surface in events)
+    assert stat is not None, "phải có tổng hợp gaze_session_stats"
+    assert stat[0] == len(samples)          # total_samples (gồm cả điểm ngoài màn hình)
+    assert stat[1] == 10                    # on_screen_samples
+    assert stat[2] > 0                      # view_ms
+
+    # Gửi thêm batch → cộng dồn chứ không tạo dòng mới.
+    r = client.post(
+        f"/api/lessons/{quiz_lesson_id}/gaze-samples",
+        headers=auth(student),
+        json={
+            "learningSessionId": session["id"],
+            "samples": [
+                {"lessonContentId": None, "x": 0.5, "y": 0.5, "ts": 1755000009000},
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    _, stat2 = _quiz_gaze_rows(session["id"])
+    assert stat2 is not None
+    assert stat2[0] == len(samples) + 1
 
 
 def _calibration_row_counts(email: str) -> tuple[int, int]:

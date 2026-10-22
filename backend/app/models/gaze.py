@@ -52,14 +52,40 @@ class GazeEvent(Base):
     learning_session_id: Mapped[str] = mapped_column(
         ForeignKey("learning_sessions.id", ondelete="CASCADE"), nullable=False
     )
-    lesson_content_id: Mapped[str] = mapped_column(
-        ForeignKey("lesson_contents.id"), nullable=False
+    # NULL = bài tập trắc nghiệm (không có slide). Toạ độ khi đó theo viewport.
+    lesson_content_id: Mapped[str | None] = mapped_column(
+        ForeignKey("lesson_contents.id"), nullable=True
     )
     event_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), primary_key=True, server_default=text("now()")
     )
     gaze_x: Mapped[float] = mapped_column(REAL, nullable=False)
     gaze_y: Mapped[float] = mapped_column(REAL, nullable=False)
+    # Khung toạ độ của gaze_x/gaze_y: 'slide' (theo ảnh slide) | 'quiz' (theo viewport).
+    surface: Mapped[str] = mapped_column(String(8), server_default=text("'slide'"))
+
+
+class GazeSessionStat(Base):
+    """Tổng hợp gaze mức PHIÊN cho bài KHÔNG có slide (bài tập trắc nghiệm).
+
+    `gaze_slide_stats` không dùng được cho bài tập (gắn chặt lesson_content_id),
+    nên tổng số sample / số sample trong màn hình / thời lượng xem của phiên bài
+    tập lưu ở đây. Một dòng cho mỗi phiên học.
+    """
+
+    __tablename__ = "gaze_session_stats"
+
+    learning_session_id: Mapped[str] = mapped_column(
+        ForeignKey("learning_sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    total_samples: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    on_screen_samples: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    view_ms: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class GazeSlideStat(Base):

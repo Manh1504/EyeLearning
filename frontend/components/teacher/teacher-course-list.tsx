@@ -87,7 +87,7 @@ function CourseRow({
       <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
         <div
           className="flex items-center gap-2 rounded-full border border-[#dfe9dc] bg-[#e8f1e6]/50 py-1 pl-3 pr-1"
-          title={canManage ? undefined : "Chỉ chủ khóa học mới đổi được"}
+          title={canManage ? "Áp cho mọi bài giảng và bài tập của khóa" : "Chỉ chủ khóa học mới đổi được"}
         >
           <span className="text-[11px] font-medium text-[#3f573c]">Điểm nhìn cho SV</span>
           <Switch

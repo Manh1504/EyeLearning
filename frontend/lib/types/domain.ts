@@ -19,7 +19,7 @@ export interface TeacherCourse {
   updatedAt: string;
   isOwner?: boolean;          // admin hoặc chủ khóa học (quyền quản lý); false = GV được phân công
   lessonCount?: number;       // số bài giảng (item) trong khóa
-  showGazeDot?: boolean;      // true khi MỌI bài giảng của khóa đều bật hiển thị điểm nhìn
+  showGazeDot?: boolean;      // cờ cấp khóa: cho SV thấy chấm điểm nhìn (mọi bài giảng + bài tập)
 }
 
 export interface LessonNode {
@@ -34,7 +34,6 @@ export interface LessonNode {
   questionCount?: number;
   durationMinutes?: number | null;
   dueAt?: string | null;
-  showGazeDot?: boolean;     // cho SV thấy chấm điểm nhìn của mình (để test)
 }
 
 export interface ModuleNode {
@@ -220,7 +219,6 @@ export interface LessonItem {
   questionCount?: number;
   durationMinutes?: number | null;
   dueAt?: string | null;
-  showGazeDot?: boolean;     // cho SV thấy chấm điểm nhìn của mình (để test)
 }
 
 export interface ModuleItem {
@@ -239,6 +237,8 @@ export interface CourseOutline {
   id: string;
   title: string;
   modules: ModuleItem[];
+  // Cờ cấp khóa: SV thấy chấm điểm nhìn ở mọi bài giảng VÀ bài tập của khóa.
+  showGazeDot?: boolean;
 }
 
 // Profile (users / user_profiles / student_profiles / teacher_profiles)

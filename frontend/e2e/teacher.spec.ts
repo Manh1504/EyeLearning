@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { open } from "node:fs/promises";
-import { mockApi, seedAuth } from "./fixtures";
+import { MODULES, json, mockApi, seedAuth } from "./fixtures";
 
 const TEACHER = {
   email: "teacher@school.edu.vn",
@@ -56,12 +56,34 @@ test.describe("Teacher", () => {
     expect((await request).postDataJSON()).toEqual({ showGazeDot: true });
   });
 
-  test("workspace tab Nội dung hiển thị chương/bài", async ({ page }) => {
+  test("workspace tab Nội dung hiển thị mục lục và trình soạn", async ({ page }) => {
     await page.goto("/teacher/courses/course-1?tab=content");
-    await expect(page.getByRole("heading", { name: "Thông tin khóa học" })).toBeVisible();
-    await expect(page.getByText("Chương 1: Nhập môn")).toBeVisible();
-    await expect(page.getByText("Bài 1: Giới thiệu")).toBeVisible();
-    await expect(page.getByText("Bài tập: Kiểm tra nhập môn")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Chương, bài giảng và bài tập" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Chương 1: Nhập môn", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mở Bài 1: Giới thiệu" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mở Bài tập: Kiểm tra nhập môn" })).toBeVisible();
+    // Mục đầu tiên được mở sẵn trong trình soạn (không còn accordion lồng nhau).
+    await expect(page.getByLabel("Tên bài giảng")).toHaveValue("Bài 1: Giới thiệu");
+  });
+
+  test("workspace có 4 tab và tab Thông tin khóa học lưu được thay đổi", async ({ page }) => {
+    await page.goto("/teacher/courses/course-1?tab=info");
+    for (const label of ["Nội dung", "Thông tin khóa học", "Cài đặt", "Học viên"]) {
+      await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole("heading", { name: "Xuất bản" })).toBeVisible();
+
+    const request = page.waitForRequest(
+      (candidate) =>
+        new URL(candidate.url()).pathname === "/api/teacher/courses/course-1" &&
+        candidate.method() === "PATCH",
+    );
+    await page.getByLabel("Tên khóa học").fill("Lập trình Python nâng cao");
+    await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+
+    expect((await request).postDataJSON()).toMatchObject({ title: "Lập trình Python nâng cao" });
   });
 
   test("thêm bài tập vào chương gọi API tạo", async ({ page }) => {
@@ -71,7 +93,7 @@ test.describe("Teacher", () => {
         candidate.url().includes("/api/teacher/modules/mod-1/quizzes") &&
         candidate.method() === "POST",
     );
-    await page.getByRole("button", { name: "Thêm bài tập" }).first().click();
+    await page.getByRole("button", { name: "Thêm trắc nghiệm" }).first().click();
     expect((await request).method()).toBe("POST");
   });
 
@@ -90,9 +112,11 @@ test.describe("Teacher", () => {
     await expect(page.getByText("Tùy chọn · đã chọn 1")).toBeVisible();
   });
 
-  test("tạo khóa học gửi cờ hiển thị điểm nhìn của từng bài", async ({ page }) => {
+  test("tạo khóa học gửi cờ hiển thị điểm nhìn ở cấp khóa", async ({ page }) => {
+    let courseBody: unknown = null;
     await page.route("**/api/teacher/courses", async (route) => {
       if (route.request().method() !== "POST") return route.fallback();
+      courseBody = route.request().postDataJSON();
       return route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -102,15 +126,13 @@ test.describe("Teacher", () => {
     await page.route("**/api/teacher/courses/course-new/modules", (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: '{"id":"mod-new"}' }),
     );
-    const lessonBodies: unknown[] = [];
-    await page.route("**/api/teacher/modules/mod-new/lessons", async (route) => {
-      lessonBodies.push(route.request().postDataJSON());
-      return route.fulfill({
+    await page.route("**/api/teacher/modules/mod-new/lessons", (route) =>
+      route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ id: "lesson-new" }),
-      });
-    });
+      }),
+    );
     await page.route("**/api/teacher/lessons/lesson-new/slides/upload", (route) =>
       route.fulfill({
         status: 201,
@@ -128,11 +150,14 @@ test.describe("Teacher", () => {
       mimeType: "application/pdf",
       buffer: Buffer.from("%PDF-1.4"),
     });
-    await page.getByRole("switch", { name: "Hiển thị điểm nhìn — bài 1" }).click();
+    // Cờ là cấp KHÓA HỌC (không còn công tắc theo từng bài).
+    await page
+      .getByRole("switch", { name: "Hiển thị điểm nhìn cho sinh viên cho cả khóa học" })
+      .click();
     await page.getByRole("button", { name: "Tạo và xuất bản" }).click();
 
-    await expect.poll(() => lessonBodies.length).toBe(1);
-    expect(lessonBodies[0]).toMatchObject({ title: "Bài 1", showGazeDot: true });
+    await expect.poll(() => courseBody).not.toBeNull();
+    expect(courseBody).toMatchObject({ title: "Khóa mới", showGazeDot: true });
   });
 
   test("dialog thêm học viên tìm kiếm trên server", async ({ page }) => {
@@ -226,50 +251,80 @@ test.describe("Teacher", () => {
     await page.getByRole("button", { name: "Mở Bài 1: Giới thiệu" }).click();
     await expect.poll(() => slideRequests).toBe(1);
 
+    // Bài đã có slide → phải xác nhận trước khi thay tài liệu.
     await page.locator('input[type="file"]').setInputFiles({
       name: "replacement.pdf",
       mimeType: "application/pdf",
       buffer: Buffer.from("%PDF-1.4"),
     });
+    await expect(page.getByRole("dialog")).toContainText("Thay tài liệu của bài giảng?");
+    await page.getByRole("button", { name: "Thay tài liệu" }).click();
 
     await expect.poll(() => slideRequests).toBeGreaterThan(1);
   });
 
   test("đổi tên bài học gọi API cập nhật", async ({ page }) => {
     await page.goto("/teacher/courses/course-1?tab=content");
-    const request = page.waitForRequest((candidate) =>
-      candidate.url().includes("/api/teacher/lessons/lesson-1") && candidate.method() === "PATCH",
-    );
-
-    await page.getByRole("button", { name: "Bài 1: Giới thiệu", exact: true }).click();
-    const input = page.getByRole("textbox", { name: "Đổi tên" });
-    await input.fill("Bài 1: Python nhập môn");
-    await input.press("Enter");
-
-    expect((await request).postDataJSON()).toEqual({ title: "Bài 1: Python nhập môn" });
-  });
-
-  test("bật hiển thị điểm nhìn cho sinh viên gọi API cập nhật", async ({ page }) => {
-    await page.goto("/teacher/courses/course-1?tab=content");
-    await page.getByRole("button", { name: "Mở Bài 1: Giới thiệu" }).click();
     const request = page.waitForRequest(
       (candidate) =>
         candidate.url().includes("/api/teacher/lessons/lesson-1") &&
         candidate.method() === "PATCH",
     );
 
-    const toggle = page.getByRole("switch", { name: /Hiển thị điểm nhìn cho sinh viên/ });
+    const input = page.getByLabel("Tên bài giảng");
+    await input.fill("Bài 1: Python nhập môn");
+    await input.press("Enter");
+
+    expect((await request).postDataJSON()).toEqual({ title: "Bài 1: Python nhập môn" });
+  });
+
+  test("bật hiển thị điểm nhìn ở tab Cài đặt gọi API cập nhật khóa", async ({ page }) => {
+    await page.goto("/teacher/courses/course-1?tab=settings");
+    const request = page.waitForRequest(
+      (candidate) =>
+        candidate.url().includes("/api/teacher/courses/course-1/gaze-dot") &&
+        candidate.method() === "PATCH",
+    );
+
+    const toggle = page.getByRole("switch", {
+      name: "Hiển thị điểm nhìn cho sinh viên cho cả khóa học",
+    });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await toggle.click();
 
     expect((await request).postDataJSON()).toEqual({ showGazeDot: true });
   });
 
+  test("kiểm tra nội dung trước khi xuất bản liệt kê mục còn thiếu", async ({ page }) => {
+    await page.route("**/api/teacher/courses/**", (r) =>
+      json(r, [
+        {
+          ...MODULES[0],
+          lessons: [
+            { ...MODULES[0].lessons[0], slides: 0 },
+            { ...MODULES[0].lessons[2], questionCount: 0 },
+          ],
+        },
+      ]),
+    );
+    await page.goto("/teacher/courses/course-1?tab=content");
+    await page.getByRole("button", { name: /mục cần hoàn thiện trước khi xuất bản/ }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Bài giảng chưa có tài liệu PDF");
+    await expect(dialog).toContainText("Bài tập chưa có câu hỏi nào");
+
+    // "Mở mục này" đóng hộp thoại và mở đúng mục trong trình soạn.
+    await dialog.getByRole("button", { name: "Mở mục này" }).first().click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByLabel("Tên bài giảng")).toHaveValue("Bài 1: Giới thiệu");
+  });
+
   test("bật cho phép làm lại dùng công tắc ngay đầu phần soạn bài tập", async ({ page }) => {
     await page.goto("/teacher/courses/course-1?tab=content");
     await page.getByRole("button", { name: "Mở Bài tập: Kiểm tra nhập môn" }).click();
 
-    // Công tắc phải thấy được ngay (không nằm trong mục "Thiết lập bài tập" đang gập).
+    // Công tắc phải thấy được ngay (không nằm trong mục đang gập).
     const toggle = page.getByRole("switch", { name: /Cho phép học viên làm lại/ });
     await expect(toggle).toBeVisible();
     const before = await toggle.getAttribute("aria-checked");
@@ -281,8 +336,48 @@ test.describe("Teacher", () => {
     );
     await toggle.click();
 
-    // Bật/tắt là lưu ngay, không cần bấm "Lưu nháp"/"Xuất bản".
+    // Bật/tắt là lưu ngay, không cần bấm "Lưu bài tập nháp"/"Giao bài".
     expect((await request).postDataJSON()).toEqual({ allowRetry: before !== "true" });
+  });
+
+  test("lưu nháp bài tập khi còn câu hỏi dở", async ({ page }) => {
+    await page.goto("/teacher/courses/course-1?tab=content");
+    await page.getByRole("button", { name: "Mở Bài tập: Kiểm tra nhập môn" }).click();
+    await page.getByRole("button", { name: "Thêm câu hỏi" }).click();
+    // Câu 4 chưa có đáp án → không thể lưu lên server nhưng KHÔNG chặn lưu nháp.
+    await page.getByLabel("Nội dung câu hỏi 4").fill("Câu hỏi mới nhưng chưa có đáp án");
+
+    const request = page.waitForRequest(
+      (candidate) =>
+        candidate.url().includes("/api/assignments/quiz-python-1") &&
+        candidate.method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Lưu bài tập nháp" }).click();
+
+    const body = (await request).postDataJSON() as { status: string; questions: unknown[] };
+    expect(body.status).toBe("draft");
+    expect(body.questions).toHaveLength(3); // chỉ 3 câu hợp lệ được gửi lên
+    await expect(page.getByText("1 câu chưa hoàn thiện", { exact: true })).toBeVisible();
+  });
+
+  test("chuyển mục khi còn thay đổi chưa lưu thì hỏi trước", async ({ page }) => {
+    await page.goto("/teacher/courses/course-1?tab=content");
+    await page.getByRole("button", { name: "Mở Bài tập: Kiểm tra nhập môn" }).click();
+    await page.getByLabel("Nội dung câu hỏi 1").fill("Câu hỏi đã sửa nhưng chưa lưu");
+
+    await page.getByRole("button", { name: "Mở Bài 1: Giới thiệu" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Còn thay đổi chưa lưu");
+
+    await dialog.getByRole("button", { name: "Ở lại soạn tiếp" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Vẫn ở bài tập và nội dung vừa nhập còn nguyên.
+    await expect(page.getByLabel("Nội dung câu hỏi 1")).toHaveValue("Câu hỏi đã sửa nhưng chưa lưu");
+
+    // Bỏ thay đổi thì mới đổi sang mục khác.
+    await page.getByRole("button", { name: "Mở Bài 1: Giới thiệu" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Bỏ thay đổi" }).click();
+    await expect(page.getByLabel("Tên bài giảng")).toHaveValue("Bài 1: Giới thiệu");
   });
 
   test("kéo thả sắp xếp bài học và bài tập trong chương", async ({ page }) => {

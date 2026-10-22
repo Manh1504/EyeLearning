@@ -7,7 +7,7 @@ export interface MockUser {
   avatarUrl?: string | null;
 }
 
-function json(route: Route, body: unknown, status = 200) {
+export function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({
     status,
     contentType: "application/json",
@@ -35,8 +35,8 @@ export const MODULES = [
     id: "mod-1",
     title: "Chương 1: Nhập môn",
     lessons: [
-      { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slides: 3, attention: 70, showGazeDot: false },
-      { id: "lesson-2", title: "Bài 2: Biến", kind: "lesson", slides: 2, attention: 60, showGazeDot: false },
+      { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slides: 3, attention: 70 },
+      { id: "lesson-2", title: "Bài 2: Biến", kind: "lesson", slides: 2, attention: 60 },
       {
         id: "lesson-quiz-1",
         title: "Bài tập: Kiểm tra nhập môn",
@@ -303,10 +303,17 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
   await page.route("**/api/courses/*/chat", (r) =>
     json(r, { sessionId: "session-1", answer: "Gợi ý", citations: [], intent: "qa" }),
   );
+  // Giáo viên/quản trị luôn thấy đáp án đúng (giống backend: reveal theo role).
+  const revealQuizAnswers = user.role === "teacher" || user.role === "admin";
   // Route cụ thể đăng ký sau route tổng để được ưu tiên (last match wins).
-  await page.route("**/api/assignments/quiz-python-1", (r) =>
-    json(r, quizSubmitted ? QUIZ_REVEALED : QUIZ_PUBLIC),
-  );
+  await page.route("**/api/assignments/quiz-python-1", (r) => {
+    if (r.request().method() === "PATCH") {
+      // Giả lập PATCH: trả về bài tập đã ghép thay đổi để UI phản hồi đúng trạng thái.
+      const patch = (r.request().postDataJSON() ?? {}) as Record<string, unknown>;
+      return json(r, { ...QUIZ_REVEALED, ...patch });
+    }
+    return json(r, quizSubmitted || revealQuizAnswers ? QUIZ_REVEALED : QUIZ_PUBLIC);
+  });
   await page.route("**/api/assignments/quiz-python-1/attempt", (r) =>
     json(r, quizSubmitted ? QUIZ_ATTEMPT : null),
   );
@@ -339,6 +346,14 @@ export async function mockApi(page: Page, opts: { user?: MockUser } = {}) {
     lessons: mod.lessons.map((lesson) => ({ ...lesson })),
   }));
   await page.route("**/api/teacher/courses/**", (r) => json(r, courseTree));
+  // PATCH /teacher/courses/{id} = lưu thông tin khóa học; GET cùng path = cây nội dung.
+  await page.route("**/api/teacher/courses/*", (r) => {
+    if (r.request().method() === "PATCH") {
+      const patch = (r.request().postDataJSON() ?? {}) as Record<string, unknown>;
+      return json(r, { ...TEACHER_COURSE, ...patch });
+    }
+    return json(r, courseTree);
+  });
   await page.route("**/api/teacher/courses", (r) => {
     if (r.request().method() === "POST") return json(r, TEACHER_COURSE);
     return json(r, [TEACHER_COURSE]);

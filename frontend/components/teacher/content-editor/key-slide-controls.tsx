@@ -7,21 +7,26 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Alert } from "@/components/ui/alert";
-import { useLessonSlidesAdmin } from "@/hooks/use-teacher";
 import { deleteSlide, rebuildLessonAois, setSlideKey } from "@/lib/api/teacher";
 import { cn } from "@/lib/utils";
+import type { SlideAdmin } from "@/lib/types/domain";
 
+/**
+ * "Cài đặt nâng cao" của bài giảng: đánh dấu trang trọng tâm + kiểm tra vùng AOI.
+ * Danh sách slide do trình soạn truyền xuống để không gọi API hai lần.
+ */
 export function KeySlideControls({
   lessonId,
   courseId,
   canDelete,
+  slides,
 }: {
   lessonId: string;
   courseId: string;
   canDelete: boolean;
+  slides: SlideAdmin[];
 }) {
   const queryClient = useQueryClient();
-  const { data: slides = [], isLoading, isError } = useLessonSlidesAdmin(lessonId);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [slideToDelete, setSlideToDelete] = useState<{ id: string; orderIndex: number } | null>(null);
@@ -88,13 +93,6 @@ export function KeySlideControls({
     }
   };
 
-  if (isLoading) return <p className="mt-3 text-sm text-muted-foreground">Đang tải danh sách slide…</p>;
-  if (isError)
-    return (
-      <p role="alert" className="mt-3 text-sm text-destructive">
-        Không tải được thiết lập slide trọng tâm.
-      </p>
-    );
   if (slides.length === 0) return null;
 
   return (

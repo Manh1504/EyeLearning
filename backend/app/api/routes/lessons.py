@@ -119,7 +119,6 @@ async def create_lesson(
         title=body.title,
         order_index=next_index,
         content_url=body.content_url,
-        show_gaze_dot=body.show_gaze_dot,
     )
     db.add(lesson)
     await db.commit()
@@ -140,8 +139,6 @@ async def update_lesson(
         lesson.title = body.title
     if body.content_url is not None:
         lesson.content_url = body.content_url
-    if body.show_gaze_dot is not None:
-        lesson.show_gaze_dot = body.show_gaze_dot
     await db.commit()
     return {"ok": True}
 

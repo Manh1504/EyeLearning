@@ -108,8 +108,8 @@ Backend là nguồn sự thật cho lịch sử hiển thị (`chat_sessions`/`c
 - `POST /api/courses/{id}/enroll`
 - `GET /api/courses/{id}?include=modules.lessons` — outline
 - `GET /api/lessons/{id}/contents` — slides
-- `POST /api/learning-sessions` / `PATCH /api/learning-sessions/{id}`
-- `POST /api/lessons/{id}/gaze-samples` — batch `{lessonContentId, x, y, ts}`; clamp [0,1], downsample, cập nhật `gaze_slide_stats`
+- `POST /api/learning-sessions` / `PATCH /api/learning-sessions/{id}` — phiên học của cả bài giảng và bài tập
+- `POST /api/lessons/{id}/gaze-samples` — batch `{lessonContentId, x, y, ts}`; clamp [0,1], downsample, cập nhật `gaze_slide_stats` (bài giảng) hoặc `gaze_session_stats` (bài tập: `lessonContentId = null`, toạ độ theo viewport, `gaze_events.surface = 'quiz'`)
 
 ### Calibration
 - `POST /api/calibrations` — JSON `{deviceFingerprint, numPoints, modelUbjBase64, maePx?, screenWidthPx?, screenHeightPx?}` — `modelUbjBase64` là file `.ubj` tải từ `GET /session/{sid}/model` của gaze service (base64, ~1-3KB); bất kỳ bản cũ nào của (user, device) tự deactivate. Ghi vào `calibration_params.model_ubj`.

@@ -10,6 +10,8 @@ class CourseCreateIn(CamelModel):
     description: str | None = None
     thumbnail_url: str | None = None
     status: str = Field(default="draft", pattern="^(draft|published|archived)$")
+    # Hiển thị chấm điểm nhìn cho sinh viên (áp cho mọi bài giảng + bài tập).
+    show_gaze_dot: bool = False
 
 
 class CourseUpdateIn(CamelModel):
@@ -17,6 +19,7 @@ class CourseUpdateIn(CamelModel):
     description: str | None = None
     thumbnail_url: str | None = None
     status: str | None = Field(default=None, pattern="^(draft|published|archived)$")
+    show_gaze_dot: bool | None = None
 
 
 class ModuleCreateIn(CamelModel):
@@ -35,13 +38,11 @@ class ModuleItemsReorderIn(CamelModel):
 class LessonCreateIn(CamelModel):
     title: str = Field(min_length=1, max_length=255)
     content_url: str | None = None
-    show_gaze_dot: bool = False
 
 
 class LessonUpdateIn(CamelModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content_url: str | None = None
-    show_gaze_dot: bool | None = None
 
 
 class CourseGazeDotIn(CamelModel):
@@ -97,7 +98,6 @@ class LessonNodeOut(CamelModel):
     question_count: int = 0
     duration_minutes: int | None = None
     due_at: datetime | None = None
-    show_gaze_dot: bool = False
 
 
 class ModuleNodeOut(CamelModel):
@@ -118,7 +118,7 @@ class TeacherCourseOut(CamelModel):
     updated_at: datetime
     is_owner: bool = True
     lesson_count: int = 0
-    show_gaze_dot: bool = False  # true khi MỌI bài giảng của khóa đều bật
+    show_gaze_dot: bool = False  # cờ cấp khóa: cho SV thấy chấm điểm nhìn
 
 
 class LessonItemOut(CamelModel):
@@ -131,7 +131,6 @@ class LessonItemOut(CamelModel):
     question_count: int = 0
     duration_minutes: int | None = None
     due_at: datetime | None = None
-    show_gaze_dot: bool = False
 
 
 class ModuleItemOut(CamelModel):
@@ -145,6 +144,8 @@ class CourseOutlineOut(CamelModel):
     id: str
     title: str
     modules: list[ModuleItemOut]
+    # Cờ cấp khóa: SV thấy chấm điểm nhìn ở MỌI bài giảng và bài tập của khóa.
+    show_gaze_dot: bool = False
 
 
 class CourseSummaryOut(CamelModel):

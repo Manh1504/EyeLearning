@@ -56,8 +56,8 @@ const MODULES = [
     id: "mod-1",
     title: "Chương 1: Nhập môn",
     lessons: [
-      { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slides: 3, attention: 70, showGazeDot: false },
-      { id: "lesson-2", title: "Bài 2: Biến và kiểu dữ liệu", kind: "lesson", slides: 2, attention: 60, showGazeDot: false },
+      { id: "lesson-1", title: "Bài 1: Giới thiệu", kind: "lesson", slides: 3, attention: 70 },
+      { id: "lesson-2", title: "Bài 2: Biến và kiểu dữ liệu", kind: "lesson", slides: 2, attention: 60 },
       {
         id: "lesson-quiz-1",
         title: "Bài tập: Kiểm tra nhập môn",
@@ -77,7 +77,7 @@ const MODULES = [
     id: "mod-2",
     title: "Chương 2: Cấu trúc điều khiển",
     lessons: [
-      { id: "lesson-3", title: "Bài 3: Vòng lặp", kind: "lesson", slides: 4, attention: 55, showGazeDot: false },
+      { id: "lesson-3", title: "Bài 3: Vòng lặp", kind: "lesson", slides: 4, attention: 55 },
     ],
   },
 ];
@@ -152,6 +152,7 @@ const ENROLLMENTS = [
 const OUTLINE = {
   id: "course-1",
   title: "Lập trình Python cơ bản",
+  showGazeDot: false,
   modules: [
     {
       id: "mod-1",

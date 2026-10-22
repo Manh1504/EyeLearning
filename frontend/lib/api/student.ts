@@ -42,7 +42,8 @@ export function getDeviceFingerprint(): string {
 }
 
 export interface GazeSample {
-  lessonContentId: string;
+  /** null = bài tập trắc nghiệm (không có slide) — toạ độ theo viewport. */
+  lessonContentId: string | null;
   x: number;
   y: number;
   ts: number;

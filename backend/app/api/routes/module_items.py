@@ -63,7 +63,6 @@ def _lesson_node(lesson: Lesson, quiz: QuizAssignment | None) -> LessonNodeOut:
         question_count=len(quiz.questions) if quiz else 0,
         duration_minutes=quiz.duration_minutes if quiz else None,
         due_at=quiz.due_at if quiz else None,
-        show_gaze_dot=lesson.show_gaze_dot,
     )
 
 

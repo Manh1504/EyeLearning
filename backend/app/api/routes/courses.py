@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -77,28 +77,25 @@ async def _get_viewable_course(db: AsyncSession, course_id: str, user: User) -> 
     return course
 
 
-async def _course_lesson_stats(
+async def _course_lesson_counts(
     db: AsyncSession, course_ids: list[str]
-) -> tuple[dict[str, int], dict[str, bool]]:
-    """Số bài giảng mỗi khóa + cờ 'mọi bài đều bật hiển thị điểm nhìn'."""
+) -> dict[str, int]:
+    """Số bài giảng (item bất kỳ) của mỗi khóa."""
     counts: dict[str, int] = {}
-    all_on: dict[str, bool] = {}
     if not course_ids:
-        return counts, all_on
+        return counts
     rows = await db.execute(
         select(
             Module.course_id,
             func.count(Lesson.id),
-            func.count(Lesson.id).filter(Lesson.show_gaze_dot.is_(True)),
         )
         .join(Lesson, Lesson.module_id == Module.id)
         .where(Module.course_id.in_(course_ids))
         .group_by(Module.course_id)
     )
-    for course_id, total, enabled in rows:
+    for course_id, total in rows:
         counts[course_id] = total
-        all_on[course_id] = total > 0 and enabled == total
-    return counts, all_on
+    return counts
 
 
 @router.get("/teacher/courses", response_model=list[TeacherCourseOut])
@@ -137,7 +134,7 @@ async def list_teacher_courses(
     enroll_counts = await course_stats.enrollment_counts(db, ids)
     attention = await course_stats.attention_avg_by_course(db, ids)
     sessions = await course_stats.session_counts_by_course(db, ids)
-    lesson_counts, gaze_all = await _course_lesson_stats(db, ids)
+    lesson_counts = await _course_lesson_counts(db, ids)
 
     return [
         TeacherCourseOut(
@@ -152,7 +149,7 @@ async def list_teacher_courses(
             updated_at=c.updated_at,
             is_owner="admin" in user.role_codes or c.teacher_id == user.id,
             lesson_count=lesson_counts.get(c.id, 0),
-            show_gaze_dot=gaze_all.get(c.id, False),
+            show_gaze_dot=c.show_gaze_dot,
         )
         for c in courses
     ]
@@ -186,6 +183,7 @@ async def create_course(
         status_id=await _course_status_id(db, body.status),
         teacher_id=user.id,
         created_by=user.id,
+        show_gaze_dot=body.show_gaze_dot,
     )
     db.add(course)
     await db.flush()
@@ -201,6 +199,7 @@ async def create_course(
         attention=None,
         sessions=0,
         updated_at=course.updated_at,
+        show_gaze_dot=course.show_gaze_dot,
     )
 
 
@@ -220,13 +219,15 @@ async def update_course(
         course.thumbnail_url = body.thumbnail_url
     if body.status is not None:
         course.status_id = await _course_status_id(db, body.status)
+    if body.show_gaze_dot is not None:
+        course.show_gaze_dot = body.show_gaze_dot
     await db.commit()
     await db.refresh(course)
     ids = [course.id]
     enroll_counts = await course_stats.enrollment_counts(db, ids)
     attention = await course_stats.attention_avg_by_course(db, ids)
     sessions = await course_stats.session_counts_by_course(db, ids)
-    lesson_counts, gaze_all = await _course_lesson_stats(db, ids)
+    lesson_counts = await _course_lesson_counts(db, ids)
     return TeacherCourseOut(
         id=course.id,
         title=course.title,
@@ -238,7 +239,7 @@ async def update_course(
         sessions=sessions.get(course.id, 0),
         updated_at=course.updated_at,
         lesson_count=lesson_counts.get(course.id, 0),
-        show_gaze_dot=gaze_all.get(course.id, False),
+        show_gaze_dot=course.show_gaze_dot,
     )
 
 
@@ -249,19 +250,15 @@ async def set_course_gaze_dot(
     user: User = Depends(require_roles("teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bật/tắt 'hiển thị điểm nhìn cho sinh viên' cho TẤT CẢ bài giảng của khóa.
+    """Bật/tắt 'hiển thị điểm nhìn cho sinh viên' cho cả khóa học.
 
-    Cờ gốc lưu theo từng bài (lessons.show_gaze_dot); endpoint này chỉ là thao tác
-    nhanh cấp khóa từ dashboard."""
+    Nguồn sự thật duy nhất là `courses.show_gaze_dot` — áp cho MỌI bài giảng và
+    bài tập của khóa (không còn cờ theo từng bài).
+    """
     course = await _get_owned_course(db, course_id, user)
-    module_ids = select(Module.id).where(Module.course_id == course.id)
-    result = await db.execute(
-        update(Lesson)
-        .where(Lesson.module_id.in_(module_ids))
-        .values(show_gaze_dot=body.show_gaze_dot)
-    )
+    course.show_gaze_dot = body.show_gaze_dot
     await db.commit()
-    return {"ok": True, "updated": result.rowcount or 0}
+    return {"ok": True, "showGazeDot": course.show_gaze_dot}
 
 
 @router.delete("/teacher/courses/{course_id}")
@@ -323,7 +320,6 @@ async def get_course_tree(
             question_count=len(quiz.questions) if quiz else 0,
             duration_minutes=quiz.duration_minutes if quiz else None,
             due_at=quiz.due_at if quiz else None,
-            show_gaze_dot=lesson.show_gaze_dot,
         )
 
     return [
@@ -567,12 +563,12 @@ async def get_course_outline(
             question_count=len(quiz.questions) if quiz else 0,
             duration_minutes=quiz.duration_minutes if quiz else None,
             due_at=quiz.due_at if quiz else None,
-            show_gaze_dot=lesson.show_gaze_dot,
         )
 
     return CourseOutlineOut(
         id=course.id,
         title=course.title,
+        show_gaze_dot=course.show_gaze_dot,
         modules=[
             ModuleItemOut(
                 id=m.id,

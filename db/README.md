@@ -32,8 +32,20 @@ db/
     ├── 017_lesson_show_gaze_dot.sql # cờ lessons.show_gaze_dot (GV bật/tắt điểm nhìn)
     ├── 018_calibration_keep_latest.sql # chỉ giữ 1 bản ghi calibration / (user, device)
     ├── 019_quiz_allow_retry.sql  # cờ quiz_assignments.allow_retry (GV cho học viên làm lại)
-    └── 020_chat_sessions.sql     # chat_sessions/chat_messages: phiên + lịch sử trợ lý học tập
+    ├── 020_chat_sessions.sql     # chat_sessions/chat_messages: phiên + lịch sử trợ lý học tập
+    └── 021_course_show_gaze_dot.sql # cờ cấp KHÓA (courses.show_gaze_dot, thay 017) + gaze cho bài tập
 ```
+
+> **Cờ điểm nhìn thuộc KHÓA HỌC**: `courses.show_gaze_dot` quyết định sinh viên có
+> thấy chấm điểm nhìn khi học **mọi bài giảng VÀ bài tập** của khóa. Cột
+> `lessons.show_gaze_dot` (017) đã bị bỏ ở 021; khóa có cờ `true` khi mọi bài giảng
+> của khóa đang bật (đúng giá trị công tắc cấp khóa trước nâng cấp).
+>
+> **Gaze của bài tập**: bài tập trắc nghiệm không có `lesson_contents`, nên dòng gaze
+> của bài tập lưu `gaze_events.lesson_content_id = NULL`, `surface = 'quiz'` với
+> toạ độ chuẩn hoá theo **viewport** (bài giảng: `surface = 'slide'`, toạ độ theo
+> ảnh slide). Tổng hợp mức phiên nằm ở `gaze_session_stats` (bài tập không có
+> `gaze_slide_stats`/AOI/heatmap).
 
 > **Calibration không lưu lịch sử**: mỗi lần hiệu chỉnh lại sẽ **ghi đè** bản ghi
 > cũ của (user, thiết bị) — `calibration_params` giữ đúng 1 dòng, kèm 1 dòng

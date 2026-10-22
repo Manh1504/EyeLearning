@@ -62,7 +62,13 @@ export function LearningReader({ courseId }: { courseId: string }) {
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
   const [learningSessionIds, setLearningSessionIds] = useState<Record<string, string>>({});
   const [trackingLessons, setTrackingLessons] = useState<Record<string, boolean>>({});
-  const [gazeCalibrated, setGazeCalibrated] = useState(false);
+  // Phiên hiệu chỉnh đọc thẳng từ localStorage ngay lần render đầu (client):
+  // bài tập không tạo phiên học nên không thể dựa vào callback tạo phiên để biết
+  // đã hiệu chỉnh hay chưa. Chỉ dùng cho effect của useGazeTracker nên không gây
+  // lệch hydration.
+  const [gazeCalibrated, setGazeCalibrated] = useState(() =>
+    Boolean(getStoredGazeSessionId()),
+  );
   // Vị trí chấm điểm nhìn (chuẩn hóa theo màn hình) khi GV bật hiển thị cho SV.
   // `key` = bài+trang lúc ghi, để tự ẩn khi đổi trang/bài mà không cần effect.
   const [gazeDot, setGazeDot] = useState<{ x: number; y: number; key: string } | null>(null);
@@ -112,8 +118,8 @@ export function LearningReader({ courseId }: { courseId: string }) {
 
   const activeIsQuiz = activeLesson?.kind === "quiz";
   const activeQuizId = activeLesson?.quizId ?? "";
-  // Bài tập trắc nghiệm không có phiên gaze nên không hiển thị chấm.
-  const showGazeDot = Boolean(activeLesson?.showGazeDot) && !activeIsQuiz;
+  // Cờ điểm nhìn thuộc KHÓA HỌC: bật là áp cho mọi bài giảng VÀ bài tập.
+  const showGazeDot = Boolean(course?.showGazeDot);
 
   // Render-phase adjust: mở chương chứa bài đang học.
   if (activeModule && !openModules[activeModule.id]) {
@@ -165,9 +171,10 @@ export function LearningReader({ courseId }: { courseId: string }) {
   }, [flushGazeForLesson]);
 
   // Mỗi lần vào bài tạo một phiên mới; phiên đã đóng bị xóa khỏi cả ref và state.
-  // Bài tập trắc nghiệm không có phiên theo dõi điểm nhìn.
+  // Bài tập trắc nghiệm cũng có phiên: gaze của bài tập được ghi thô theo viewport
+  // (surface='quiz', không có slide).
   useEffect(() => {
-    if (activeIsQuiz || !activeLessonId || !enrollmentId || sessionsRef.current[activeLessonId]) return;
+    if (!activeLessonId || !enrollmentId || sessionsRef.current[activeLessonId]) return;
 
     const lessonId = activeLessonId;
     let cancelled = false;
@@ -197,7 +204,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
       cancelled = true;
       if (createdSessionId) closeLearningSession(lessonId, createdSessionId);
     };
-  }, [activeIsQuiz, activeLessonId, enrollmentId, closeLearningSession]);
+  }, [activeLessonId, enrollmentId, closeLearningSession]);
 
   const learningSessionId = learningSessionIds[activeLessonId];
   // Chỉ thu gaze khi backend cho phép (trackingConsent=true trong phiên học).
@@ -231,7 +238,9 @@ export function LearningReader({ courseId }: { courseId: string }) {
   }, [learningSessionId, flushGaze]);
 
   const { source: gazeSource } = useGazeTracker({
-    enabled: Boolean(!activeIsQuiz && activeLessonId && total > 0 && trackingAllowed),
+    // Bài giảng: cần có slide. Bài tập: không có slide nhưng vẫn thu gaze để ghi
+    // nhận (và để hiện chấm nếu khóa bật "hiển thị điểm nhìn cho sinh viên").
+    enabled: Boolean(activeLessonId && trackingAllowed && (total > 0 || activeIsQuiz)),
     calibrated: gazeCalibrated,
     allowSimulation: false,
     onPoint: useCallback(
@@ -244,6 +253,14 @@ export function LearningReader({ courseId }: { courseId: string }) {
           if (x === -1 && y === -1) setGazeDot(null);
           else setGazeDot({ x, y, key: `${activeLessonId}:${currentSlide}` });
         }
+        if (!learningSessionId || !trackingAllowed) return;
+
+        if (activeIsQuiz) {
+          // Bài tập: không có ảnh slide để map toạ độ → gửi thẳng toạ độ viewport.
+          enqueueGaze({ lessonContentId: null, x, y, ts: Date.now() });
+          return;
+        }
+
         const slide = slides[currentSlide];
         const img = slideImgRef.current;
         const containerRect = img?.getBoundingClientRect();
@@ -263,7 +280,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
           if (paintedRect) mapped = screenGazeToSlide(x, y, paintedRect);
         }
 
-        if (!slide || !learningSessionId || !trackingAllowed) return;
+        if (!slide) return;
         enqueueGaze({
           lessonContentId: slide.id,
           x: mapped ? mapped.x : -1,
@@ -271,7 +288,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
           ts: Date.now(),
         });
       },
-      [currentSlide, slides, learningSessionId, enqueueGaze, trackingAllowed, showGazeDot, activeLessonId],
+      [currentSlide, slides, learningSessionId, enqueueGaze, trackingAllowed, showGazeDot, activeLessonId, activeIsQuiz],
     ),
   });
 
@@ -559,12 +576,12 @@ export function LearningReader({ courseId }: { courseId: string }) {
             </div>
           </div>
 
-          {gazeSource === "off" && total > 0 && (
+          {gazeSource === "off" && (total > 0 || activeIsQuiz) && (
             <div className="z-10 shrink-0 px-4 pb-2 sm:px-5">
               <div className="mx-auto flex max-w-[1400px] flex-col gap-2 rounded-xl border border-[#dce8d9] bg-[#e8f1e6] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs leading-5 text-foreground">
-                  Không kết nối được phiên theo dõi điểm nhìn (phiên hiệu chỉnh có thể đã hết hạn). Bài
-                  học vẫn xem được, nhưng dữ liệu gaze sẽ không được ghi nhận.
+                  Không kết nối được phiên theo dõi điểm nhìn (phiên hiệu chỉnh có thể đã hết hạn). Nội
+                  dung vẫn dùng được bình thường, nhưng dữ liệu gaze sẽ không được ghi nhận.
                 </p>
                 <Button asChild size="sm" variant="outline" className="shrink-0">
                   <Link

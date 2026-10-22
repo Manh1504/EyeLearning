@@ -48,6 +48,11 @@ class Course(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Cho sinh viên thấy chấm điểm nhìn (gaze dot) của chính họ khi học bất kỳ bài
+    # giảng/bài tập nào của khóa. Cấp KHÓA HỌC là nguồn duy nhất (thay cột
+    # lessons.show_gaze_dot đã bỏ ở migration 021).
+    show_gaze_dot: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+
     status: Mapped[CourseStatus] = relationship(lazy="joined")
     modules: Mapped[list["Module"]] = relationship(
         back_populates="course",
@@ -116,7 +121,6 @@ class Lesson(Base):
     order_index: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(10), server_default=text("'lesson'"))
     content_url: Mapped[str | None] = mapped_column(Text)
-    show_gaze_dot: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSONB, server_default=text("'{}'::jsonb")
     )

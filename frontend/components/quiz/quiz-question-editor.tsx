@@ -1,8 +1,9 @@
 "use client";
 
-import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input, Textarea } from "@/components/ui/input";
+import { questionIssues } from "@/lib/quiz-validation";
 import { cn } from "@/lib/utils";
 import type { QuizOption, QuizQuestion } from "@/lib/types/domain";
 
@@ -23,19 +24,50 @@ export function newQuestion(): QuizQuestion {
   };
 }
 
+/** Bản sao của một câu hỏi với id mới cho câu và từng lựa chọn. */
+export function duplicateQuestion(question: QuizQuestion): QuizQuestion {
+  const options = question.options.map((option) => ({ ...option, id: newOption().id }));
+  const idMap = new Map(question.options.map((option, index) => [option.id, options[index].id]));
+  return {
+    ...question,
+    id: `q-${crypto.randomUUID()}`,
+    options,
+    correctOptionIds: question.correctOptionIds.map((id) => idMap.get(id) ?? options[0].id),
+  };
+}
+
+/**
+ * Vùng soạn MỘT câu hỏi (khung bên phải của phần soạn trắc nghiệm).
+ *
+ * Ràng buộc lấy từ `questionIssues` (khớp schema backend) nên lỗi được báo ngay
+ * tại trường tương ứng, không chỉ một dòng thông báo chung.
+ */
 export function QuizQuestionEditor({
   question,
   index,
   canRemove,
+  canMoveUp,
+  canMoveDown,
   onChange,
   onRemove,
+  onDuplicate,
+  onMoveUp,
+  onMoveDown,
 }: {
   question: QuizQuestion;
   index: number;
   canRemove: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   onChange: (question: QuizQuestion) => void;
   onRemove: () => void;
+  onDuplicate: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
+  const issues = questionIssues(question);
+  const promptInvalid = !question.prompt.trim();
+
   const updateOption = (optionId: string, text: string) =>
     onChange({
       ...question,
@@ -68,8 +100,8 @@ export function QuizQuestionEditor({
   };
 
   const addOption = () => {
-    const option = newOption();
-    onChange({ ...question, options: [...question.options, option] });
+    if (question.options.length >= 12) return;
+    onChange({ ...question, options: [...question.options, newOption()] });
   };
 
   const removeOption = (optionId: string) => {
@@ -84,45 +116,97 @@ export function QuizQuestionEditor({
   };
 
   return (
-    <div className="rounded-[18px] border border-border/80 bg-white p-4 shadow-xs">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-          <span className="flex size-6 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+    <div className="rounded-[18px] border border-[#eeeee9] bg-[#fdfdfa] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-sm font-semibold text-black">
+          <span className="flex size-6 items-center justify-center rounded-full bg-black text-[11px] font-semibold text-white tabular-nums">
             {index + 1}
           </span>
-          Câu hỏi
+          Câu hỏi {index + 1}
         </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          disabled={!canRemove}
-          onClick={onRemove}
-          aria-label={`Xóa câu hỏi ${index + 1}`}
-          className="text-muted-foreground hover:text-destructive"
-        >
-          <Icon name="ri-delete-bin-line" className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={!canMoveUp}
+            onClick={onMoveUp}
+            aria-label={`Chuyển câu hỏi ${index + 1} lên trên`}
+            title="Đưa lên trên"
+          >
+            <Icon name="ri-arrow-up-s-line" className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={!canMoveDown}
+            onClick={onMoveDown}
+            aria-label={`Chuyển câu hỏi ${index + 1} xuống dưới`}
+            title="Đưa xuống dưới"
+          >
+            <Icon name="ri-arrow-down-s-line" className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDuplicate}
+            aria-label={`Nhân bản câu hỏi ${index + 1}`}
+            title="Nhân bản câu hỏi"
+          >
+            <Icon name="ri-stack-line" className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={!canRemove}
+            onClick={onRemove}
+            aria-label={`Xóa câu hỏi ${index + 1}`}
+            title="Xóa câu hỏi"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Icon name="ri-delete-bin-line" className="size-4" />
+          </Button>
+        </div>
       </div>
+
+      {issues.length > 0 && (
+        <ul className="mb-3 space-y-1 rounded-[14px] border border-warning/30 bg-warning/8 px-3 py-2 text-xs text-black/75">
+          {issues.map((issue) => (
+            <li key={issue} className="flex items-center gap-1.5">
+              <Icon name="ri-error-warning-line" className="size-3.5 shrink-0 text-warning" />
+              {issue}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <Textarea
         value={question.prompt}
         onChange={(event) => onChange({ ...question, prompt: event.target.value })}
-        placeholder="Nhập nội dung câu hỏi..."
-        className="min-h-16"
+        placeholder="Nhập nội dung câu hỏi…"
         aria-label={`Nội dung câu hỏi ${index + 1}`}
+        aria-invalid={promptInvalid}
+        className="min-h-16"
       />
 
-      <fieldset className="mt-3 space-y-2">
-        <legend className="mb-1 flex w-full flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>{question.allowMultiple ? "Tích vào các đáp án đúng" : "Chọn một đáp án đúng"}</span>
-          <span className="flex rounded-full bg-muted p-0.5">
+      <fieldset className="mt-4 space-y-2">
+        <legend className="mb-1 flex w-full flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium text-black">
+            {question.allowMultiple ? "Tích vào các đáp án đúng" : "Chọn một đáp án đúng"}
+          </span>
+          <span className="flex rounded-full bg-black/5 p-0.5">
             <button
               type="button"
               onClick={() => setAllowMultiple(false)}
+              aria-pressed={!question.allowMultiple}
               className={cn(
                 "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
-                !question.allowMultiple ? "bg-white text-foreground shadow-xs" : "text-muted-foreground",
+                !question.allowMultiple
+                  ? "bg-white text-black shadow-xs"
+                  : "text-black/55 hover:text-black",
               )}
             >
               Một đáp án
@@ -130,23 +214,29 @@ export function QuizQuestionEditor({
             <button
               type="button"
               onClick={() => setAllowMultiple(true)}
+              aria-pressed={question.allowMultiple}
               className={cn(
                 "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
-                question.allowMultiple ? "bg-white text-foreground shadow-xs" : "text-muted-foreground",
+                question.allowMultiple
+                  ? "bg-white text-black shadow-xs"
+                  : "text-black/55 hover:text-black",
               )}
             >
               Nhiều đáp án
             </button>
           </span>
         </legend>
+
         {question.options.map((option, optionIndex) => {
           const correct = question.correctOptionIds.includes(option.id);
+          const empty = !option.text.trim();
           return (
             <div
               key={option.id}
               className={cn(
                 "flex items-center gap-2 rounded-2xl border p-2 transition",
-                correct ? "border-primary/35 bg-[#f2f7ef]" : "border-border/80 bg-white",
+                correct ? "border-[#6f8f69]/50 bg-[#e8f1e6]/60" : "border-black/10 bg-white",
+                empty && "border-warning/40",
               )}
             >
               <label
@@ -165,8 +255,9 @@ export function QuizQuestionEditor({
                 value={option.text}
                 onChange={(event) => updateOption(option.id, event.target.value)}
                 placeholder={`Lựa chọn ${String.fromCharCode(65 + optionIndex)}`}
-                className="h-9 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
                 aria-label={`Lựa chọn ${optionIndex + 1}`}
+                aria-invalid={empty}
+                className="h-9 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
               />
               <Button
                 type="button"
@@ -175,27 +266,36 @@ export function QuizQuestionEditor({
                 disabled={question.options.length <= 2}
                 onClick={() => removeOption(option.id)}
                 aria-label={`Xóa lựa chọn ${optionIndex + 1}`}
+                title="Xóa lựa chọn"
               >
                 <Icon name="ri-close-line" />
               </Button>
             </div>
           );
         })}
-        <Button type="button" variant="ghost" size="sm" onClick={addOption}>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="rounded-full"
+          onClick={addOption}
+          disabled={question.options.length >= 12}
+        >
           <Icon name="ri-add-line" className="size-4" />
           Thêm lựa chọn
         </Button>
       </fieldset>
 
-      <details className="mt-3 rounded-xl bg-muted/40 px-3 py-2">
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+      <details className="mt-3 rounded-xl bg-black/5 px-3 py-2">
+        <summary className="cursor-pointer text-xs font-medium text-black/65">
           Giải thích &amp; điểm (nâng cao)
         </summary>
         <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
           <Textarea
             value={question.explanation}
             onChange={(event) => onChange({ ...question, explanation: event.target.value })}
-            placeholder="Giải thích vì sao đáp án đúng..."
+            placeholder="Giải thích vì sao đáp án đúng…"
             className="min-h-16"
             aria-label={`Giải thích câu hỏi ${index + 1}`}
           />
@@ -207,6 +307,7 @@ export function QuizQuestionEditor({
               id={`points-${question.id}`}
               type="number"
               min={1}
+              max={1000}
               step={1}
               value={question.points}
               onChange={(event) =>

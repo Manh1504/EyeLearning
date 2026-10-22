@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { useLessonSlidesAdmin } from "@/hooks/use-teacher";
 import { resolveMediaUrl } from "@/lib/api/client";
+import type { SlideAdmin } from "@/lib/types/domain";
 
-export function SlidePreview({ lessonId }: { lessonId: string }) {
-  const { data: slides = [] } = useLessonSlidesAdmin(lessonId);
+/**
+ * Lưới xem trước slide. `slides` do trình soạn bài giảng truyền xuống (một
+ * nguồn dữ liệu duy nhất cho cả xem trước và phần "Cài đặt nâng cao").
+ */
+export function SlidePreview({ slides }: { slides: SlideAdmin[] }) {
   const [failed, setFailed] = useState<Record<string, boolean>>({});
   const [preview, setPreview] = useState<number | null>(null);
 

@@ -27,6 +27,8 @@ export class ApiError extends Error {
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = `${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`;
+/** Số trang PDF tối đa backend chấp nhận (settings.max_pdf_pages). */
+export const MAX_PDF_PAGES = 150;
 
 export interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";

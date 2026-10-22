@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,10 +13,11 @@ from app.db.session import get_db
 from app.models.auth import User
 from app.models.calibration import CalibrationParam, Device
 from app.models.course import Enrollment, Lesson, LessonContent, Module
-from app.models.gaze import GazeEvent, GazeSlideStat, LearningSession
+from app.models.gaze import GazeEvent, GazeSessionStat, GazeSlideStat, LearningSession
 from app.schemas.gaze import (
     GazeBatchIn,
     GazeBatchOut,
+    GazeSampleIn,
     LearningSessionCreateIn,
     LearningSessionEndIn,
     LearningSessionOut,
@@ -82,11 +83,6 @@ async def create_learning_session(
     lesson = await db.get(Lesson, body.lesson_id)
     if lesson is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
-    if lesson.kind != "lesson":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="Bài tập trắc nghiệm không có phiên theo dõi điểm nhìn",
-        )
 
     device = await _upsert_device(
         db,
@@ -191,6 +187,74 @@ def _ts_to_datetime(ts_ms: float) -> datetime:
     return dt
 
 
+def _quiz_gaze_batch(
+    samples: list[GazeSampleIn], session_id: str, min_interval_ms: float
+) -> tuple[list[GazeEvent], int, int, int]:
+    """Chuẩn hoá một batch gaze của BÀI TẬP TRẮC NGHIỆM (không có slide).
+
+    Toạ độ giữ nguyên theo VIEWPORT (AI service trả về), ghi `surface='quiz'` và
+    `lesson_content_id=NULL`. Sample "ngoài màn hình" (-1,-1 do no_face) vẫn đếm
+    vào `total`/`on_screen` nhưng không tạo dòng gaze_events (giống bài giảng).
+
+    Trả về (events, total_samples, on_screen_samples, view_ms).
+    """
+    ordered = sorted(samples, key=lambda s: s.ts)
+    events: list[GazeEvent] = []
+    kept_ts: list[float] = []
+    on_screen = 0
+    last_kept = float("-inf")
+    for s in ordered:
+        if not (0.0 <= s.x <= 1.0 and 0.0 <= s.y <= 1.0):
+            continue
+        on_screen += 1
+        if s.ts - last_kept >= min_interval_ms:
+            last_kept = s.ts
+            kept_ts.append(s.ts)
+            events.append(
+                GazeEvent(
+                    learning_session_id=session_id,
+                    lesson_content_id=None,
+                    event_time=_ts_to_datetime(s.ts),
+                    gaze_x=s.x,
+                    gaze_y=s.y,
+                    surface="quiz",
+                )
+            )
+    total = len(ordered)
+    if not kept_ts:
+        return events, total, on_screen, 0
+    span = kept_ts[-1] - kept_ts[0]
+    if span <= 0:
+        span = min_interval_ms
+    return events, total, on_screen, int(span)
+
+
+async def _upsert_session_stats(
+    db: AsyncSession,
+    session_id: str,
+    total: int,
+    on_screen: int,
+    view_ms: int,
+) -> None:
+    """Cộng dồn tổng hợp gaze mức PHIÊN (dùng cho bài không có slide)."""
+    stmt = pg_insert(GazeSessionStat).values(
+        learning_session_id=session_id,
+        total_samples=total,
+        on_screen_samples=on_screen,
+        view_ms=view_ms,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[GazeSessionStat.learning_session_id],
+        set_=dict(
+            total_samples=GazeSessionStat.total_samples + total,
+            on_screen_samples=GazeSessionStat.on_screen_samples + on_screen,
+            view_ms=GazeSessionStat.view_ms + view_ms,
+            updated_at=func.now(),
+        ),
+    )
+    await db.execute(stmt)
+
+
 @router.post(
     "/api/lessons/{lesson_id}/gaze-samples",
     response_model=GazeBatchOut,
@@ -267,6 +331,22 @@ async def post_gaze_samples(
     if not session.tracking_consent:
         return GazeBatchOut(ok=True, inserted=0)
 
+    min_interval_ms = 1000.0 / max(settings.gaze_downsample_hz, 0.1)
+
+    if lesson.kind == "quiz":
+        # Bài tập trắc nghiệm: không có slide để map toạ độ/AOI/heatmap. Ghi gaze
+        # thô theo viewport (surface='quiz') + tổng hợp mức phiên; bỏ qua
+        # mastery/engagement/heatmap vì không có nội dung để gắn vào.
+        events, total, on_screen, view_ms = _quiz_gaze_batch(
+            body.samples, session.id, min_interval_ms
+        )
+        if events:
+            db.add_all(events)
+        if total:
+            await _upsert_session_stats(db, session.id, total, on_screen, view_ms)
+        await db.commit()
+        return GazeBatchOut(ok=True, inserted=len(events))
+
     content_ids = {s.lesson_content_id for s in body.samples}
     valid_ids = set(
         (
@@ -279,7 +359,6 @@ async def post_gaze_samples(
         ).scalars().all()
     )
 
-    min_interval_ms = 1000.0 / max(settings.gaze_downsample_hz, 0.1)
     by_content: dict[str, list] = {}
     raw_counts: dict[str, int] = {}
     on_slide_counts: dict[str, int] = {}
@@ -320,6 +399,7 @@ async def post_gaze_samples(
                     event_time=_ts_to_datetime(ts),
                     gaze_x=x,
                     gaze_y=y,
+                    surface="slide",
                 )
                 for x, y, ts in kept
             )
