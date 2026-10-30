@@ -8,13 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import {
   checkFace,
-  clearStoredGazeSession,
-  fetchActiveCalibration,
-  getGazeSessionStatus,
-  getStoredCalibration,
-  getStoredGazeSessionId,
-  isCalibrationScreenStale,
-  restoreGazeSessionFromBackend,
+  ensureGazeSession,
 } from "@/lib/api/calibration";
 import { getDeviceFingerprint } from "@/lib/api/student";
 import { useCourseOutline } from "@/hooks/use-student";
@@ -71,6 +65,8 @@ export function PreflightCheck({
   const router = useRouter();
   const searchParams = useSearchParams();
   const lessonId = searchParams.get("lesson");
+  const forceCheck = searchParams.get("check") === "1";
+  const learningHref = `/student/courses/${courseId}${lessonId ? `?lesson=${encodeURIComponent(lessonId)}` : ""}`;
   const { data: course } = useCourseOutline(courseId);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -83,76 +79,29 @@ export function PreflightCheck({
   const [calibratedAt, setCalibratedAt] = useState<string | null>(null);
   const [sessionIssue, setSessionIssue] = useState<string | null>(null);
   const [screenStale, setScreenStale] = useState(false);
+  const [checkingProfile, setCheckingProfile] = useState(true);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
+  const [profileAttempt, setProfileAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const stored = getStoredCalibration();
-        const sid = getStoredGazeSessionId();
-        if (!sid) {
-          const active = await fetchActiveCalibration(getDeviceFingerprint());
-          if (cancelled) return;
-          const ageDays = active?.calibratedAt
-            ? (Date.now() - new Date(active.calibratedAt).getTime()) / 86400000
-            : Number.POSITIVE_INFINITY;
-          setIsCalibrated(false);
-          setCalibratedAt(active?.calibrated && ageDays < 30 ? active.calibratedAt : null);
-          setSessionIssue(
-            active?.calibrated && ageDays < 30
-              ? "Thiết bị có bản ghi hiệu chỉnh gần đây, nhưng không có phiên theo dõi cục bộ đang hoạt động. Vui lòng hiệu chỉnh lại để tạo phiên mới trước khi học."
-              : "Không có phiên theo dõi cục bộ đang hoạt động. Vui lòng hiệu chỉnh điểm nhìn trước khi học.",
-          );
-          return;
-        }
-        const status = await getGazeSessionStatus(sid);
+        const result = await ensureGazeSession(getDeviceFingerprint());
         if (cancelled) return;
-        if (!status.ready) {
-          const fp = getDeviceFingerprint();
-          const active = await fetchActiveCalibration(fp);
-          const ageDays =
-            active?.calibratedAt
-              ? (Date.now() - new Date(active.calibratedAt).getTime()) / 86400000
-              : Number.POSITIVE_INFINITY;
-          // Phiên cũ đã hết hạn trên gaze (TTL 30' hoặc service restart) nhưng
-          // DB còn model .ubj: tạo session mới rồi nạp lại model, không bắt
-          // người học hiệu chỉnh lại. Chỉ khôi phục khi màn hình không đổi.
-          if (active?.calibrated && ageDays < 30 && !isCalibrationScreenStale()) {
-            const restored = await restoreGazeSessionFromBackend(fp);
-            if (cancelled) return;
-            if (restored) {
-              setIsCalibrated(true);
-              setCalibratedAt(active.calibratedAt);
-              setScreenStale(false);
-              setSessionIssue(null);
-              return;
-            }
-          }
-          if (active?.calibrated && active.calibratedAt && ageDays < 30) {
-            clearStoredGazeSession();
-            setIsCalibrated(false);
-            setCalibratedAt(active.calibratedAt);
-            setScreenStale(false);
-            setSessionIssue(
-              "Thiết bị có bản ghi hiệu chỉnh trong 30 ngày, nhưng phiên theo dõi cục bộ không còn hoạt động. Vui lòng hiệu chỉnh lại để tạo phiên mới trước khi học.",
-            );
-            return;
-          }
-          clearStoredGazeSession();
-          setIsCalibrated(false);
-          setCalibratedAt(null);
-          setScreenStale(false);
-          setSessionIssue(
-            status.error === "network_error"
-              ? "Không kết nối được dịch vụ theo dõi để kiểm tra phiên hiệu chỉnh — hãy hiệu chỉnh lại trước khi học."
-              : "Phiên hiệu chỉnh cũ đã hết hạn trên máy chủ — vui lòng hiệu chỉnh lại trước khi học.",
-          );
-          return;
-        }
-        setIsCalibrated(true);
-        setCalibratedAt(stored.calibratedAt);
-        setScreenStale(isCalibrationScreenStale());
-        setSessionIssue(null);
+        setCheckingProfile(false);
+        setProfileUnavailable(result.status === "unavailable");
+        setIsCalibrated(result.status === "ready");
+        setCalibratedAt(result.calibratedAt);
+        setScreenStale(result.status === "screen_changed");
+        setSessionIssue(
+          result.status === "unavailable"
+            ? "Chưa thể khôi phục phiên theo dõi. Hãy thử kết nối lại, không cần hiệu chỉnh lại chỉ vì mất kết nối."
+            : result.status === "missing"
+              ? "Thiết bị chưa có profile hiệu chỉnh tương thích. Vui lòng thiết lập một lần trước khi học."
+              : null,
+        );
+        if (result.status === "ready" && !forceCheck) router.replace(learningHref);
       })();
     }, 0);
 
@@ -161,12 +110,7 @@ export function PreflightCheck({
       window.clearTimeout(timer);
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, []);
-
-  const learningHref = useMemo(() => {
-    const q = lessonId ? `?lesson=${encodeURIComponent(lessonId)}` : "";
-    return `/student/courses/${courseId}${q}`;
-  }, [courseId, lessonId]);
+  }, [forceCheck, learningHref, router, profileAttempt]);
 
   const calibrationHref = useMemo(() => {
     const q = lessonId ? `?lesson=${encodeURIComponent(lessonId)}` : "";
@@ -274,6 +218,11 @@ export function PreflightCheck({
   const readyToCalibrate = cameraState === "ready" && faceState === "ready" && !isCalibrated;
 
   const handlePrimaryAction = () => {
+    if (profileUnavailable) {
+      setCheckingProfile(true);
+      setProfileAttempt((value) => value + 1);
+      return;
+    }
     if (readyToLearn) {
       router.push(learningHref);
       return;
@@ -286,6 +235,8 @@ export function PreflightCheck({
   };
 
   const primaryLabel = (() => {
+    if (checkingProfile) return "Đang khôi phục thiết lập…";
+    if (profileUnavailable) return "Thử kết nối lại";
     if (cameraState === "checking" || faceState === "checking") return "Đang kiểm tra camera…";
     if (readyToLearn) return "Bắt đầu học";
     if (readyToCalibrate) return "Hiệu chỉnh điểm nhìn";
@@ -293,6 +244,14 @@ export function PreflightCheck({
       return "Kiểm tra lại";
     return "Kiểm tra camera";
   })();
+
+  if (checkingProfile) {
+    return (
+      <div role="status" className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Đang khôi phục thiết lập đã lưu…
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl pb-6">
@@ -477,7 +436,7 @@ export function PreflightCheck({
               <p>{sessionIssue}</p>
             </div>
           )}
-          {screenStale && isCalibrated && (
+          {screenStale && (
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-border/80 bg-[#f5f6f2] px-3 py-2.5 text-xs leading-5 text-foreground">
               <Icon name="ri-error-warning-line" className="mt-0.5 size-4 shrink-0" />
               <p>
@@ -491,7 +450,7 @@ export function PreflightCheck({
             <Button
               size="lg"
               onClick={handlePrimaryAction}
-              disabled={cameraState === "checking" || faceState === "checking"}
+              disabled={checkingProfile || cameraState === "checking" || faceState === "checking"}
               className="w-full bg-black text-white shadow-xs hover:bg-[#292a27]"
             >
               {(cameraState === "checking" || faceState === "checking") && <Spinner />}
@@ -499,7 +458,7 @@ export function PreflightCheck({
               {primaryLabel}
             </Button>
 
-            {isCalibrated && (
+            {(isCalibrated || profileUnavailable) && (
               <Button asChild variant="outline" size="lg" className="w-full">
                 <Link href={calibrationHref}>
                   <Icon name="ri-focus-2-line" />

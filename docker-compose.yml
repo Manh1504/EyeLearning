@@ -155,20 +155,19 @@ services:
     pull_policy: always
     restart: unless-stopped
     logging: *default-logging
-    gpus: all
     depends_on:
       migrate:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: ${CHATBOT_DATABASE_URL_DOCKER}
       CHATBOT_INTERNAL_TOKEN: ${CHATBOT_INTERNAL_TOKEN}
-      # --- Model & thiết bị (nguồn duy nhất: .env) ---
+      # --- Model từ .env; Docker cố định chạy CPU ---
       LLM_NAME: ${LLM_NAME}
       VLM_NAME: ${VLM_NAME}
       EMBEDDING_NAME: ${EMBEDDING_NAME}
       EMBEDDING_DIM: ${EMBEDDING_DIM}
       EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH}
-      EMBEDDING_DEVICE: ${EMBEDDING_DEVICE}
+      EMBEDDING_DEVICE: cpu
       EMBEDDING_LOCAL_FILES_ONLY: ${EMBEDDING_LOCAL_FILES_ONLY}
       EMBEDDING_HF_REPO: ${EMBEDDING_HF_REPO}
       HF_TOKEN: ${HF_TOKEN:-}
@@ -269,7 +268,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      - DEVICE=cuda
+      - DEVICE=cpu
       # Làm mượt One-Euro cho POG (xem services/gaze/app/services/smoothing.py).
       # `beta` cao hơn -> bám nhanh khi lia mắt, bớt trễ.
       - ONEEURO_BETA=${ONEEURO_BETA:-0.5}
@@ -277,7 +276,6 @@ services:
       - ONEEURO_D_CUTOFF=${ONEEURO_D_CUTOFF:-1.0}
     volumes:
       - gaze-weights:/app/weights
-    gpus: all
     # Healthcheck gọi /ready của gaze (503 khi pipeline chưa load xong; python có
     # sẵn trong image, không dùng curl). start_period dài vì entrypoint tải
     # weights + load mediapipe/unigaze lúc khởi động (có thể > 3 phút).

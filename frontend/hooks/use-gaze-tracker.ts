@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { gazeStreamUrl, getStoredGazeSessionId } from "@/lib/api/calibration";
+import { ensureGazeSession, gazeStreamUrl, getStoredGazeSessionId } from "@/lib/api/calibration";
+import { getDeviceFingerprint } from "@/lib/api/student";
 
 export type GazeSource = "real" | "simulated" | "off";
 
@@ -166,7 +167,7 @@ export function useGazeTracker({
           return;
         }
 
-        const sessionId = getStoredGazeSessionId();
+        let sessionId = getStoredGazeSessionId();
         if (disposed) return;
         if (!sessionId) {
           streamCleanup?.();
@@ -182,6 +183,11 @@ export function useGazeTracker({
           attempts += 1;
           if (attempts >= MAX_RECONNECTS) break;
           await sleep(Math.min(5000, 500 * 1.5 ** attempts));
+          if (disposed) return;
+          const restored = await ensureGazeSession(getDeviceFingerprint());
+          if (disposed) return;
+          if (restored.status === "screen_changed" || restored.status === "missing") break;
+          sessionId = getStoredGazeSessionId() ?? sessionId;
         }
         if (!disposed) {
           streamCleanup?.();

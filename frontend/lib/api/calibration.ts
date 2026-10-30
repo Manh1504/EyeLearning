@@ -291,6 +291,7 @@ export async function fetchActiveCalibrationModel(
       "/api/calibrations/active/model",
       { params: { deviceFingerprint } },
     );
+    if (typeof data.modelUbjBase64 !== "string" || !data.modelUbjBase64) return null;
     return { modelUbjBase64: data.modelUbjBase64, maePx: data.maePx ?? null };
   } catch {
     return null;
@@ -303,22 +304,54 @@ export async function fetchActiveCalibrationModel(
  */
 export async function restoreGazeSessionFromBackend(
   deviceFingerprint: string,
+  calibratedAt?: string | null,
 ): Promise<boolean> {
   const stored = await fetchActiveCalibrationModel(deviceFingerprint);
   if (!stored) return false;
+  let model: Uint8Array;
+  try {
+    model = base64ToBytes(stored.modelUbjBase64);
+  } catch {
+    return false;
+  }
   const session = await createGazeSession(
     buildCalibrationPoints(
       calibrationMargins(globalThis.innerWidth, globalThis.innerHeight),
     ),
   );
   if (!session.ok || !session.sessionId) return false;
-  const ok = await importGazeModel(session.sessionId, base64ToBytes(stored.modelUbjBase64));
+  const ok = await importGazeModel(session.sessionId, model);
   if (!ok) {
     deleteGazeSession(session.sessionId);
     return false;
   }
-  storeGazeSession(session.sessionId, globalThis.innerWidth, globalThis.innerHeight);
+  // Importing a model creates a session, not a new calibration or screen context.
+  globalThis.localStorage?.setItem(SESSION_KEY, session.sessionId);
+  if (calibratedAt) globalThis.localStorage?.setItem(CALIBRATED_AT_KEY, calibratedAt);
   return true;
+}
+
+export async function ensureGazeSession(deviceFingerprint: string): Promise<{
+  status: "ready" | "missing" | "screen_changed" | "unavailable";
+  calibratedAt: string | null;
+}> {
+  const stored = getStoredCalibration();
+  if (isCalibrationScreenStale()) {
+    return { status: "screen_changed", calibratedAt: stored.calibratedAt };
+  }
+  const sessionId = getStoredGazeSessionId();
+  if (sessionId) {
+    const session = await getGazeSessionStatus(sessionId);
+    if (session.ready) return { status: "ready", calibratedAt: stored.calibratedAt };
+    if (!session.ok && session.error !== "not_found") {
+      return { status: "unavailable", calibratedAt: stored.calibratedAt };
+    }
+  }
+  const active = await fetchActiveCalibration(deviceFingerprint);
+  if (!active) return { status: "unavailable", calibratedAt: stored.calibratedAt };
+  if (!active.calibrated) return { status: "missing", calibratedAt: null };
+  const restored = await restoreGazeSessionFromBackend(deviceFingerprint, active.calibratedAt);
+  return { status: restored ? "ready" : "unavailable", calibratedAt: active.calibratedAt };
 }
 
 export async function fetchActiveCalibration(

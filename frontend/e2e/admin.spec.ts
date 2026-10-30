@@ -13,10 +13,27 @@ test.describe("Admin", () => {
     await mockApi(page, { user: ADMIN });
   });
 
-  test("trang phân công liệt kê khóa học", async ({ page }) => {
+  test("trang quản lý liệt kê khóa học và các thao tác CRUD", async ({ page }) => {
     await page.goto("/admin");
-    await expect(page.getByRole("heading", { name: "Phân công giảng viên" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Quản lý khóa học" })).toBeVisible();
     await expect(page.getByText("Lập trình Python cơ bản").first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Tạo khóa học" })).toHaveAttribute(
+      "href",
+      "/admin/courses/c-new?new=1",
+    );
+    await expect(page.getByRole("link", { name: "Chỉnh sửa Lập trình Python cơ bản" })).toHaveAttribute(
+      "href",
+      "/admin/courses/course-1?tab=info",
+    );
+  });
+
+  test("mở workspace quản trị khóa học trong khu vực admin", async ({ page }) => {
+    await page.goto("/admin/courses/course-1?tab=info");
+    await expect(page.getByRole("heading", { name: "Xóa khóa học" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Quay lại danh sách khóa học" })).toHaveAttribute(
+      "href",
+      "/admin",
+    );
   });
 
   test("expand khóa học hiển thị giảng viên hiện tại", async ({ page }) => {

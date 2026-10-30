@@ -22,7 +22,12 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/teacher/profile", label: "Hồ sơ", icon: "ri-user-line", match: under("/teacher/profile") },
   ],
   admin: [
-    { href: "/admin", label: "Phân công", icon: "ri-user-follow-line", match: (p) => p === "/admin" },
+    {
+      href: "/admin",
+      label: "Khóa học",
+      icon: "ri-book-open-line",
+      match: (p) => p === "/admin" || p.startsWith("/admin/courses/"),
+    },
     { href: "/admin/settings", label: "Cài đặt", icon: "ri-settings-3-line", match: under("/admin/settings") },
     { href: "/admin/profile", label: "Hồ sơ", icon: "ri-user-line", match: under("/admin/profile") },
   ],

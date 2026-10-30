@@ -32,7 +32,13 @@ interface NewChapterDraft {
  * draft rồi mở trang chỉnh sửa; "Tạo và xuất bản" tạo chương → bài giảng → tải PDF
  * → thêm học viên → xuất bản. Lỗi giữa đường sẽ trỏ về bản nháp vừa tạo.
  */
-export function NewCourseForm({ onCreated }: { onCreated: (id: string) => void }) {
+export function NewCourseForm({
+  onCreated,
+  basePath = "/teacher",
+}: {
+  onCreated: (id: string) => void;
+  basePath?: "/teacher" | "/admin";
+}) {
   const queryClient = useQueryClient();
   const guard = useUnsavedGuard();
 
@@ -482,7 +488,7 @@ export function NewCourseForm({ onCreated }: { onCreated: (id: string) => void }
             trùng.
           </p>
           <Link
-            href={`/teacher/courses/${recoveryDraftId}?tab=content`}
+            href={`${basePath}/courses/${recoveryDraftId}?tab=content`}
             className="mt-2 inline-flex font-medium text-foreground underline underline-offset-4"
           >
             Tiếp tục chỉnh sửa bản nháp
@@ -507,7 +513,7 @@ export function NewCourseForm({ onCreated }: { onCreated: (id: string) => void }
         </Button>
         {recoveryDraftId ? (
           <Button asChild className="rounded-full bg-black px-6 text-white hover:bg-black/80">
-            <Link href={`/teacher/courses/${recoveryDraftId}?tab=content`}>Tiếp tục bản nháp</Link>
+            <Link href={`${basePath}/courses/${recoveryDraftId}?tab=content`}>Tiếp tục bản nháp</Link>
           </Button>
         ) : (
           <Button

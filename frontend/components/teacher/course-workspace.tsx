@@ -24,7 +24,7 @@ const TABS: { key: View; label: string }[] = [
   { key: "students", label: "Học viên" },
 ];
 
-function Workspace({ courseId }: { courseId: string }) {
+function Workspace({ courseId, basePath }: { courseId: string; basePath: "/teacher" | "/admin" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const guard = useUnsavedGuard();
@@ -65,10 +65,10 @@ function Workspace({ courseId }: { courseId: string }) {
             className="rounded-full hover:bg-white"
           >
             <Link
-              href="/teacher"
+              href={basePath}
               onClick={(event) => {
                 event.preventDefault();
-                go("/teacher");
+                go(basePath);
               }}
             >
               <Icon name="ri-arrow-left-line" className="size-5" />
@@ -92,7 +92,7 @@ function Workspace({ courseId }: { courseId: string }) {
             >
               {TABS.map((item) => {
                 const active = view === item.key;
-                const href = `/teacher/courses/${courseId}?tab=${item.key}`;
+                const href = `${basePath}/courses/${courseId}?tab=${item.key}`;
                 return (
                   <Link
                     key={item.key}
@@ -127,10 +127,13 @@ function Workspace({ courseId }: { courseId: string }) {
             isNew={isNew}
             canManage={canManage}
             courseTitle={title}
-            onCreated={(id) => router.replace(`/teacher/courses/${id}?tab=content`)}
+            basePath={basePath}
+            onCreated={(id) => router.replace(`${basePath}/courses/${id}?tab=content`)}
           />
         )}
-        {!isNew && view === "info" && <CourseInfoTab courseId={courseId} canManage={canManage} />}
+        {!isNew && view === "info" && (
+          <CourseInfoTab courseId={courseId} canManage={canManage} returnHref={basePath} />
+        )}
         {!isNew && view === "settings" && (
           <CourseSettingsTab courseId={courseId} canManage={canManage} />
         )}
@@ -140,11 +143,17 @@ function Workspace({ courseId }: { courseId: string }) {
   );
 }
 
-export function CourseWorkspace({ courseId }: { courseId: string }) {
+export function CourseWorkspace({
+  courseId,
+  basePath = "/teacher",
+}: {
+  courseId: string;
+  basePath?: "/teacher" | "/admin";
+}) {
   return (
     <Suspense fallback={<FullPageSpinner label="Đang tải khóa học..." />}>
       <UnsavedGuardProvider>
-        <Workspace courseId={courseId} />
+        <Workspace courseId={courseId} basePath={basePath} />
       </UnsavedGuardProvider>
     </Suspense>
   );

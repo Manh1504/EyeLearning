@@ -456,6 +456,44 @@ def test_teacher_cannot_touch_foreign_course(client):
         f"/teacher/courses/{course_id}", headers=auth(gv2), json={"title": "Hack"}
     )
     assert r.status_code == 403
+    r = client.delete(f"/teacher/courses/{course_id}", headers=auth(gv2))
+    assert r.status_code == 403
+
+
+def test_admin_can_create_update_and_delete_courses(client):
+    asyncio.run(make_user("admin-course@t.vn", "admin"))
+    asyncio.run(make_user("gv-course@t.vn", "teacher"))
+    admin = login(client, "admin-course@t.vn")
+    teacher = login(client, "gv-course@t.vn")
+
+    created = client.post(
+        "/teacher/courses",
+        headers=auth(admin),
+        json={"title": "Khóa do admin tạo", "status": "draft"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["title"] == "Khóa do admin tạo"
+
+    teacher_course = client.post(
+        "/teacher/courses", headers=auth(teacher), json={"title": "Khóa của GV"}
+    )
+    assert teacher_course.status_code == 201, teacher_course.text
+    course_id = teacher_course.json()["id"]
+
+    updated = client.patch(
+        f"/teacher/courses/{course_id}",
+        headers=auth(admin),
+        json={"title": "Admin đã cập nhật"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "Admin đã cập nhật"
+
+    deleted = client.delete(f"/teacher/courses/{course_id}", headers=auth(admin))
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json() == {"ok": True}
+
+    missing = client.get(f"/teacher/courses/{course_id}", headers=auth(admin))
+    assert missing.status_code == 404
 
 
 def _make_pdf_bytes(pages: int = 3) -> bytes:

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -203,29 +204,37 @@ function CourseRow({
 }) {
   return (
     <article className="overflow-hidden rounded-[18px] border border-[#eeeee9] bg-white shadow-xs transition-shadow hover:shadow-sm">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={onToggle}
-        className="group flex min-h-20 w-full items-center gap-3 rounded-[18px] px-4 py-3 text-left transition hover:bg-[#fdfdfa] sm:px-5"
-      >
-        <span className="font-mono text-[10px] font-semibold text-muted-foreground group-hover:text-foreground">
-          {course.id.slice(0, 5).toUpperCase()}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-foreground">{course.title}</span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            {course.students} học viên · cập nhật {course.updatedAt}
+      <div className="flex min-h-20 items-center gap-2 px-2 sm:px-3">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={onToggle}
+          className="group flex min-w-0 flex-1 items-center gap-3 rounded-[14px] px-2 py-3 text-left transition hover:bg-[#fdfdfa]"
+        >
+          <span className="font-mono text-[10px] font-semibold text-muted-foreground group-hover:text-foreground">
+            {course.id.slice(0, 5).toUpperCase()}
           </span>
-        </span>
-        <Badge variant={statusVariant(course.status)} className="hidden sm:inline-flex">
-          {STATUS_LABEL[course.status]}
-        </Badge>
-        <Icon
-          name="ri-arrow-down-s-line"
-          className={`size-5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
-        />
-      </button>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-foreground">{course.title}</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {course.students} học viên · cập nhật {course.updatedAt}
+            </span>
+          </span>
+          <Badge variant={statusVariant(course.status)} className="hidden sm:inline-flex">
+            {STATUS_LABEL[course.status]}
+          </Badge>
+          <Icon
+            name="ri-arrow-down-s-line"
+            className={`size-5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+        </button>
+        <Button asChild variant="ghost" size="sm" className="shrink-0 rounded-full">
+          <Link href={`/admin/courses/${course.id}?tab=info`} aria-label={`Chỉnh sửa ${course.title}`}>
+            <Icon name="ri-edit-line" className="size-4" />
+            <span className="hidden sm:inline">Chỉnh sửa</span>
+          </Link>
+        </Button>
+      </div>
       {expanded && <AssignmentPanel courseId={course.id} />}
     </article>
   );

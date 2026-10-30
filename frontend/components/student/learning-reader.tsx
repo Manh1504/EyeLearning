@@ -23,7 +23,7 @@ import {
 } from "@/lib/api/student";
 import {
   getContainedImageRect,
-  getStoredGazeSessionId,
+  ensureGazeSession,
   screenGazeToSlide,
 } from "@/lib/api/calibration";
 import { resolveMediaUrl } from "@/lib/api/client";
@@ -62,13 +62,20 @@ export function LearningReader({ courseId }: { courseId: string }) {
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
   const [learningSessionIds, setLearningSessionIds] = useState<Record<string, string>>({});
   const [trackingLessons, setTrackingLessons] = useState<Record<string, boolean>>({});
-  // Phiên hiệu chỉnh đọc thẳng từ localStorage ngay lần render đầu (client):
-  // bài tập không tạo phiên học nên không thể dựa vào callback tạo phiên để biết
-  // đã hiệu chỉnh hay chưa. Chỉ dùng cho effect của useGazeTracker nên không gây
-  // lệch hydration.
-  const [gazeCalibrated, setGazeCalibrated] = useState(() =>
-    Boolean(getStoredGazeSessionId()),
-  );
+  const [gazeCalibrated, setGazeCalibrated] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void ensureGazeSession(getDeviceFingerprint()).then((result) => {
+        if (!cancelled) setGazeCalibrated(result.status === "ready");
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
   // Vị trí chấm điểm nhìn (chuẩn hóa theo màn hình) khi GV bật hiển thị cho SV.
   // `key` = bài+trang lúc ghi, để tự ẩn khi đổi trang/bài mà không cần effect.
   const [gazeDot, setGazeDot] = useState<{ x: number; y: number; key: string } | null>(null);
@@ -196,7 +203,6 @@ export function LearningReader({ courseId }: { courseId: string }) {
         sessionsRef.current[lessonId] = session.id;
         setLearningSessionIds((prev) => ({ ...prev, [lessonId]: session.id }));
         setTrackingLessons((prev) => ({ ...prev, [lessonId]: session.trackingConsent }));
-        setGazeCalibrated(Boolean(getStoredGazeSessionId()));
       })
       .catch(() => {});
 
@@ -485,6 +491,15 @@ export function LearningReader({ courseId }: { courseId: string }) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <Button asChild variant="ghost" size="icon-sm">
+            <Link
+              href={`/student/courses/${courseId}/prepare?check=1${activeLessonId ? `&lesson=${encodeURIComponent(activeLessonId)}` : ""}`}
+              aria-label="Thiết lập camera và điểm nhìn"
+              title="Thiết lập camera và điểm nhìn"
+            >
+              <Icon name="ri-equalizer-2-line" className="size-4" />
+            </Link>
+          </Button>
           {gazeSource === "real" ? (
             <div className="hidden items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-[11px] text-foreground sm:flex">
               <span className="size-1.5 animate-pulse rounded-full bg-primary" />
@@ -585,7 +600,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
                 </p>
                 <Button asChild size="sm" variant="outline" className="shrink-0">
                   <Link
-                    href={`/student/courses/${courseId}/prepare${activeLessonId ? `?lesson=${encodeURIComponent(activeLessonId)}` : ""}`}
+                    href={`/student/courses/${courseId}/prepare?check=1${activeLessonId ? `&lesson=${encodeURIComponent(activeLessonId)}` : ""}`}
                   >
                     Kiểm tra &amp; hiệu chỉnh lại
                   </Link>

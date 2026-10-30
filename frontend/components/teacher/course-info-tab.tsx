@@ -38,9 +38,11 @@ const STATUS_HELP: Record<CourseStatus, string> = {
 export function CourseInfoTab({
   courseId,
   canManage,
+  returnHref = "/teacher",
 }: {
   courseId: string;
   canManage: boolean;
+  returnHref?: "/teacher" | "/admin";
 }) {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -326,7 +328,7 @@ export function CourseInfoTab({
             // không khóa vừa xóa vẫn hiện trong danh sách khi quay về /teacher.
             queryClient.removeQueries({ queryKey: ["teacher", "courses"] });
             queryClient.removeQueries({ queryKey: ["teacher", "course-tree", courseId] });
-            router.replace("/teacher");
+            router.replace(returnHref);
             router.refresh();
           } catch (e) {
             flash("err", `Không xóa được khóa học: ${e instanceof Error ? e.message : "lỗi"}`);

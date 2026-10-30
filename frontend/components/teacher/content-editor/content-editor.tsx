@@ -38,12 +38,14 @@ export function ContentEditor({
   canManage,
   onCreated,
   courseTitle = "",
+  basePath = "/teacher",
 }: {
   courseId: string;
   isNew: boolean;
   canManage: boolean;
   onCreated: (id: string) => void;
   courseTitle?: string;
+  basePath?: "/teacher" | "/admin";
 }) {
   const queryClient = useQueryClient();
   const guard = useUnsavedGuard();
@@ -206,7 +208,7 @@ export function ContentEditor({
   };
 
   if (isNew) {
-    return <NewCourseForm onCreated={onCreated} />;
+    return <NewCourseForm onCreated={onCreated} basePath={basePath} />;
   }
 
   return (
