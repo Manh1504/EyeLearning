@@ -199,6 +199,38 @@ def test_quiz_item_in_module_and_reorder(client):
     assert bad.status_code == 400
 
 
+def test_course_outline_hides_draft_quizzes_from_students(client):
+    teacher, student, outsider, course_id, module_id, lesson_id = _setup(client)
+    draft = _create_quiz_item(client, teacher, module_id, title="Draft quiz").json()
+    published = _create_quiz_item(client, teacher, module_id, title="Published quiz").json()
+    closed = _create_quiz_item(client, teacher, module_id, title="Closed quiz").json()
+    for item, status in ((published, "published"), (closed, "closed")):
+        response = client.patch(
+            f"/api/assignments/{item['quizId']}",
+            headers=auth(teacher),
+            json={
+                "status": status,
+                "questions": _assignment_body(course_id, item["id"])["questions"],
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    for viewer in (student, outsider):
+        outline = client.get(f"/api/courses/{course_id}", headers=auth(viewer))
+        assert outline.status_code == 200, outline.text
+        items = outline.json()["modules"][0]["lessons"]
+        assert [item["id"] for item in items] == [lesson_id, published["id"], closed["id"]]
+        assert [item["quizStatus"] for item in items[1:]] == ["published", "closed"]
+
+    teacher_outline = client.get(f"/api/courses/{course_id}", headers=auth(teacher))
+    assert teacher_outline.status_code == 200, teacher_outline.text
+    assert [item["id"] for item in teacher_outline.json()["modules"][0]["lessons"]] == [
+        lesson_id, draft["id"], published["id"], closed["id"]
+    ]
+    hidden = client.get(f"/api/assignments/{draft['quizId']}", headers=auth(student))
+    assert hidden.status_code == 404
+
+
 def test_deleting_quiz_lesson_removes_assignment(client):
     teacher, _, _, _, module_id, _ = _setup(client)
     created = _create_quiz_item(client, teacher, module_id, title="Quiz cần xóa")

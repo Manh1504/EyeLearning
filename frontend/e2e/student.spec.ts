@@ -282,6 +282,22 @@ test.describe("Student", () => {
     await expect(page.getByText(/3\s*\/\s*3/)).toBeVisible();
   });
 
+  test("reader thông báo rõ khi bài học chưa có slide", async ({ page }) => {
+    await page.route("**/api/lessons/lesson-1/contents", (route) => json(route, []));
+    await page.goto("/student/courses/course-1");
+    await expect(page.getByText("Bài học chưa có slide", { exact: true })).toBeVisible();
+    await expect(page.getByText("Giảng viên chưa tải lên tài liệu PDF cho bài học này.")).toBeVisible();
+    await expect(page.getByText("Nội dung trang PDF sẽ hiển thị tại đây.")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Trước", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sau", exact: true })).toBeDisabled();
+  });
+
+  test("reader không nhầm slide thiếu ảnh với bài học trống", async ({ page }) => {
+    await page.goto("/student/courses/course-1");
+    await expect(page.getByText("Hình ảnh slide hiện không khả dụng.")).toBeVisible();
+    await expect(page.getByText("Bài học chưa có slide", { exact: true })).toHaveCount(0);
+  });
+
   test("reader mở bài tập trắc nghiệm và nộp bài", async ({ page }) => {
     await page.goto("/student/courses/course-1?lesson=lesson-quiz-1");
     await expect(page.getByText("Bài tập: Kiểm tra nhập môn").first()).toBeVisible();

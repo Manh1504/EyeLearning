@@ -133,7 +133,7 @@ export function LearningReader({ courseId }: { courseId: string }) {
     setOpenModules((prev) => ({ ...prev, [activeModule.id]: true }));
   }
 
-  const { data: slides = [], isLoading: slidesLoading } = useLessonSlides(
+  const { data: slides = [], isLoading: slidesLoading, isError: slidesError } = useLessonSlides(
     activeIsQuiz ? "" : activeLessonId,
   );
   const total = slides.length;
@@ -651,10 +651,18 @@ export function LearningReader({ courseId }: { courseId: string }) {
                     <Icon name="ri-image-line" className="size-5" />
                   </div>
                   <p className="mt-4 max-w-sm text-base font-semibold text-foreground sm:text-lg">
-                    {currentContent?.title ?? "Nội dung bài học"}
+                    {slidesError
+                      ? "Không thể tải nội dung bài học"
+                      : total === 0
+                        ? "Bài học chưa có slide"
+                        : currentContent?.title ?? "Nội dung bài học"}
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Nội dung trang PDF sẽ hiển thị tại đây.
+                    {slidesError
+                      ? "Vui lòng tải lại trang để thử lại."
+                      : total === 0
+                        ? "Giảng viên chưa tải lên tài liệu PDF cho bài học này."
+                        : "Hình ảnh slide hiện không khả dụng."}
                   </p>
                 </div>
               )}

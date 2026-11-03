@@ -574,7 +574,16 @@ async def get_course_outline(
                 id=m.id,
                 order_index=m.order_index,
                 title=m.title,
-                lessons=[_lesson_item(lesson) for lesson in m.lessons],
+                lessons=[
+                    _lesson_item(lesson)
+                    for lesson in m.lessons
+                    if is_owner
+                    or lesson.kind != "quiz"
+                    or (
+                        lesson.id in quizzes
+                        and quizzes[lesson.id].status != "draft"
+                    )
+                ],
             )
             for m in course.modules
         ],
