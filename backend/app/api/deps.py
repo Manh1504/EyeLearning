@@ -133,3 +133,22 @@ async def can_access_course(db: AsyncSession, course, user: User) -> bool:
         CourseTeacher.teacher_id == user.id,
     )
     return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def require_student_course_assignment(
+    db: AsyncSession, course, user: User
+) -> None:
+    """Require an explicit teaching assignment on student access paths, not ownership."""
+    if await can_access_course(db, course, user):
+        return
+
+    from app.models.course import CourseTeacher
+
+    assigned = select(CourseTeacher.course_id).where(
+        CourseTeacher.course_id == course.id
+    ).exists()
+    if not (await db.execute(select(assigned))).scalar_one():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Khóa học chưa có giảng viên được phân công",
+        )

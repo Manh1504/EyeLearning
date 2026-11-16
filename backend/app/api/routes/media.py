@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_student_course_assignment
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.auth import User
@@ -61,6 +61,7 @@ async def get_lesson_slide(
     is_owner = await can_access_course(db, course, user)
     enrolled = None
     if not is_owner:
+        await require_student_course_assignment(db, course, user)
         enrolled = (
             await db.execute(
                 select(Enrollment).where(
@@ -108,6 +109,7 @@ async def get_lesson_slide_legacy(
 
     is_owner = await can_access_course(db, course, user)
     if not is_owner:
+        await require_student_course_assignment(db, course, user)
         enrolled = (
             await db.execute(
                 select(Enrollment).where(

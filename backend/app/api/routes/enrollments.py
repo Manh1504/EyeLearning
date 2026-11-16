@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_student_course_assignment
 from app.core.helpers import gradient_for
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
-from app.models.course import Course, Enrollment, Lesson, Module
+from app.models.course import Course, CourseTeacher, Enrollment, Lesson, Module
 from app.models.gaze import LearningSession
 from app.models.profile import UserProfile
 from app.schemas.course import (
@@ -27,11 +27,25 @@ async def my_enrollments(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    first_teacher = (
+        select(CourseTeacher.teacher_id)
+        .where(CourseTeacher.course_id == Course.id)
+        .order_by(CourseTeacher.assigned_at, CourseTeacher.teacher_id)
+        .limit(1)
+        .correlate(Course)
+        .scalar_subquery()
+    )
     stmt = (
         select(Enrollment, Course, UserProfile)
         .join(Course, Course.id == Enrollment.course_id)
-        .outerjoin(UserProfile, UserProfile.user_id == Course.teacher_id)
-        .where(Enrollment.student_id == user.id, Course.deleted_at.is_(None))
+        .outerjoin(UserProfile, UserProfile.user_id == first_teacher)
+        .where(
+            Enrollment.student_id == user.id,
+            Course.deleted_at.is_(None),
+            select(CourseTeacher.course_id)
+            .where(CourseTeacher.course_id == Course.id)
+            .exists(),
+        )
         .order_by(Enrollment.enrolled_at.desc())
     )
     rows = (await db.execute(stmt)).all()
@@ -97,6 +111,7 @@ async def enroll(
     course = await db.get(Course, course_id)
     if course is None or course.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy khóa học")
+    await require_student_course_assignment(db, course, user)
     if course.status.code != "published":
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Khóa học chưa được xuất bản"

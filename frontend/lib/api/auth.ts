@@ -42,7 +42,7 @@ const AUTH_SYNC_KEY = "gaze_auth_sync";
 
 export function primaryRole(roles: Role[] | undefined | null): Role {
   if (!roles || roles.length === 0) return "student";
-  for (const role of ["teacher", "student", "admin"] as const) {
+  for (const role of ["admin", "teacher", "student"] as const) {
     if (roles.includes(role)) return role;
   }
   return roles[0] ?? "student";

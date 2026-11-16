@@ -269,6 +269,14 @@ async def make_user(
         return user_id
 
 
+async def assign_course_teacher(course_id: str, teacher_id: str):
+    from app.models.course import CourseTeacher
+
+    async with SessionLocal() as session:
+        session.add(CourseTeacher(course_id=course_id, teacher_id=teacher_id))
+        await session.commit()
+
+
 @pytest.fixture()
 def client():
     if not DB_AVAILABLE:

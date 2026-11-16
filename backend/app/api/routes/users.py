@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/me", tags=["me"])
 
 
 def _primary_role(user: User) -> str:
-    for code in ("teacher", "student", "admin"):
+    for code in ("admin", "teacher", "student"):
         if code in user.role_codes:
             return code
     return user.role_codes[0] if user.role_codes else "student"

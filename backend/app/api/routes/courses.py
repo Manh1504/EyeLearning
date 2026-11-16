@@ -533,6 +533,9 @@ async def get_course_outline(
     db: AsyncSession = Depends(get_db),
 ):
     course = await _get_course_or_404(db, course_id)
+    from app.api.deps import require_student_course_assignment
+
+    await require_student_course_assignment(db, course, user)
     enrolled = (
         await db.execute(
             select(Enrollment).where(
@@ -540,7 +543,7 @@ async def get_course_outline(
             )
         )
     ).scalar_one_or_none()
-    is_owner = course.teacher_id == user.id or "admin" in user.role_codes
+    is_owner = await can_access_course(db, course, user)
     if not is_owner and enrolled is None and course.status.code != "published":
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
 

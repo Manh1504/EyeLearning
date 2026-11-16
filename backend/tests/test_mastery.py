@@ -1,6 +1,6 @@
 import asyncio
 
-from tests.conftest import auth, login, make_user
+from tests.conftest import assign_course_teacher, auth, login, make_user
 
 
 def _make_pdf_bytes(pages: int = 2) -> bytes:
@@ -14,7 +14,7 @@ def _make_pdf_bytes(pages: int = 2) -> bytes:
 
 
 def _setup_pdf_course(client):
-    asyncio.run(make_user("gv-m@t.vn", "teacher", full_name="GV Mastery"))
+    teacher_id = asyncio.run(make_user("gv-m@t.vn", "teacher", full_name="GV Mastery"))
     asyncio.run(make_user("sv-m@t.vn", "student", full_name="SV Mastery"))
     teacher = login(client, "gv-m@t.vn")
     student = login(client, "sv-m@t.vn")
@@ -24,6 +24,7 @@ def _setup_pdf_course(client):
         headers=auth(teacher),
         json={"title": "Khóa Mastery", "status": "published"},
     ).json()["id"]
+    asyncio.run(assign_course_teacher(course_id, teacher_id))
     module_id = client.post(
         f"/teacher/courses/{course_id}/modules",
         headers=auth(teacher),

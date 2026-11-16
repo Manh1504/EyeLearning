@@ -6,7 +6,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import can_access_course, get_current_user, require_roles
+from app.api.deps import (
+    can_access_course,
+    get_current_user,
+    require_roles,
+    require_student_course_assignment,
+)
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.course import Course, CourseTeacher, Enrollment, Lesson, Module
@@ -56,6 +61,7 @@ async def _require_assignment_access(
         return course, None
     if "student" not in user.role_codes or not await _is_enrolled(db, course.id, user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Bạn chưa tham gia khóa học")
+    await require_student_course_assignment(db, course, user)
     attempt = (
         await db.execute(
             select(QuizAttempt).where(
@@ -158,6 +164,9 @@ async def list_assignments(
                 Enrollment.student_id == user.id,
                 Enrollment.status == "active",
                 QuizAssignment.status != "draft",
+                select(CourseTeacher.course_id)
+                .where(CourseTeacher.course_id == QuizAssignment.course_id)
+                .exists(),
             )
         )
         reveal = False

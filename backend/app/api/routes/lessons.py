@@ -13,6 +13,7 @@ from app.api.deps import (
     get_current_user,
     require_internal_token,
     require_roles,
+    require_student_course_assignment,
 )
 from app.core.config import settings
 from app.core.ratelimit import rate_limit
@@ -541,6 +542,8 @@ async def get_lesson_contents(
     is_owner = course is not None and await can_access_course(db, course, user)
     if not is_owner and enrollment is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Chưa đăng ký khóa học")
+    if not is_owner:
+        await require_student_course_assignment(db, course, user)
     stmt = (
         select(LessonContent)
         .where(LessonContent.lesson_id == lesson_id)

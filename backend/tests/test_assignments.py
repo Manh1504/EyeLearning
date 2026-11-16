@@ -4,11 +4,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 from app.db.session import SessionLocal
-from tests.conftest import auth, login, make_user
+from tests.conftest import assign_course_teacher, auth, login, make_user
 
 
 def _setup(client):
-    asyncio.run(make_user("quiz-teacher@test.vn", "teacher"))
+    teacher_id = asyncio.run(make_user("quiz-teacher@test.vn", "teacher"))
     asyncio.run(make_user("quiz-student@test.vn", "student"))
     asyncio.run(make_user("outsider@test.vn", "student"))
     teacher = login(client, "quiz-teacher@test.vn")
@@ -19,6 +19,7 @@ def _setup(client):
         headers=auth(teacher),
         json={"title": "Quiz course", "status": "published"},
     ).json()
+    asyncio.run(assign_course_teacher(course["id"], teacher_id))
     module = client.post(
         f"/teacher/courses/{course['id']}/modules",
         headers=auth(teacher),

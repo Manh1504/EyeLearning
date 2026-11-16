@@ -5,14 +5,14 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_student_course_assignment
 from app.core import rediscache
 from app.core.config import settings
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.auth import User
 from app.models.calibration import CalibrationParam, Device
-from app.models.course import Enrollment, Lesson, LessonContent, Module
+from app.models.course import Course, Enrollment, Lesson, LessonContent, Module
 from app.models.gaze import GazeEvent, GazeSessionStat, GazeSlideStat, LearningSession
 from app.schemas.gaze import (
     GazeBatchIn,
@@ -83,6 +83,12 @@ async def create_learning_session(
     lesson = await db.get(Lesson, body.lesson_id)
     if lesson is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
+
+    module = await db.get(Module, lesson.module_id)
+    course = await db.get(Course, module.course_id) if module else None
+    if course is None or enrollment.course_id != course.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    await require_student_course_assignment(db, course, user)
 
     device = await _upsert_device(
         db,
@@ -162,6 +168,10 @@ async def end_learning_session(
     enrollment = await db.get(Enrollment, session.enrollment_id)
     if enrollment is None or enrollment.student_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    course = await db.get(Course, enrollment.course_id)
+    if course is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    await require_student_course_assignment(db, course, user)
     session.status = body.status
     session.ended_at = datetime.now(timezone.utc)
     await db.commit()
@@ -270,6 +280,12 @@ async def post_gaze_samples(
     if lesson is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài học")
 
+    module = await db.get(Module, lesson.module_id)
+    course = await db.get(Course, module.course_id) if module else None
+    if course is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
+    await require_student_course_assignment(db, course, user)
+
     if body.source == "simulated":
         # Chặn dữ liệu mô phỏng làm nhiễu heatmap/engagement — chỉ cho real
         return GazeBatchOut(ok=True, inserted=0)
@@ -285,7 +301,11 @@ async def post_gaze_samples(
                 status.HTTP_404_NOT_FOUND, detail="Không tìm thấy phiên học"
             )
         enrollment = await db.get(Enrollment, session.enrollment_id)
-        if enrollment is None or enrollment.student_id != user.id:
+        if (
+            enrollment is None
+            or enrollment.student_id != user.id
+            or enrollment.course_id != course.id
+        ):
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Không có quyền")
     else:
         stmt = (

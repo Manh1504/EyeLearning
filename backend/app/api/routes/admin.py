@@ -28,7 +28,14 @@ def _escape_like(q: str) -> str:
 
 async def _teacher_or_404(db: AsyncSession, teacher_id: str) -> TeacherProfile:
     teacher = await db.get(TeacherProfile, teacher_id)
-    if teacher is None:
+    user = await db.get(User, teacher_id)
+    if (
+        teacher is None
+        or user is None
+        or user.deleted_at is not None
+        or user.status.code != "active"
+        or "teacher" not in user.role_codes
+    ):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Tài khoản không phải giáo viên"
         )
@@ -46,7 +53,11 @@ async def list_teachers(
         select(User, UserProfile, TeacherProfile)
         .outerjoin(UserProfile, UserProfile.user_id == User.id)
         .join(TeacherProfile, TeacherProfile.user_id == User.id)
-        .where(User.deleted_at.is_(None), User.status.has(code="active"))
+        .where(
+            User.deleted_at.is_(None),
+            User.status.has(code="active"),
+            User.roles.any(code="teacher"),
+        )
         .order_by(UserProfile.full_name)
         .limit(500)
     )
@@ -82,15 +93,14 @@ async def list_course_teachers(
     )
     assigned_ids = set((await db.execute(assigned_ids_stmt)).scalars().all())
 
-    all_ids = assigned_ids | {course.teacher_id}
-    if not all_ids:
+    if not assigned_ids:
         return []
 
     stmt = (
         select(User, UserProfile, TeacherProfile)
         .join(TeacherProfile, TeacherProfile.user_id == User.id)
         .outerjoin(UserProfile, UserProfile.user_id == User.id)
-        .where(User.id.in_(all_ids))
+        .where(User.id.in_(assigned_ids))
     )
     rows = (await db.execute(stmt)).all()
     by_id = {u.id: (u, p, tp) for u, p, tp in rows}
@@ -131,7 +141,7 @@ async def assign_teachers(
     user: User = Depends(require_roles("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    course = await _course_or_404(db, course_id)
+    await _course_or_404(db, course_id)
     ids = list(dict.fromkeys(body.teacher_ids))
     if not ids:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Chưa chọn giáo viên")
@@ -143,7 +153,7 @@ async def assign_teachers(
 
     added = 0
     for tid in ids:
-        if tid == course.teacher_id or tid in existing:
+        if tid in existing:
             continue
         await _teacher_or_404(db, tid)
         db.add(CourseTeacher(course_id=course_id, teacher_id=tid, assigned_by=user.id))
@@ -160,12 +170,7 @@ async def unassign_teacher(
     _: User = Depends(require_roles("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    course = await _course_or_404(db, course_id)
-    if teacher_id == course.teacher_id:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="Không thể gỡ chủ khóa học khỏi danh sách giảng viên",
-        )
+    await _course_or_404(db, course_id)
     assignment = (
         await db.execute(
             select(CourseTeacher).where(

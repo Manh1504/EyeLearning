@@ -1,11 +1,11 @@
 import asyncio
 import base64
 
-from tests.conftest import auth, login, make_user
+from tests.conftest import assign_course_teacher, auth, login, make_user
 
 
 def _setup_course(client):
-    asyncio.run(make_user("gv@t.vn", "teacher", full_name="Giáo Viên"))
+    teacher_id = asyncio.run(make_user("gv@t.vn", "teacher", full_name="Giáo Viên"))
     asyncio.run(make_user("sv@t.vn", "student", full_name="Sinh Viên"))
     teacher = login(client, "gv@t.vn")
     student = login(client, "sv@t.vn")
@@ -17,6 +17,7 @@ def _setup_course(client):
     )
     assert r.status_code == 201, r.text
     course_id = r.json()["id"]
+    asyncio.run(assign_course_teacher(course_id, teacher_id))
 
     r = client.post(
         f"/teacher/courses/{course_id}/modules",

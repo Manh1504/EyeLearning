@@ -94,7 +94,7 @@ function AssignmentPanel({ courseId }: { courseId: string }) {
         <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Giảng viên hiện tại</h3>
         {assigned.length === 0 ? (
           <p className="mt-3 rounded-lg border border-dashed border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-            Chưa có giảng viên được phân công.
+            Chưa có giảng viên được phân công. Khóa học đang ẩn với sinh viên, kể cả khi đã có học viên.
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-border/70">
@@ -113,19 +113,18 @@ function AssignmentPanel({ courseId }: { courseId: string }) {
                     {teacher.email ? ` · ${teacher.email}` : ""}
                   </span>
                 </span>
-                {teacher.isOwner ? (
+                {teacher.isOwner && (
                   <Badge variant="warning">Chủ khóa học</Badge>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={unassign.isPending}
-                    onClick={() => doUnassign(teacher)}
-                    aria-label={`Gỡ ${teacher.name}`}
-                  >
-                    <Icon name="ri-close-line" className="size-4" /> Gỡ
-                  </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={unassign.isPending}
+                  onClick={() => doUnassign(teacher)}
+                  aria-label={`Gỡ ${teacher.name}`}
+                >
+                  <Icon name="ri-close-line" className="size-4" /> Gỡ
+                </Button>
               </li>
             ))}
           </ul>
